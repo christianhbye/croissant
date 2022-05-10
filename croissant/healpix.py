@@ -59,19 +59,6 @@ class HealpixBase:
         )
         return alm
 
-    def plot(self, projection="mollweide", **kwargs):
-        if self.data is None:
-            raise ValueError("data is None, there is nothing to plot.")
-        views = {
-            "mollweide": hp.mollview,
-            "gnomonic": hp.gnomview,
-            "cartesian": hp.cartview,
-            "ortographic": hp.orthview,
-        }
-        if not projection in views:
-            raise ValueError(
-                f"Projection must be in {list[views.keys()]}, not"
-                f"{projection}."
-            )
-        func = views[projection]
-        func(self.data, **kwargs)
+    def plot(self, **kwargs):
+        m = kwargs.pop("m", self.data)
+        _ = hp.projview(m=m, projection_type=projection)
