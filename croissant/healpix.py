@@ -70,9 +70,14 @@ class HealpixBase:
         self.data = new_map
         self.nside = nside_out
 
-    def plot(self, **kwargs):
+    def plot(self, frequency=None, **kwargs):
         m = kwargs.pop("m", self.data)
-        _ = hp.projview(m=m, **kwargs)
+        if frequency is not None and self.frequencies is not None:
+            f_idx = np.argmin(np.abs(self.frequencies - frequency))
+            f_to_plot = self.frequencies[f_idx]
+            title = kwargs.pop("title", f"Frequency = {f_to_plot:.0f} MHz")
+            m = m[f_idx]
+        _ = hp.projview(m=m, title=title, **kwargs)
 
 
 class Alm(hp.Alm):
