@@ -27,6 +27,3 @@ class Beam(HealpixBase):
     def to_file(fname):
         raise NotImplementedError
 
-class Sky(HealpixBase):
-    def __init__(self, temperature, frequencies=None, stokes=["I"]):
-        pass
