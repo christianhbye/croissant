@@ -70,6 +70,24 @@ class HealpixBase:
         self.data = new_map
         self.nside = nside_out
 
+    @property
+    def alm(self, lmax=None):
+        if self.data is None:
+            raise ValueError("data is None, cannot compute alms.")
+        if lmax is None:
+            lmax = 3 * self.nside - 1
+        use_pix_weights = self.nside in PIX_WEIGHTS_NSIDE
+        use_ring_weights = not use_pix_weights
+        alm = hp.map2alm(
+            self.data,
+            lmax=lmax,
+            mmax=lmax,
+            use_ring_weights=use_ring_weights,
+            use_pixel_weights=use_pix_weights,
+        )
+        return alm
+
+
     def plot(self, frequency=None, **kwargs):
         m = kwargs.pop("m", self.data)
         if frequency is not None and self.frequencies is not None:
@@ -92,19 +110,7 @@ class Alm(hp.Alm):
 
     @classmethod
     def from_healpix(cls, hp_obj, lmax=None):
-        if hp_obj.data is None:
-            raise ValueError("data is None, cannot compute alms.")
-        if lmax is None:
-            lmax = 3 * hp_obj.nside - 1
-        use_pix_weights = hp_obj.nside in PIX_WEIGHTS_NSIDE
-        use_ring_weights = not use_pix_weights
-        alm = hp.map2alm(
-            hp_obj.data,
-            lmax=lmax,
-            mmax=lmax,
-            use_ring_weights=use_ring_weights,
-            use_pixel_weights=use_pix_weights,
-        )
+        alm = hp_obj.alm(lmax=lmax)
         return cls(alm=alm, lmax=lmax, frequencies=hp_obj.frequencies)
 
     @classmethod
