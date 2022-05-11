@@ -1,3 +1,4 @@
+import numpy as np
 from .healpix import HealpixBase
 
 
@@ -14,17 +15,17 @@ class Sky(HealpixBase):
         return cls
 
     def power_law_map(
-            self,
-            freq_out,
-            spectral_index=-2.5,
-            ref_map=None,
-            ref_freq=None,
-            return_map=False,
-        ):
+        self,
+        freq_out,
+        spectral_index=-2.5,
+        ref_map=None,
+        ref_freq=None,
+        return_map=False,
+    ):
         """
         Extrapolate or interpolate a map at specified frequencies to other
         frequencies using a power law of specified spectral index.
-        
+
         Parameters
         ----------
         freq_out : array-like
@@ -53,7 +54,7 @@ class Sky(HealpixBase):
 
         Raises
         ------
-        ValueError : 
+        ValueError :
             If the reference maps or frequencies are None, their
             shapes don't match.
             If multiple maps are provided but they don't follow the power law
@@ -67,17 +68,19 @@ class Sky(HealpixBase):
             ref_map = self.sky_map
             if ref_map is None:
                 raise ValueError("No reference map is provided.")
-        ref_freq = np.array(freq)
+        ref_freq = np.array(ref_freq)
         if len(ref_map.shape) == 1:
             ref_map.shape = (1, -1)
         if not ref_freq.shape[0] == ref_map.shape[0]:
             raise ValueError(
                 "Shape mismatch between reference frequencies and maps."
             )
+
         def _pow_law(f):
             t0 = ref_map[0].reshape(1, -1)
             f0 = ref_freq[0]
-            return t0 * (f/f0)**spectral_index
+            return t0 * (f / f0) ** spectral_index
+
         if not np.allclose(_pow_law(ref_freq), ref_map):
             raise ValueError(
                 "The provided maps don't satsify the specified power law."
@@ -91,4 +94,3 @@ class Sky(HealpixBase):
         else:
             self.sky_map = sky_map
             self.frequencies = self.freq_out
-
