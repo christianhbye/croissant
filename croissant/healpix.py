@@ -40,8 +40,9 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
         raise ValueError("No input frequencies are provided.")
     input_freqs = np.copy(input_freqs) * 1e6  # convert to Hz
     target_frequencies = np.array(target_frequencies) * 1e6  # Hz
-    if (np.max(target_frequencies) > np.max(input_freqs)
-            or np.min(target_frequencies) < np.min(input_freqs)):
+    if np.max(target_frequencies) > np.max(input_freqs) or np.min(
+        target_frequencies
+    ) < np.min(input_freqs):
         raise ValueError(
             "Some of the target frequencies are outside the range of the "
             "input frequencies."
@@ -54,15 +55,16 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
     fhw = kwargs.pop("filter_half_widths", [20e-9])
     ev_cut = kwargs.pop("eigenval_cutoff", [1e-12])
     B = dpss_operator(
-            target_frequencies,
-            filter_centers=fc,
-            filter_half_widths=fhw,
-            eigenval_cutoff=ev_cut,
-            **kwargs
-        )
+        target_frequencies,
+        filter_centers=fc,
+        filter_half_widths=fhw,
+        eigenval_cutoff=ev_cut,
+        **kwargs,
+    )
     A = B[np.isin(target_frequencies, input_frequencies)]
     interp = B @ np.linalg.inv(A.T @ A) @ A.T
     return interp
+
 
 class HealpixBase:
     def __init__(self, nside, data=None, nested_input=False, frequencies=None):
@@ -120,7 +122,7 @@ class HealpixBase:
         input_frequencies=None,
         input_map=None,
         return_map=False,
-        **kwargs
+        **kwargs,
     ):
         """
         Raises ValueError in case of shape mismatch (matmul)
@@ -143,7 +145,6 @@ class HealpixBase:
         else:
             self.data = interpolated
             self.frequencies = target_frequencies
-
 
     def plot(self, frequency=None, **kwargs):
         m = kwargs.pop("m", self.data)
@@ -219,7 +220,7 @@ class Alm(hp.Alm):
     def get_coeff(self, ell, emm, freq_idx=None):
         ix = self.getidx(ell, emm)
         return self.alm[freq_idx, ix]
-    
+
     def hp_map(self, nside=None):
         if nside is None:
             nside = (self.lmax + 1) // 3
@@ -232,7 +233,7 @@ class Alm(hp.Alm):
         input_frequencies=None,
         input_alm=None,
         return_alm=False,
-        **kwargs
+        **kwargs,
     ):
         """
         Raises ValueError in case of shape mismatch (matmul)
@@ -259,7 +260,7 @@ class Alm(hp.Alm):
     def rotate_z(self, phi):
         """
         Rotate the alms around the z-axis by phi (measured counterclockwise).
-        
+
         Parameters
         ----------
         phi : float
@@ -267,6 +268,6 @@ class Alm(hp.Alm):
 
         """
         emms = self.getlm()[1]
-        phase = np.exp(1j*emms*phi)
+        phase = np.exp(1j * emms * phi)
         phase.shape = (1, -1)  # frequency axis
         self.alm *= phase
