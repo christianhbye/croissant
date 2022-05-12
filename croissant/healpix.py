@@ -47,9 +47,8 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
             "Some of the target frequencies are outside the range of the "
             "input frequencies."
         )
-    if not input_freqs in target_frequencies:
-        target_frequencies = np.append(target_frequencies, input_freqs)
-        target_frequencies.sort()
+    target_frequencies = np.unique(np.append(target_frequencies, input_freqs))
+    target_frequencies.sort()
 
     fc = kwargs.pop("filter_centers", [0])
     fhw = kwargs.pop("filter_half_widths", [20e-9])
@@ -61,7 +60,7 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
         eigenval_cutoff=ev_cut,
         **kwargs,
     )
-    A = B[np.isin(target_frequencies, input_frequencies)]
+    A = B[np.isin(target_frequencies, input_freqs)]
     interp = B @ np.linalg.inv(A.T @ A) @ A.T
     return interp
 
