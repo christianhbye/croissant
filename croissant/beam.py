@@ -1,6 +1,7 @@
 from .healpix import HealpixBase, Alm
 
-class Beam(HealpixBase):
+
+class Beam(Alm):
     def __init__(self, power, frequencies=None, from_grid=False, **kwargs):
         if from_grid:
             req_kwargs = ["theta", "phi"]
@@ -9,7 +10,7 @@ class Beam(HealpixBase):
 
         if not all([k in kwargs for k in req_kwargs]):
             raise ValueError(f"Not all kwargs in {req_kwargs} are provided.")
-        
+
         if from_grid:
             theta = kwargs.pop["theta"]
             phi = kwargs.pop["phi"]
@@ -17,7 +18,7 @@ class Beam(HealpixBase):
         else:
             nside = kwargs.pop["nside"]
             super().__init__(nside, data=power, frequencies=frequencies)
-        
+
         self.power = self.data
 
     @classmethod
@@ -26,4 +27,3 @@ class Beam(HealpixBase):
 
     def to_file(fname):
         raise NotImplementedError
-
