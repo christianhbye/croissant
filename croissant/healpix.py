@@ -89,15 +89,8 @@ class HealpixBase:
 
     @classmethod
     def from_alm(cls, alm_obj, nside=None):
-        lmax = alm_obj.lmax
-        if nside is None:
-            nside = (lmax + 1) // 3
-        hp_map = hp.alm2map(alm_obj.alm, nside, lmax=lmax, mmax=lmax)
+        hp_map = alm_obj.hp_map(nside=nside)
         return cls(nside, data=hp_map, frequencies=alm_obj.frequencies)
-
-    @classmethod
-    def from_grid(cls):
-        raise NotImplementedError
 
     def ud_grade(self, nside_out, **kwargs):
         new_map = hp.ud_grade(self.data, nside_out, **kwargs)
@@ -164,13 +157,32 @@ class HealpixBase:
 
 class Alm(hp.Alm):
     def __init__(self, alm=None, lmax=None, frequencies=None):
-        if alm is not None and frequencies is not None:
-            if not np.shape(alm)[0] == len(frequencies):
-                raise ValueError("Shapes don't match: alms and frequencies.")
 
-        self.alm = alm
         self.lmax = lmax
         self.frequencies = frequencies
+        expected_shape = self.alm_shape
+
+        if alm is None:
+            self.alm = np.zeros(expected_shape)
+        elif not np.shape(alm) == expected_shape:
+            raise ValueError(
+                f"Expected shape {expected_shape} for alm, got shape"
+                f"{np.shape(alm)}."
+            )
+        else:
+            self.alm = alm
+
+    @property
+    def alm_shape(self):
+        if self.lmax is None:
+            return None
+
+        if self.frequencies is None:
+            Nfreq = 1
+        else:
+            Nfreq = len(self.frequencies)
+        shape = (Nfreq, self.size)
+        return shape
 
     @classmethod
     def from_healpix(cls, hp_obj, lmax=None):
@@ -194,7 +206,26 @@ class Alm(hp.Alm):
     @property
     def getlmax(self):
         return self.lmax
+
+    def set_coeff(self, value, ell, emm, freq_idx=None):
+        if freq_idx is None:
+            if self.alm_shape[0] > 1:
+                raise ValueError("No frequency index given.")
+            else:
+                freq_idx = 0
+        ix = self.getidx(ell, emm)
+        self.alm[freq_idx, ix] = value
+
+    def get_coeff(self, ell, emm, freq_idx=None):
+        ix = self.getidx(ell, emm)
+        return self.alm[freq_idx, ix]
     
+    def hp_map(self, nside=None):
+        if nside is None:
+            nside = (self.lmax + 1) // 3
+        hp_map = hp.alm2map(self.alm, nside, lmax=self.lmax, mmax=self.lmax)
+        return hp_map
+
     def interp_frequencies(
         self,
         target_frequencies,
@@ -224,3 +255,18 @@ class Alm(hp.Alm):
         else:
             self.alm = interpolated
             self.frequencies = target_frequencies
+
+    def rotate_z(self, phi):
+        """
+        Rotate the alms around the z-axis by phi (measured counterclockwise).
+        
+        Parameters
+        ----------
+        phi : float
+            The angle to rotate the azimuth by in radians.
+
+        """
+        emms = self.getlm()[1]
+        phase = np.exp(1j*emms*phi)
+        phase.shape = (1, -1)  # frequency axis
+        self.alm *= phase
