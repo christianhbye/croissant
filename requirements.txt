@@ -93,6 +93,7 @@ tornado==6.1
 tox==3.25.0
 traitlets==5.1.1
 typing_extensions==4.2.0
+uvtools==0.1.0
 virtualenv==20.14.1
 wcwidth==0.2.5
 webencodings==0.5.1
