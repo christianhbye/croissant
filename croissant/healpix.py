@@ -1,5 +1,6 @@
 import healpy as hp
 import numpy as np
+from pyshtools import SHExpandDH
 from uvtools.dspec import dpss_operator
 
 
@@ -13,14 +14,12 @@ def check_shapes(npix, data, frequencies):
         return
 
     if frequencies is None:
-        expected_shape = (npix,)
+        allowed_shapes = [(npix,), (1, npix)]
     else:
         nfreq = len(frequencies)
-        expected_shape = (nfreq, npix)
+        allowed_shapes = [(nfreq, npix)]
 
-    check = np.shape(data) == expected_shape
-
-    if not check:
+    if np.shape(data) not in allowed_shapes:
         raise ValueError(
             f"Expected data shape is {expected_shape}, but data has"
             f"shape {np.shape(data)}."
@@ -65,7 +64,7 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
     return interp
 
 
-class HealpixBase:
+class HealpixMap:
     def __init__(self, nside, data=None, nested_input=False, frequencies=None):
         hp.check_nside(nside, nest=nested_input)
         self.nside = nside
@@ -190,8 +189,32 @@ class Alm(hp.Alm):
         return cls(alm=alm, lmax=lmax, frequencies=hp_obj.frequencies)
 
     @classmethod
-    def from_grid(cls):
+    def from_grid(cls, data, frequencies=None, lmax=None):
+        if frequencies is not None:
+            nfreqs = len(frequencies)
+            shape_ok = (np.shape(data)[0] == nfreqs 
+                       and len(np.shape(data)) == 3)
+        elif len(np.shape(data)) == 2:
+            shape_ok = True
+            data = np.expand_dims(data, axis=0)
+        else:
+            shape_ok = len(np.shape(data)) == 3 and np.shape(data)[0) == 1
+        if not shape_ok:
+            raise ValueError(f"Unexpected shape for data: {np.shape(data)}.")
+
+        Nth = np.shape(data)[1]
+        Nph = np.shape(data)[2]
+        assert Nth % 2 == 0, "The number of latitudes must be even."
+        assert Nph in [Nth, 2*Nth], "Grid must be equally sampled or spaced."
+        sampling = Nph // Nth
+        if lmax is None:
+            lmax = Nth//2 - 1
+        
+        cilm = SHExpandDH(
+            data, norm=1, sampling=sampling, csphase=1, lmax_calc=lmax
+        )
         raise NotImplementedError
+
 
     def getlm(self, i=None):
         return super().getlm(self.lmax, i=i)
