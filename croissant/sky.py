@@ -1,19 +1,58 @@
+from astropy.io import fits
 import numpy as np
+from pygdsm import GlobalSkyModel2016 as GSM
 from .healpix import HealpixBase
 
 
+def npix2nside(npix):
+    err = f"Invalid value of npix: {npix}."
+    ns_sq = npix/12
+    if not np.isclose(ns_sq, int(ns_sq)):
+        raise ValueError(err)
+    else:
+        ns_sq = int(ns_sq)
+    nside = np.sqrt(ns_sq)
+    if not np.isclose(nside, int(nside)):
+        raise ValueError(err)
+    else:
+        nside = int(nside)
+        return nside
+
+def check_sky_shapes(sky_map, frequencies)
+    sh = np.shape(sky_map)
+    sh_err = f"Unexpected shape of sky map: {sh}."
+    npix = sh[-1]
+    if len(sh) > 2:
+        raise ValueError(sh_err)
+    elif frequencies is None:
+        allowed_shapes = [(1, npix), (npix,)]
+    else:
+        nfreqs = len(frequencies)
+        allowed_shapes = [(nfreqs, npix)]
+    if not sh in allowed_shapes:
+        raise ValueError(sh_err)
+
 class Sky(HealpixBase):
-    def __init__(self, sky_map, frequencies=None, stokes=["I"]):
-        super().__init__()
+    def __init__(self, sky_map, frequencies=None, nested_input=False):
+        check_sky_shapes(sky_map, frequencies)
+        super().__init__(
+            self.nside,
+            data=sky_map,
+            nested_input=nested_input,
+            frequencies=frequencies,
+        )
+
+    @property
+    def nside(self):
+        npix = np.shape(self.sky_map)[-1]
+        return npix2nside(npix)
 
     @classmethod
-    def gsm(cls):
-        return cls()
-
-    @classmethod
-    def ulsa(cls):
-        return cls
-
+    def gsm(cls, frequencies, res="hi"):
+        gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution=res)
+        sky_map = gsm16.generate(frequencies)
+        return cls(sky_map, frequencies=frequencies, nested_input=False)
+    
     def power_law_map(
         self,
         freq_out,
