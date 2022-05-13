@@ -1,25 +1,24 @@
-from .healpix import HealpixBase, Alm
+from .healpix import Alm
 
 
 class Beam(Alm):
-    def __init__(self, power, frequencies=None, from_grid=False, **kwargs):
+    def __init__(self, data, frequencies=None, from_grid=False, **kwargs):
         if from_grid:
             req_kwargs = ["theta", "phi"]
         else:
-            req_kwargs = ["nside"]
+            req_kwargs = []
 
         if not all([k in kwargs for k in req_kwargs]):
             raise ValueError(f"Not all kwargs in {req_kwargs} are provided.")
 
         if from_grid:
-            theta = kwargs.pop["theta"]
-            phi = kwargs.pop["phi"]
-            super().from_grid()
+            theta = kwargs["theta"]
+            phi = kwargs["phi"]
+            super().from_grid(data, theta, phi, frequencies=frequencies)
         else:
-            nside = kwargs.pop["nside"]
-            super().__init__(nside, data=power, frequencies=frequencies)
+            lmax = kwargs.pop("lmax", None)
+            super().__init__(alm=data, lmax=lmax, frequencies=frequencies)
 
-        self.power = self.data
 
     @classmethod
     def from_file(path):
