@@ -1,6 +1,6 @@
 import numpy as np
 from pygdsm import GlobalSkyModel2016 as GSM
-from .healpix import HealpixBase
+from .healpix import HealpixMap
 
 
 def npix2nside(npix):
@@ -33,25 +33,31 @@ def check_sky_shapes(sky_map, frequencies):
         raise ValueError(sh_err)
 
 
-class Sky(HealpixBase):
+class Sky(HealpixMap):
     def __init__(self, sky_map, frequencies=None, nested_input=False):
         check_sky_shapes(sky_map, frequencies)
         super().__init__(
-            self.nside,
+            self._nside(data=sky_map),
             data=sky_map,
             nested_input=nested_input,
             frequencies=frequencies,
         )
 
-    @property
-    def nside(self):
-        npix = np.shape(self.sky_map)[-1]
+    def _nside(self, data=None):
+        if data is None:
+            data = self.data
+        npix = np.shape(data)[-1]
         return npix2nside(npix)
 
     @classmethod
     def gsm(cls, frequencies, res="hi"):
+        frequencies = np.array(frequencies)
+        if frequencies.ndim == 0:
+            frequencies = np.expand_dims(frequencies, axis=0)
         gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution=res)
         sky_map = gsm16.generate(frequencies)
+        if sky_map.ndim == 1:
+            sky_map.shape = (1, -1)
         return cls(sky_map, frequencies=frequencies, nested_input=False)
 
     def power_law_map(
@@ -74,7 +80,7 @@ class Sky(HealpixBase):
             The spectral index of the power law. Defaults to -2.5
             (theoretical synchrotron power law).
         ref_map : np.ndarray (optional)
-            The reference map to extrapolate. If None, use self.sky_map.
+            The reference map to extrapolate. If None, use self.data.
         ref_freq : array-like (optional)
             The reference frequency that the map is given at. If None, use
             self.frequencies.
@@ -105,7 +111,7 @@ class Sky(HealpixBase):
             if ref_freq is None:
                 raise ValueError("No reference frequency is provided.")
         if ref_map is None:
-            ref_map = self.sky_map
+            ref_map = self.data
             if ref_map is None:
                 raise ValueError("No reference map is provided.")
         ref_freq = np.array(ref_freq)
@@ -119,6 +125,7 @@ class Sky(HealpixBase):
         def _pow_law(f):
             t0 = ref_map[0].reshape(1, -1)
             f0 = ref_freq[0]
+            f = np.array(f).reshape(-1, 1)
             return t0 * (f / f0) ** spectral_index
 
         if not np.allclose(_pow_law(ref_freq), ref_map):
@@ -132,5 +139,5 @@ class Sky(HealpixBase):
             return sky_map, freq_out
 
         else:
-            self.sky_map = sky_map
-            self.frequencies = self.freq_out
+            self.data = sky_map
+            self.frequencies = freq_out

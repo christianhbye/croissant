@@ -24,7 +24,7 @@ class Simulator:
         sky_alm = self.sky.alm * self.sky.rotate_z_time(time)
         prod = beam_alm * sky_alm
         conv = prod.sum(axis=1)
-        return conv
+        return conv.real
 
     def run(self, parallel=False):
         if parallel:

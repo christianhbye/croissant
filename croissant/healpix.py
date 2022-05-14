@@ -114,7 +114,7 @@ class HealpixMap:
             "lmax": lmax,
             "mmax": lmax,
             "use_weights": use_ring_weights,
-            "use_pixel_weights": use_pix_weights
+            "use_pixel_weights": use_pix_weights,
         }
         if self.frequencies is None:
             alm = hp.map2alm(self.data, **kwargs)
@@ -274,10 +274,10 @@ class Alm(hp.Alm):
                 self.alm.astype("complex"),
                 nside,
                 lmax=self.lmax,
-                mmax=self.lmax
+                mmax=self.lmax,
             )
         else:
-            hp_map = np.empty((len(self.frequencies), nside2npix(nside))) 
+            hp_map = np.empty((len(self.frequencies), nside2npix(nside)))
             for i, freq in enumerate(self.frequencies):
                 map_i = hp.alm2map(
                     self.alm[i].astype("complex"),
