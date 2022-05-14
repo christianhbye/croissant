@@ -2,7 +2,7 @@ from .healpix import Alm
 
 
 class Beam(Alm):
-    def __init__(self, data, frequencies=None, from_grid=False, **kwargs):
+    def __init__(self, data=None, frequencies=None, from_grid=False, **kwargs):
         if from_grid:
             req_kwargs = ["theta", "phi"]
         else:
@@ -14,6 +14,8 @@ class Beam(Alm):
         if from_grid:
             theta = kwargs["theta"]
             phi = kwargs["phi"]
+            if data is None:
+                raise ValueError("No data is provided.")
             super().from_grid(data, theta, phi, frequencies=frequencies)
         else:
             lmax = kwargs.pop("lmax", None)
