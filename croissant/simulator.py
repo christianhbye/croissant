@@ -5,6 +5,9 @@ from .healpix import Alm
 
 class Simulator:
     def __init__(self, beam, sky, times):
+        """
+        Simulator class. Prepares and runs simulations.
+        """
         assert np.allclose(
             beam.frequencies, sky.frequencies
         ), "Frequencies don't match."
@@ -20,6 +23,9 @@ class Simulator:
         self.waterfall = np.empty((ntimes, nfreqs))
 
     def _run_onetime(self, time):
+        """
+        Compute the convolution for one specfic time.
+        """
         beam_alm = self.beam.alm
         sky_alm = self.sky.alm * self.sky.rotate_z_time(time)
         prod = beam_alm * sky_alm
@@ -27,6 +33,9 @@ class Simulator:
         return conv.real
 
     def run(self, parallel=False):
+        """
+        Compute the convolution for a range of times.
+        """
         if parallel:
             raise NotImplementedError
 
@@ -35,6 +44,9 @@ class Simulator:
             self.waterfall[i, :] = conv
 
     def plot(self, **kwargs):
+        """
+        Plot the result of the simulation.
+        """
         plt.figure()
         _extent = [
             self.frequencies.min(),

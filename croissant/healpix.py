@@ -5,11 +5,17 @@ from uvtools.dspec import dpss_operator
 
 
 def nside2npix(nside):
+    """
+    Compute the numpber of pixels in a healpix map given an nside.
+    """
     npix = 12 * nside**2
     return npix
 
 
 def check_shapes(npix, data, frequencies):
+    """
+    Check that all data shapes match in the healpix object.
+    """
     if data is None:
         return
     data = np.array(data)
@@ -66,6 +72,12 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
 
 class HealpixMap:
     def __init__(self, nside, data=None, nested_input=False, frequencies=None):
+        """
+        The base class for healpix maps. This is a wrapper that does a lot of
+        healpy operations in parallel for a list of frequencies.
+        It ensures that all maps have the right shapes and provdes an
+        interpolation method.
+        """
         hp.pixelfunc.check_nside(nside, nest=nested_input)
         self.nside = nside
         check_shapes(self.npix, data, frequencies)
@@ -91,19 +103,31 @@ class HealpixMap:
 
     @property
     def npix(self):
+        """
+        Get the number of pixels of the map.
+        """
         return nside2npix(self.nside)
 
     @classmethod
     def from_alm(cls, alm_obj, nside=None):
+        """
+        Construct a healpy map class from an Alm object (defined below).
+        """
         hp_map = alm_obj.hp_map(nside=nside)
         return cls(nside, data=hp_map, frequencies=alm_obj.frequencies)
 
     def ud_grade(self, nside_out, **kwargs):
+        """
+        Change the resolution of the healpy map to nside_out.
+        """
         new_map = hp.ud_grade(self.data, nside_out, **kwargs)
         self.data = new_map
         self.nside = nside_out
 
     def alm(self, lmax=None):
+        """
+        Compute the spherical harmonics coefficents of the map.
+        """
         if self.data is None:
             raise ValueError("data is None, cannot compute alms.")
         if lmax is None:
@@ -136,6 +160,8 @@ class HealpixMap:
         **kwargs,
     ):
         """
+        A linear interpolator in frequency space usng DPSS.
+
         Raises ValueError in case of shape mismatch (matmul)
         """
         if input_map is None:
@@ -158,6 +184,10 @@ class HealpixMap:
             self.frequencies = target_frequencies
 
     def plot(self, frequency=None, **kwargs):
+        """
+        Simple plotter of healpix maps. Can plot in several projections,
+        including ``mollweide'', ``cartesian'' and ``polar''.
+        """
         if self.data.ndim == 2 and self.frequencies is None:
             _m = self.data[0]
         else:
@@ -177,7 +207,9 @@ class HealpixMap:
 
 class Alm(hp.Alm):
     def __init__(self, alm=None, lmax=None, frequencies=None):
-
+        """
+        Base class for spherical harmonics coefficients.
+        """
         self.lmax = lmax
         if frequencies is None:
             self.frequencies = None
@@ -197,6 +229,9 @@ class Alm(hp.Alm):
 
     @property
     def alm_shape(self):
+        """
+        Get the expected shape of the spherical harmonics.
+        """
         if self.lmax is None:
             return None
 
@@ -209,11 +244,17 @@ class Alm(hp.Alm):
 
     @classmethod
     def from_healpix(cls, hp_obj, lmax=None):
+        """
+        Construct an Alm from a HealpixMap object.
+        """
         alm = hp_obj.alm(lmax=lmax)
         return cls(alm=alm, lmax=lmax, frequencies=hp_obj.frequencies)
 
     @classmethod
     def from_grid(cls, data, frequencies=None, lmax=None):
+        """
+        Construct an Alm from a grid in theta and phi.
+        """
         data = np.array(data)
         if frequencies is not None:
             nfreqs = len(frequencies)
@@ -240,20 +281,36 @@ class Alm(hp.Alm):
         raise NotImplementedError
 
     def getlm(self, i=None):
+        """
+        Get the ell and emm corresponding to the numpy index of the alm
+        array.
+        """
         return super().getlm(self.lmax, i=i)
 
     def getidx(self, ell, emm):
+        """
+        Get the index of the alm array for a given ell and emm.
+        """
         return super().getidx(self.lmax, ell, emm)
 
     @property
     def size(self):
+        """
+        Get the size of the alm array.
+        """
         return super().getsize(self.lmax, mmax=self.lmax)
 
     @property
     def getlmax(self):
+        """
+        Get the maxmium ell of the Alm object.
+        """
         return self.lmax
 
     def set_coeff(self, value, ell, emm, freq_idx=None):
+        """
+        Set the value of an a_lm given the ell and emm.
+        """
         if freq_idx is None:
             if self.alm_shape[0] > 1:
                 raise ValueError("No frequency index given.")
@@ -263,10 +320,16 @@ class Alm(hp.Alm):
         self.alm[freq_idx, ix] = value
 
     def get_coeff(self, ell, emm, freq_idx=None):
+        """
+        Get the value of an a_lm given the ell and emm.
+        """
         ix = self.getidx(ell, emm)
         return self.alm[freq_idx, ix]
 
     def hp_map(self, nside=None):
+        """
+        Construct a healpy map from the Alm.
+        """
         if nside is None:
             nside = (self.lmax + 1) // 3
         if self.frequencies is None:
@@ -297,6 +360,8 @@ class Alm(hp.Alm):
         **kwargs,
     ):
         """
+        Interpolate the alm's in frequency using DPSS.
+
         Raises ValueError in case of shape mismatch (matmul)
         """
         if input_alm is None:

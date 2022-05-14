@@ -4,6 +4,9 @@ from .healpix import HealpixMap
 
 
 def npix2nside(npix):
+    """
+    Compute the nside of a healpix map given the number of pixels in the map.
+    """
     err = f"Invalid value of npix: {npix}."
     ns_sq = npix / 12
     if not np.isclose(ns_sq, int(ns_sq)):
@@ -19,6 +22,9 @@ def npix2nside(npix):
 
 
 def check_sky_shapes(sky_map, frequencies):
+    """
+    Check that all shapes match for a sky class.
+    """
     sh = np.shape(sky_map)
     sh_err = f"Unexpected shape of sky map: {sh}."
     npix = sh[-1]
@@ -35,6 +41,9 @@ def check_sky_shapes(sky_map, frequencies):
 
 class Sky(HealpixMap):
     def __init__(self, sky_map, frequencies=None, nested_input=False):
+        """
+        Class that holds Sky objects. Thin wrapper for HealpixMap objects.
+        """
         check_sky_shapes(sky_map, frequencies)
         super().__init__(
             self._nside(data=sky_map),
@@ -44,6 +53,9 @@ class Sky(HealpixMap):
         )
 
     def _nside(self, data=None):
+        """
+        Compute the nside of a sky map.
+        """
         if data is None:
             data = self.data
         npix = np.shape(data)[-1]
@@ -51,6 +63,9 @@ class Sky(HealpixMap):
 
     @classmethod
     def gsm(cls, frequencies, res="hi"):
+        """
+        Construct a sky object with pygdsm
+        """
         frequencies = np.array(frequencies)
         if frequencies.ndim == 0:
             frequencies = np.expand_dims(frequencies, axis=0)

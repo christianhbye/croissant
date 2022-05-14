@@ -3,6 +3,9 @@ from .healpix import Alm
 
 class Beam(Alm):
     def __init__(self, data=None, frequencies=None, from_grid=False, **kwargs):
+        """
+        Class that holds antenna beam objects. Thin wrapper over Alm.
+        """
         if from_grid:
             req_kwargs = ["theta", "phi"]
         else:
