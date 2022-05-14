@@ -1,6 +1,6 @@
 import healpy as hp
 import numpy as np
-from pyshtools import SHExpandDH
+import pyshtools as pysh
 from uvtools.dspec import dpss_operator
 
 
@@ -66,7 +66,7 @@ def dpss_interpolator(target_frequencies, input_freqs, **kwargs):
 
 class HealpixMap:
     def __init__(self, nside, data=None, nested_input=False, frequencies=None):
-        hp.check_nside(nside, nest=nested_input)
+        hp.pixelfunc.check_nside(nside, nest=nested_input)
         self.nside = nside
         check_shapes(self.npix, data, frequencies)
 
@@ -103,7 +103,6 @@ class HealpixMap:
         self.data = new_map
         self.nside = nside_out
 
-    @property
     def alm(self, lmax=None):
         if self.data is None:
             raise ValueError("data is None, cannot compute alms.")
@@ -111,13 +110,21 @@ class HealpixMap:
             lmax = 3 * self.nside - 1
         use_pix_weights = self.nside in PIX_WEIGHTS_NSIDE
         use_ring_weights = not use_pix_weights
-        alm = hp.map2alm(
-            self.data,
-            lmax=lmax,
-            mmax=lmax,
-            use_ring_weights=use_ring_weights,
-            use_pixel_weights=use_pix_weights,
-        )
+        kwargs = {
+            "lmax": lmax,
+            "mmax": lmax,
+            "use_weights": use_ring_weights,
+            "use_pixel_weights": use_pix_weights
+        }
+        if self.frequencies is None:
+            alm = hp.map2alm(self.data, **kwargs)
+        else:
+            nfreqs = len(self.frequencies)
+            alm = []
+            for i in range(nfreqs):
+                i_alm = hp.map2alm(self.data[i], **kwargs)
+                alm.append(i_alm)
+            alm = np.array(alm)
         return alm
 
     def interp_frequencies(
@@ -151,12 +158,20 @@ class HealpixMap:
             self.frequencies = target_frequencies
 
     def plot(self, frequency=None, **kwargs):
-        m = kwargs.pop("m", self.data)
-        if frequency is not None and self.frequencies is not None:
-            f_idx = np.argmin(np.abs(self.frequencies - frequency))
-            f_to_plot = self.frequencies[f_idx]
-            title = kwargs.pop("title", f"Frequency = {f_to_plot:.0f} MHz")
-            m = m[f_idx]
+        if self.data.ndim == 2 and self.frequencies is None:
+            _m = self.data[0]
+        else:
+            _m = self.data
+        m = kwargs.pop("m", _m)
+        title = None
+        if self.frequencies is not None:
+            if frequency is None:
+                raise ValueError("Must specify which frequency to plot.")
+            else:
+                f_idx = np.argmin(np.abs(self.frequencies - frequency))
+                f_to_plot = self.frequencies[f_idx]
+                title = kwargs.pop("title", f"Frequency = {f_to_plot:.0f} MHz")
+                m = self.data[f_idx]
         _ = hp.projview(m=m, title=title, **kwargs)
 
 
@@ -219,7 +234,7 @@ class Alm(hp.Alm):
         if lmax is None:
             lmax = Nth // 2 - 1
 
-        cilm = SHExpandDH(
+        cilm = pysh.SHExpandDH(
             data, norm=1, sampling=sampling, csphase=1, lmax_calc=lmax
         )
         raise NotImplementedError
@@ -254,7 +269,23 @@ class Alm(hp.Alm):
     def hp_map(self, nside=None):
         if nside is None:
             nside = (self.lmax + 1) // 3
-        hp_map = hp.alm2map(self.alm, nside, lmax=self.lmax, mmax=self.lmax)
+        if self.frequencies is None:
+            hp_map = hp.alm2map(
+                self.alm.astype("complex"),
+                nside,
+                lmax=self.lmax,
+                mmax=self.lmax
+            )
+        else:
+            hp_map = np.empty((len(self.frequencies), nside2npix(nside))) 
+            for i, freq in enumerate(self.frequencies):
+                map_i = hp.alm2map(
+                    self.alm[i].astype("complex"),
+                    nside,
+                    lmax=self.lmax,
+                    mmax=self.lmax,
+                )
+                hp_map[i] = map_i
         return hp_map
 
     def interp_frequencies(
@@ -311,5 +342,5 @@ class Alm(hp.Alm):
             raise NotImplementedError("Moon will be added shortly.")
         sidereal_day = 86164.0905
         dphi = 2 * np.pi * delta_t / sidereal_day
-        phase = self.rotate_z_phi_coeffs(dphi)
+        phase = self.rotate_z_phi(dphi)
         return phase
