@@ -12,6 +12,7 @@ def nside2npix(nside):
 def check_shapes(npix, data, frequencies):
     if data is None:
         return
+    data = np.array(data)
 
     if frequencies is None:
         allowed_shapes = [(npix,), (1, npix)]
@@ -21,8 +22,7 @@ def check_shapes(npix, data, frequencies):
 
     if np.shape(data) not in allowed_shapes:
         raise ValueError(
-            f"Expected data shape is {expected_shape}, but data has"
-            f"shape {np.shape(data)}."
+            f"The data shape is {data.shape}, must be in {allowed_shapes}."
         )
 
 
@@ -199,31 +199,30 @@ class Alm(hp.Alm):
 
     @classmethod
     def from_grid(cls, data, frequencies=None, lmax=None):
+        data = np.array(data)
         if frequencies is not None:
             nfreqs = len(frequencies)
-            shape_ok = (np.shape(data)[0] == nfreqs 
-                       and len(np.shape(data)) == 3)
+            shape_ok = data.shape[0] == nfreqs and data.ndim == 3
         elif len(np.shape(data)) == 2:
             shape_ok = True
             data = np.expand_dims(data, axis=0)
         else:
-            shape_ok = len(np.shape(data)) == 3 and np.shape(data)[0) == 1
+            shape_ok = data.ndim == 3 and data.shape[0] == 1
         if not shape_ok:
             raise ValueError(f"Unexpected shape for data: {np.shape(data)}.")
 
         Nth = np.shape(data)[1]
         Nph = np.shape(data)[2]
         assert Nth % 2 == 0, "The number of latitudes must be even."
-        assert Nph in [Nth, 2*Nth], "Grid must be equally sampled or spaced."
+        assert Nph in [Nth, 2 * Nth], "Grid must be equally sampled or spaced."
         sampling = Nph // Nth
         if lmax is None:
-            lmax = Nth//2 - 1
-        
+            lmax = Nth // 2 - 1
+
         cilm = SHExpandDH(
             data, norm=1, sampling=sampling, csphase=1, lmax_calc=lmax
         )
         raise NotImplementedError
-
 
     def getlm(self, i=None):
         return super().getlm(self.lmax, i=i)
@@ -311,6 +310,6 @@ class Alm(hp.Alm):
         if not world == "earth":
             raise NotImplementedError("Moon will be added shortly.")
         sidereal_day = 86164.0905
-        dphi = 2*np.pi * delta_t / sidereal_day
+        dphi = 2 * np.pi * delta_t / sidereal_day
         phase = self.rotate_z_phi_coeffs(dphi)
         return phase

@@ -2,10 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 from .healpix import Alm
 
+
 class Simulator:
     def __init__(self, beam, sky, times):
-        assert np.allclose(beam.frequencies, sky.frequencies),\
-                "Frequencies don't match."
+        assert np.allclose(
+            beam.frequencies, sky.frequencies
+        ), "Frequencies don't match."
         self.frequencies = beam.frequencies
         times = np.array(times)
         if times.ndim == 0:
@@ -15,7 +17,7 @@ class Simulator:
         self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
         ntimes = len(self.times)
         nfreqs = len(self.frequencies)
-        waterfall = np.empty((ntimes, nfreqs))
+        self.waterfall = np.empty((ntimes, nfreqs))
 
     def _run_onetime(self, time):
         beam_alm = self.beam.alm
@@ -23,7 +25,7 @@ class Simulator:
         prod = beam_alm * sky_alm
         conv = prod.sum(axis=1)
         return conv
-        
+
     def run(self, parallel=False):
         if parallel:
             raise NotImplementedError
@@ -38,7 +40,7 @@ class Simulator:
             self.frequencies.min(),
             self.frequencies.max(),
             self.times.max(),
-            self.times.min()
+            self.times.min(),
         ]
         extent = kwargs.pop("extent", _extent)
         interpolation = kwargs.pop("interpolation", "none")

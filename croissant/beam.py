@@ -21,7 +21,6 @@ class Beam(Alm):
             lmax = kwargs.pop("lmax", None)
             super().__init__(alm=data, lmax=lmax, frequencies=frequencies)
 
-
     @classmethod
     def from_file(path):
         raise NotImplementedError
