@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from multiprocessing import Pool
 import numpy as np
 from .healpix import Alm
 
@@ -22,7 +23,7 @@ class Simulator:
         nfreqs = len(self.frequencies)
         self.waterfall = np.empty((ntimes, nfreqs))
 
-    def _run_onetime(self, time):
+    def _run_onetime(self, time, index=None):
         """
         Compute the convolution for one specfic time.
         """
@@ -30,18 +31,31 @@ class Simulator:
         sky_alm = self.sky.alm * self.sky.rotate_z_time(time)
         prod = beam_alm * sky_alm
         conv = prod.sum(axis=1)
-        return conv.real
+        return index, conv.real
 
-    def run(self, parallel=False):
+    def run(self, parallel=False, **kwargs):
         """
         Compute the convolution for a range of times.
         """
         if parallel:
-            raise NotImplementedError
+            ncpu = kwargs.pop("ncpu", None)
+            
+            def get_res(result):
+                i, conv = result
+                self.waterfall[i] = conv
+
+            with Pool(processes=ncpu) as pool:
+                for i, t in enumerate(self.times):
+                    pool.apply_async(
+                        self._run_onetime,
+                        args=t,
+                        kwds={"index": i},
+                        callback=get_res
+                    )
 
         for i, t in enumerate(self.times):
-            conv = self._run_onetime(t)
-            self.waterfall[i, :] = conv
+            conv = self._run_onetime(t)[1]
+            self.waterfall[i] = conv
 
     def plot(self, **kwargs):
         """
