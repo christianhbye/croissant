@@ -14,7 +14,7 @@ Finally, CROISSANT is parallelizable as the time domain of the simulation easily
 
 
 ## Installation
-pip install croissant-sim
+`pip install croissant-sim` (see https://pypi.org/project/croissant-sim/0.1.0/)
 
 ## Demo
 YouTube: https://youtu.be/P1wzTp5QlY0
