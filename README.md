@@ -6,7 +6,7 @@ CROISSANT uses spherical harmonics to decompose the sky and antenna beam to a se
 
 In frequency domain, CROISSANT uses Discrete Prolate Spheroidal Sequences as a rapid linear interpolation scheme. Being linear, this interpolation can be done directly on the spherical harmonics coefficients, avoiding redoing the most expensive part of the computation.
 
-Moreover, the time evolution of the simulation is very natural in this representation. In the antenna reference frame, the sky rotates overhead with time. To account for this rotation, it is enough to rotate the spherical harmonics coefficients. In the right choice of coordinates (that is, one where the z-axis si aligned with the rotation axis of the earth), this rotation is simply achieved by multiplying the spherical coefficient by a phase.
+Moreover, the time evolution of the simulation is very natural in this representation. In the antenna reference frame, the sky rotates overhead with time. To account for this rotation, it is enough to rotate the spherical harmonics coefficients. In the right choice of coordinates (that is, one where the z-axis is aligned with the rotation axis of the earth), this rotation is simply achieved by multiplying the spherical coefficient by a phase.
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
