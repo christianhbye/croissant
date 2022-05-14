@@ -72,16 +72,22 @@ class HealpixMap:
 
         if data is None:
             nested_input = False
+        else:
+            data = np.array(data)
+
+        if frequencies is None:
+            self.frequencies = None
+        else:
+            self.frequencies = np.array(frequencies)
 
         if nested_input:
             ix = hp.nest2ring(self.nside, np.arange(self.npix))
-            if frequencies is None:
+            if self.frequencies is None:
                 data = data[ix]
             else:
                 data = data[:, ix]
 
         self.data = data
-        self.frequencies = frequencies
 
     @property
     def npix(self):
@@ -158,7 +164,10 @@ class Alm(hp.Alm):
     def __init__(self, alm=None, lmax=None, frequencies=None):
 
         self.lmax = lmax
-        self.frequencies = frequencies
+        if frequencies is None:
+            self.frequencies = None
+        else:
+            self.frequencies = np.array(frequencies)
         expected_shape = self.alm_shape
 
         if alm is None:
@@ -169,7 +178,7 @@ class Alm(hp.Alm):
                 f"{np.shape(alm)}."
             )
         else:
-            self.alm = alm
+            self.alm = np.array(alm)
 
     @property
     def alm_shape(self):
@@ -279,9 +288,10 @@ class Alm(hp.Alm):
             self.alm = interpolated
             self.frequencies = target_frequencies
 
-    def rotate_z(self, phi):
+    def rotate_z_phi(self, phi):
         """
-        Rotate the alms around the z-axis by phi (measured counterclockwise).
+        Get the coefficients that rotate the alms around the z-axis by phi
+        (measured counterclockwise).
 
         Parameters
         ----------
@@ -292,4 +302,15 @@ class Alm(hp.Alm):
         emms = self.getlm()[1]
         phase = np.exp(1j * emms * phi)
         phase.shape = (1, -1)  # frequency axis
-        self.alm *= phase
+        return phase
+
+    def rotate_z_time(self, delta_t, world="earth"):
+        """
+        Rotate alms in time counterclockwise around the z-axis.
+        """
+        if not world == "earth":
+            raise NotImplementedError("Moon will be added shortly.")
+        sidereal_day = 86164.0905
+        dphi = 2*np.pi * delta_t / sidereal_day
+        phase = self.rotate_z_phi_coeffs(dphi)
+        return phase
