@@ -18,3 +18,4 @@ Finally, CROISSANT is parallelizable as the time domain of the simulation easily
 
 ## Demo
 YouTube: https://youtu.be/P1wzTp5QlY0
+Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb
