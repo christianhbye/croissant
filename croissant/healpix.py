@@ -119,7 +119,12 @@ class HealpixMap:
     def ud_grade(self, nside_out, **kwargs):
         """
         Change the resolution of the healpy map to nside_out.
+
+        Note: The nside in must be valid for nested maps since
+        this conversion is being done under the hood.
         """
+        hp.pixelfunc.check_nside(self.nside, nest=True)
+
         new_map = hp.ud_grade(self.data, nside_out, **kwargs)
         self.data = new_map
         self.nside = nside_out
