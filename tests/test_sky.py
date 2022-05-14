@@ -1,17 +1,20 @@
 import numpy as np
+import pytest
 
 from croissant import sky, healpix
 
+
 def test_npix2nside():
     npix = [12, 48, 7500, 12000, 15000]
-    for np in npix:
+    for npv in npix:
         nside = sky.npix2nside(npix)
-        assert healpix.nside2npix(nside) == np
+        assert healpix.nside2npix(nside) == npv
 
     # invalid npix:
     with pytest.raises(ValueError):
         sky.npix2nside(37)
         sky.npix2nside(72)
+
 
 def test_power_law_map():
     nside = 1

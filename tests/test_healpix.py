@@ -11,18 +11,21 @@ data = np.random.rand(freqs.size, NPIX)
 args = [NSIDE]
 kwargs = {"data": data, "nested_input": False, "frequencies": freqs}
 
+
 def test_nested_check():
-    hpm = hp.HealpixMap(*args, **kwargs)  # should work
+    hp.HealpixMap(*args, **kwargs)  # should work
     kwargs["nested_input"] = True  # now it should raise an error
-    with pytest.raises(ValueError) as e:
-        hpm = hp.HealpixMap(*args, **kwargs)
+    with pytest.raises(ValueError):
+        hp.HealpixMap(*args, **kwargs)
 
 
 hpm = hp.HealpixMap(*args, **kwargs)
 
+
 def test_npix():
     assert hpm.npix == NPIX
     assert hpm.npix == hpm.data.shape[-1]
+
 
 def test_ud_grade():
     nside_out = [1, 2, 10, 20, 100, 1000]
@@ -32,11 +35,13 @@ def test_ud_grade():
         assert hp_copy.nside == ns
         assert np.allclose(hp_copy.data, healpy.ud_grade(hpm.data, ns))
 
+
 # test alm
 kwargs["frequencies"] = None
-AVG_VALUE = 10.
+AVG_VALUE = 10.0
 kwargs["data"] = AVG_VALUE * np.ones(NPIX)  # constant map
 hpm = hp.HealpixMap(*args, **kwargs)
+
 
 def test_alm():
     # constant map
