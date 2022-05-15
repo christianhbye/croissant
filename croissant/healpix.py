@@ -230,7 +230,7 @@ class Alm(hp.Alm):
         expected_shapes = self.alm_shape
 
         if alm is None:
-            self.alm = np.zeros(expected_shape)
+            self.alm = np.zeros(expected_shapes[0])
         elif not np.shape(alm) in expected_shapes:
             raise ValueError(
                 f"Expected shape {expected_shapes} for alm, got shape"
