@@ -120,10 +120,11 @@ class HealpixMap:
         """
         Change the resolution of the healpy map to nside_out.
 
-        Note: The nside in must be valid for nested maps since
+        Note: The nside in and out must be valid for nested maps since
         this conversion is being done under the hood.
         """
         hp.pixelfunc.check_nside(self.nside, nest=True)
+        hp.pixelfunc.check_nside(nside_out, nest=True)
 
         new_map = hp.ud_grade(self.data, nside_out, **kwargs)
         self.data = new_map
@@ -220,13 +221,13 @@ class Alm(hp.Alm):
             self.frequencies = None
         else:
             self.frequencies = np.array(frequencies)
-        expected_shape = self.alm_shape
+        expected_shapes = self.alm_shape
 
         if alm is None:
             self.alm = np.zeros(expected_shape)
-        elif not np.shape(alm) == expected_shape:
+        elif not np.shape(alm) in expected_shapes:
             raise ValueError(
-                f"Expected shape {expected_shape} for alm, got shape"
+                f"Expected shape {expected_shapes} for alm, got shape"
                 f"{np.shape(alm)}."
             )
         else:
@@ -241,10 +242,10 @@ class Alm(hp.Alm):
             return None
 
         if self.frequencies is None:
-            Nfreq = 1
+            shape = [(1, self.size), (self.size,)]
         else:
             Nfreq = len(self.frequencies)
-        shape = (Nfreq, self.size)
+            shape = [(Nfreq, self.size)]
         return shape
 
     @classmethod
@@ -253,6 +254,8 @@ class Alm(hp.Alm):
         Construct an Alm from a HealpixMap object.
         """
         alm = hp_obj.alm(lmax=lmax)
+        if lmax is None:
+            lmax = hp.Alm().getlmax(alm.size)
         return cls(alm=alm, lmax=lmax, frequencies=hp_obj.frequencies)
 
     @classmethod
@@ -316,13 +319,16 @@ class Alm(hp.Alm):
         """
         Set the value of an a_lm given the ell and emm.
         """
-        if freq_idx is None:
-            if self.alm_shape[0] > 1:
-                raise ValueError("No frequency index given.")
-            else:
-                freq_idx = 0
         ix = self.getidx(ell, emm)
-        self.alm[freq_idx, ix] = value
+        if self.alm.ndim == 1:
+            self.alm[ix] = value
+        else:
+            if freq_idx is None:
+                if self.alm.shape[0] > 1:
+                    raise ValueError("No frequency index given.")
+                else:
+                    freq_idx = 0
+            self.alm[freq_idx, ix] = value
 
     def get_coeff(self, ell, emm, freq_idx=None):
         """
