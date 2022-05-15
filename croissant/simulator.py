@@ -39,7 +39,7 @@ class Simulator:
         """
         if parallel:
             ncpu = kwargs.pop("ncpu", None)
-            
+
             def get_res(result):
                 i, conv = result
                 self.waterfall[i] = conv
@@ -50,7 +50,7 @@ class Simulator:
                         self._run_onetime,
                         args=t,
                         kwds={"index": i},
-                        callback=get_res
+                        callback=get_res,
                     )
 
         for i, t in enumerate(self.times):
