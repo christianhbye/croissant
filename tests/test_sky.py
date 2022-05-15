@@ -5,9 +5,9 @@ from croissant import sky, healpix
 
 
 def test_npix2nside():
-    npix = [12, 48, 7500, 12000, 15000]
+    npix = [12, 48, 7500, 30000, 120000]
     for npv in npix:
-        nside = sky.npix2nside(npix)
+        nside = sky.npix2nside(npv)
         assert healpix.nside2npix(nside) == npv
 
     # invalid npix:

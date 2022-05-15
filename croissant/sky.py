@@ -30,7 +30,7 @@ def check_sky_shapes(sky_map, frequencies):
     npix = sh[-1]
     if len(sh) > 2:
         raise ValueError(sh_err)
-    elif frequencies is None:
+    elif type(frequencies) in [None, float, int]:
         allowed_shapes = [(1, npix), (npix,)]
     else:
         nfreqs = len(frequencies)

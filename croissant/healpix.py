@@ -80,7 +80,6 @@ class HealpixMap:
         """
         hp.pixelfunc.check_nside(nside, nest=nested_input)
         self.nside = nside
-        check_shapes(self.npix, data, frequencies)
 
         if data is None:
             nested_input = False
@@ -90,8 +89,12 @@ class HealpixMap:
         if frequencies is None:
             self.frequencies = None
         else:
-            self.frequencies = np.array(frequencies)
+            frequencies = np.array(frequencies)
+            if frequencies.ndim == 0:
+                frequencies = np.expand_dims(frequencies, axis=0)
+            self.frequencies = frequencies
 
+        check_shapes(self.npix, data, self.frequencies)
         if nested_input:
             ix = hp.nest2ring(self.nside, np.arange(self.npix))
             if self.frequencies is None:
@@ -220,7 +223,10 @@ class Alm(hp.Alm):
         if frequencies is None:
             self.frequencies = None
         else:
-            self.frequencies = np.array(frequencies)
+            frequencies = np.array(frequencies)
+            if frequencies.ndim == 0:
+                frequencies = np.expand_dims(frequencies, axis=0)
+            self.frequencies = frequencies
         expected_shapes = self.alm_shape
 
         if alm is None:
