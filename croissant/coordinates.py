@@ -29,8 +29,8 @@ def topo_to_radec(phi, theta, time, loc):
     dec = icrs.dec.deg
     return ra, dec
 
-def rotate_map(sky_map, from_coords="galactic", to_coords="equatorial"):
-    coords = {"galactic": "G", "ecliptic": "E", "equatorial": "C"}
+def _hp_rotate(from_coords, to_coords)
+    coords = {"galactic": "G", "ecliptic": "E", "equitorial": "C"}
     fc = from_coords.lower()
     tc = to_coords.lower()
     if not all([fc, tc] in coords):
@@ -38,5 +38,14 @@ def rotate_map(sky_map, from_coords="galactic", to_coords="equatorial"):
             f"Invalid coordinate system name, must be in {list{coords.keys()}}"
         )
     rot = Rotator(coord=[coords[fc], coords[tc]])
+    return rot
+
+def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
+    rot = _hp_rotate(from_coords, to_coords)
     rotated_map = rot.rotate_map_alms(sky_map)
     return rotated_map
+
+def rotate_alm(alm, from_coords="galactic", to_coords="equitorial"):
+    rot = _hp_rotate(from_coords, to_coords)
+    rotated_alm = rot.rotate_alm(alm)
+    return rotated_alm
