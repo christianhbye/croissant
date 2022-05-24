@@ -1,27 +1,67 @@
+from astropy import units
+from astropy.coordinates import EarthLocation
+from astropy.time import Time
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import numpy as np
+import warnings
 from .healpix import Alm
 
 
 class Simulator:
-    def __init__(self, beam, sky, times):
+    def __init__(
+        self,
+        beam,
+        sky,
+        obs_lat,
+        obs_lon,
+        obs_alt,
+        t_start,
+        t_end=None,
+        N_times=None,
+        delta_t=None,
+        frequencies=None
+        ):
         """
         Simulator class. Prepares and runs simulations.
         """
-        assert np.allclose(
-            beam.frequencies, sky.frequencies
-        ), "Frequencies don't match."
-        self.frequencies = beam.frequencies
-        times = np.array(times)
-        if times.ndim == 0:
-            times = np.expand_dims(times, axis=0)
-        self.times = times - times[0]
+        if frequencies is None:
+            frequencies = sky.frequencies
+        self.frequencies = frequencies
+        self.loc = EarthLocation(
+            lat=obs_lat*units.deg, obs_lon*units.deg, obs_alt*units.m
+        )
+        t_start = Time(t_start, location=self.loc)
+        if delta_t is not None
+            try:
+                delta_t = delta_t.to(units.s)
+            except AttributeError:
+                warnings.warn(
+                    "No units specified for delta_t, assuming seconds.",
+                    UserWarning
+                )
+                delta_t = delta_t * units.s
+        if t_end is None:
+            dt = np.arange(N_times) * delta_t
+        else:
+            t_end = Time(t_end, location=self.loc)
+            total_time = (t_end - t_start).to_value(units.s)
+            if delta_t is not None:
+                dt = np.arange(0, total_time.value, delta_t.value) 
+                N_times = len(dt)
+                dt *= units.s
+            else:
+                dt = np.linspace(0, total_time.value, N_times) * units.s
+        self.times = t_start + dt
+
         self.beam = beam
         self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
-        ntimes = len(self.times)
+        
+        # horizon cutoff
+        # rotate beam and sky to correct coords
+
         nfreqs = len(self.frequencies)
-        self.waterfall = np.empty((ntimes, nfreqs))
+        self.waterfall = np.empty((N_times, nfreqs))
 
     def _run_onetime(self, time, index=None):
         """
