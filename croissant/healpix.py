@@ -12,26 +12,6 @@ def nside2npix(nside):
     return npix
 
 
-def check_shapes(npix, data, frequencies):
-    """
-    Check that all data shapes match in the healpix object.
-    """
-    if data is None:
-        return
-    data = np.array(data)
-
-    if frequencies is None:
-        allowed_shapes = [(npix,), (1, npix)]
-    else:
-        nfreq = len(frequencies)
-        allowed_shapes = [(nfreq, npix)]
-
-    if np.shape(data) not in allowed_shapes:
-        raise ValueError(
-            f"The data shape is {data.shape}, must be in {allowed_shapes}."
-        )
-
-
 # nside's for which pixel weights exist
 PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
 
@@ -80,28 +60,15 @@ class HealpixMap:
         """
         hp.pixelfunc.check_nside(nside, nest=nested_input)
         self.nside = nside
+        self.frequencies = np.squeeze(frequencies).reshape(-1)
 
-        if data is None:
-            nested_input = False
-        else:
+        if data is not None:
             data = np.array(data)
-
-        if frequencies is None:
-            self.frequencies = None
-        else:
-            frequencies = np.array(frequencies)
-            if frequencies.ndim == 0:
-                frequencies = np.expand_dims(frequencies, axis=0)
-            self.frequencies = frequencies
-
-        check_shapes(self.npix, data, self.frequencies)
-        if nested_input:
-            ix = hp.nest2ring(self.nside, np.arange(self.npix))
-            if self.frequencies is None:
-                data = data[ix]
-            else:
+            data.shape = (self.frequencies.size, self.npix)
+            if nested_input:
+                ix = hp.nest2ring(self.nside, np.arange(self.npix))
                 data = data[:, ix]
-
+        
         self.data = data
 
     @property
@@ -152,7 +119,7 @@ class HealpixMap:
         if self.frequencies is None:
             alm = hp.map2alm(self.data, **kwargs)
         else:
-            nfreqs = len(self.frequencies)
+            nfreqs = self.frequencies.size
             alm = []
             for i in range(nfreqs):
                 i_alm = hp.map2alm(self.data[i], **kwargs)
@@ -219,25 +186,24 @@ class Alm(hp.Alm):
         """
         Base class for spherical harmonics coefficients.
         """
-        self.lmax = lmax
-        if frequencies is None:
-            self.frequencies = None
-        else:
-            frequencies = np.array(frequencies)
-            if frequencies.ndim == 0:
-                frequencies = np.expand_dims(frequencies, axis=0)
-            self.frequencies = frequencies
-        expected_shapes = self.alm_shape
+        if alm is None and lmax is None:
+            raise ValueError("Specify at least one of lmax and alm.")
 
+        self.frequencies = np.squeeze(frequencies).reshape(-1)
         if alm is None:
-            self.alm = np.zeros(expected_shapes[0])
-        elif not np.shape(alm) in expected_shapes:
-            raise ValueError(
-                f"Expected shape {expected_shapes} for alm, got shape"
-                f"{np.shape(alm)}."
-            )
+            alm = np.zeros(self.alm_shape)
         else:
-            self.alm = np.array(alm)
+            alm = np.array(alm)
+            alm.shape = self.alm_shape
+
+        expected_lmax = super().getlmax(alm.shape[1])
+        if not lmax in [expected_lmax, None]:
+            warnings.warn(
+                f"Expected lmax = {expected_lmax} based on alm shape,"
+                f"got lmax = {lmax}. Setting lmax to the expected value.",
+                UserWarning,
+            )
+        self.lmax = expected_lmax
 
     @property
     def alm_shape(self):
@@ -247,11 +213,8 @@ class Alm(hp.Alm):
         if self.lmax is None:
             return None
 
-        if self.frequencies is None:
-            shape = [(1, self.size), (self.size,)]
-        else:
-            Nfreq = len(self.frequencies)
-            shape = [(Nfreq, self.size)]
+        Nfreq = self.frequencies.size
+        shape = (Nfreq, self.size)
         return shape
 
     @classmethod
