@@ -20,8 +20,8 @@ class Simulator:
         t_end=None,
         N_times=None,
         delta_t=None,
-        frequencies=None
-        ):
+        frequencies=None,
+    ):
         """
         Simulator class. Prepares and runs simulations.
         """
@@ -29,16 +29,18 @@ class Simulator:
             frequencies = sky.frequencies
         self.frequencies = frequencies
         self.loc = EarthLocation(
-            lat=obs_lat*units.deg, obs_lon*units.deg, obs_alt*units.m
+            lat=obs_lat * units.deg,
+            lon=obs_lon * units.deg,
+            height=obs_alt * units.m,
         )
         t_start = Time(t_start, location=self.loc)
-        if delta_t is not None
+        if delta_t is not None:
             try:
                 delta_t = delta_t.to(units.s)
             except AttributeError:
                 warnings.warn(
                     "No units specified for delta_t, assuming seconds.",
-                    UserWarning
+                    UserWarning,
                 )
                 delta_t = delta_t * units.s
         if t_end is None:
@@ -47,7 +49,7 @@ class Simulator:
             t_end = Time(t_end, location=self.loc)
             total_time = (t_end - t_start).to_value(units.s)
             if delta_t is not None:
-                dt = np.arange(0, total_time.value, delta_t.value) 
+                dt = np.arange(0, total_time.value, delta_t.value)
                 N_times = len(dt)
                 dt *= units.s
             else:
@@ -56,7 +58,7 @@ class Simulator:
 
         self.beam = beam
         self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
-        
+
         # horizon cutoff
         # rotate beam and sky to correct coords
 
