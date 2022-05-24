@@ -56,11 +56,13 @@ class Simulator:
                 dt = np.linspace(0, total_time.value, N_times) * units.s
         self.times = t_start + dt
 
+        # HERE
+        beam.to_radec()
         self.beam = beam
-        self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
 
-        # horizon cutoff
-        # rotate beam and sky to correct coords
+        sky_alm = Alm.from_healpix(sky, lmax=self.beam.lmax)
+        sky_alm.to_radec()
+        self.sky = sky_alm
 
         nfreqs = len(self.frequencies)
         self.waterfall = np.empty((N_times, nfreqs))
