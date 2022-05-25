@@ -2,6 +2,7 @@ import healpy as hp
 import numpy as np
 import pyshtools as pysh
 from uvtools.dspec import dpss_operator
+import warnings
 
 
 def nside2npix(nside):
@@ -68,7 +69,7 @@ class HealpixMap:
             if nested_input:
                 ix = hp.nest2ring(self.nside, np.arange(self.npix))
                 data = data[:, ix]
-        
+
         self.data = data
 
     @property
@@ -197,7 +198,7 @@ class Alm(hp.Alm):
             alm.shape = self.alm_shape
 
         expected_lmax = super().getlmax(alm.shape[1])
-        if not lmax in [expected_lmax, None]:
+        if lmax not in [expected_lmax, None]:
             warnings.warn(
                 f"Expected lmax = {expected_lmax} based on alm shape,"
                 f"got lmax = {lmax}. Setting lmax to the expected value.",
