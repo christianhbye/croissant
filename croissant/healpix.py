@@ -1,7 +1,7 @@
 import healpy as hp
 import numpy as np
-import pyshtools as pysh
-from uvtools.dspec import dpss_operator
+from hera_filters.dspec import dpss_operator
+from scipy.special import sph_harm
 import warnings
 
 
@@ -228,35 +228,47 @@ class Alm(hp.Alm):
             lmax = hp.Alm().getlmax(alm.size)
         return cls(alm=alm, lmax=lmax, frequencies=hp_obj.frequencies)
 
+    @staticmethod
+    def grid2alm(data, theta, phi, lmax=None):
+        """
+        Compute the alms up to lmax of a data array sampled at given theta
+        and phi.
+        phi and theta must be regularly sampled.
+        Put them in the healpy order.
+        """
+        theta = np.squeeze(theta).reshape(-1, 1)
+        phi = np.squeeze(phi).reshape(1, -1)
+        dth = theta[1, 0] - theta[0, 0]
+        dph = phi[0, 1] - phi[0, 0]
+        domega = np.sin(theta) * dth * dph
+
+        data = np.array(data)
+        if data.ndim == 2:
+            data = np.expand_dims(data, axis=0)  # add frequency axis
+
+        if lmax is None:
+            lmax = theta.size // 2 - 1
+        alm_size = hp.Alm.getsize(lmax, mmax=lmax)
+        alms = np.empty((data.shape[0], alm_size), dtype=complex)
+        for ell in range(lmax):
+            for emm in range(ell):
+                ylm = sph_harm(emm, ell, theta, phi)
+                alm = np.sum(data * ylm * domega, axis=(-1, -2))
+                ix = hp.Alm.getidx(lmax, ell, emm)
+                alms[:, ix] = alm
+        return alms
+
     @classmethod
-    def from_grid(cls, data, frequencies=None, lmax=None):
+    def from_grid(cls, data, theta, phi, frequencies=None, lmax=None):
         """
         Construct an Alm from a grid in theta and phi.
         """
         data = np.array(data)
-        if frequencies is not None:
-            nfreqs = len(frequencies)
-            shape_ok = data.shape[0] == nfreqs and data.ndim == 3
-        elif len(np.shape(data)) == 2:
-            shape_ok = True
-            data = np.expand_dims(data, axis=0)
-        else:
-            shape_ok = data.ndim == 3 and data.shape[0] == 1
-        if not shape_ok:
-            raise ValueError(f"Unexpected shape for data: {np.shape(data)}.")
+        theta = np.squeeze(theta).reshape(-1)
+        phi = np.squeeze(phi).reshape(-1)
+        alms = grid2alm(data, theta, phi, lmax)
+        return cls(alm=alms, lmax=lmax, frequencies=frequencies)
 
-        Nth = np.shape(data)[1]
-        Nph = np.shape(data)[2]
-        assert Nth % 2 == 0, "The number of latitudes must be even."
-        assert Nph in [Nth, 2 * Nth], "Grid must be equally sampled or spaced."
-        sampling = Nph // Nth
-        if lmax is None:
-            lmax = Nth // 2 - 1
-
-        cilm = pysh.SHExpandDH(
-            data, norm=1, sampling=sampling, csphase=1, lmax_calc=lmax
-        )
-        raise NotImplementedError
 
     def getlm(self, i=None):
         """
