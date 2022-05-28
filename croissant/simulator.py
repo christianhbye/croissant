@@ -35,28 +35,27 @@ class Simulator:
             lon=obs_lon * units.deg,
             height=obs_alt * units.m,
         )
-        t_start = Time(t_start, location=self.loc)
+        self.t_start = Time(t_start, location=self.loc)
         if delta_t is not None:
             try:
-                delta_t = delta_t.to(units.s)
+                delta_t = delta_t.to_value(units.s)
             except AttributeError:
                 warnings.warn(
                     "No units specified for delta_t, assuming seconds.",
                     UserWarning,
                 )
-                delta_t = delta_t * units.s
+                delta_t = delta_t
         if t_end is None:
             dt = np.arange(N_times) * delta_t
         else:
             t_end = Time(t_end, location=self.loc)
-            total_time = (t_end - t_start).to_value(units.s)
+            total_time = (t_end - self.t_start).to_value(units.s)
             if delta_t is not None:
-                dt = np.arange(0, total_time.value, delta_t.value)
+                dt = np.arange(0, total_time, delta_t)
                 N_times = len(dt)
-                dt *= units.s
             else:
-                dt = np.linspace(0, total_time.value, N_times) * units.s
-        self.times = t_start + dt
+                dt = np.linspace(0, total_time, N_times)
+        self.dt = dt
 
         self.beam = beam
         self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
@@ -66,11 +65,10 @@ class Simulator:
 
     def _prepare_beam(self):
         # rotate to ra/dec at first observing time given location
-        t0 = self.times[0]
         ph, th = self.beam.phi, self.beam.theta
-        ra, dec = topo_to_radec(ph, th, t0, self.loc)
+        ra, dec = topo_to_radec(ph, th, self.t_start, self.loc)
         # interpolate to ra/decs to get even sampling
-        dec = np.pi / 2 - dec  # colatitude, [0, pi]
+        dec = np.pi/2 - dec  # colatitude, [0, pi]
         ra -= np.pi  # move to [-pi, pi)
         smooth_dec = np.linspace(0, np.pi, 181)
         smooth_ra = np.linspace(-np.pi, np.pi, 360, endpoint=False)
@@ -84,9 +82,12 @@ class Simulator:
         """
         Compute the convolution for one specfic time.
         """
-        beam_alm = self.beam_alm
         sky_alm = self.sky.alm * self.sky.rotate_z_time(time)
-        prod = beam_alm * sky_alm
+        try:
+            prod = self.beam_alm * sky_alm
+        except AttributeError:
+            self._prepare_beam()
+            prod = self.beam_alm * sky_alm
         conv = prod.sum(axis=1)
         return index, conv.real
 
