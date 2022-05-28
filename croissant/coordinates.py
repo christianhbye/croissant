@@ -9,6 +9,7 @@ def topo_to_radec(phi, theta, time, loc):
     """
     Convert topocentric coordinates to ra/dec at given time. Useful for
     antenna beams.
+    Returns ra/dec in radians.
     """
     if np.isscalar(phi):
         phi = np.array([phi])
@@ -26,8 +27,8 @@ def topo_to_radec(phi, theta, time, loc):
     alts = [(90 - th) * u.degree for th in theta]
     altaz = AltAz(alt=alts, az=azs, location=loc, obstime=obstime)
     icrs = altaz.transform_to("icrs")
-    ra = icrs.ra.deg
-    dec = icrs.dec.deg
+    ra = icrs.ra.rad
+    dec = icrs.dec.rad
     return ra, dec
 
 
