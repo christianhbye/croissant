@@ -68,9 +68,9 @@ class Simulator:
         # rotate to ra/dec at first observing time given location
         t0 = self.times[0]
         ph, th = self.beam.phi, self.beam.theta
-        ra, dec = topo_to_radec(self.ph, self.th, t0, self.loc)
+        ra, dec = topo_to_radec(ph, th, t0, self.loc)
         # interpolate to ra/decs to get even sampling
-        dec = np.pi/2 - dec  # colatitude, [0, pi]
+        dec = np.pi / 2 - dec  # colatitude, [0, pi]
         ra -= np.pi  # move to [-pi, pi)
         smooth_dec = np.linspace(0, np.pi, 181)
         smooth_ra = np.linspace(-np.pi, np.pi, 360, endpoint=False)

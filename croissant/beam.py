@@ -1,11 +1,8 @@
 import numpy as np
-from .healpix import Alm
 
 
 class Beam:
-    def __init__(
-        self, data, phi, theta, frequencies=None, horizon=None
-    ):
+    def __init__(self, data, phi, theta, frequencies=None, horizon=None):
         """
         Class that holds antenna beam objects. Thin wrapper over Alm.
         Data must have shape ([freqs,] theta, phi) if from_grid is True.
@@ -18,7 +15,7 @@ class Beam:
         self.theta = np.squeeze(theta).reshape(-1)
         self.phi = np.squeeze(phi).reshape(-1)
         data.shape = (frequencies.size, theta.size, phi.size)
-        self.data = data 
+        self.data = data
 
     def horizon_cut(self, horizon=None):
         if horizon is None:

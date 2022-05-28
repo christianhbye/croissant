@@ -233,7 +233,7 @@ class Alm(hp.Alm):
         """
         Compute the alms up to lmax of a data array sampled at given theta
         and phi.
-        phi and theta must be regularly sampled.
+        phi and theta must be regularly sampled and in radians.
         Put them in the healpy order.
         """
         theta = np.squeeze(theta).reshape(-1, 1)
@@ -266,9 +266,8 @@ class Alm(hp.Alm):
         data = np.array(data)
         theta = np.squeeze(theta).reshape(-1)
         phi = np.squeeze(phi).reshape(-1)
-        alms = grid2alm(data, theta, phi, lmax)
+        alms = cls.grid2alm(data, theta, phi, lmax)
         return cls(alm=alms, lmax=lmax, frequencies=frequencies)
-
 
     def getlm(self, i=None):
         """
