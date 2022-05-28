@@ -4,7 +4,9 @@ from astropy.time import Time
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import numpy as np
+from scipy.interpolate import RectSphereBivariateSpline
 import warnings
+from .coordinates import topo_to_radec
 from .healpix import Alm
 
 
@@ -56,22 +58,33 @@ class Simulator:
                 dt = np.linspace(0, total_time.value, N_times) * units.s
         self.times = t_start + dt
 
-        # HERE
-        beam.to_radec()
         self.beam = beam
-
-        sky_alm = Alm.from_healpix(sky, lmax=self.beam.lmax)
-        sky_alm.to_radec()
-        self.sky = sky_alm
+        self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
 
         nfreqs = len(self.frequencies)
         self.waterfall = np.empty((N_times, nfreqs))
+
+    def _prepare_beam(self):
+        # rotate to ra/dec at first observing time given location
+        t0 = self.times[0]
+        ph, th = self.beam.phi, self.beam.theta
+        ra, dec = topo_to_radec(self.ph, self.th, t0, self.loc)
+        # interpolate to ra/decs to get even sampling
+        dec = np.pi/2 - dec  # colatitude, [0, pi]
+        ra -= np.pi  # move to [-pi, pi)
+        smooth_dec = np.linspace(0, np.pi, 181)
+        smooth_ra = np.linspace(-np.pi, np.pi, 360, endpoint=False)
+        interp = RectSphereBivariateSpline(dec, ra, self.beam.data)
+        interp_beam = interp(smooth_dec, smooth_ra)
+        # compute alms of beam from ra/dec
+        alm = Alm.grid2alm(interp_beam, smooth_dec, smooth_ra, lmax=self.lmax)
+        self.beam_alm = alm
 
     def _run_onetime(self, time, index=None):
         """
         Compute the convolution for one specfic time.
         """
-        beam_alm = self.beam.alm
+        beam_alm = self.beam_alm
         sky_alm = self.sky.alm * self.sky.rotate_z_time(time)
         prod = beam_alm * sky_alm
         conv = prod.sum(axis=1)
@@ -81,6 +94,7 @@ class Simulator:
         """
         Compute the convolution for a range of times.
         """
+        self._prepare_beam()
         if parallel:
             ncpu = kwargs.pop("ncpu", None)
 
