@@ -1,6 +1,6 @@
 import healpy as hp
 import numpy as np
-from .dpss import dpss_interpolator
+from .dpss import dpss_coeffs
 from scipy.special import sph_harm
 import warnings
 
@@ -15,6 +15,7 @@ def nside2npix(nside):
 
 # nside's for which pixel weights exist
 PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
+
 
 class HealpixMap:
     def __init__(self, nside, data=None, nested_input=False, frequencies=None):
@@ -113,11 +114,9 @@ class HealpixMap:
         if input_frequencies is None:
             input_frequencies = self.frequencies
 
-        interp = dpss_interpolator(
-            target_frequencies, input_frequencies, **kwargs
+        interpolated = dpss_coeffs(
+            input_map, target_frequencies, input_frequencies, **kwargs
         )
-
-        interpolated = interp @ input_map
 
         if return_map:
             return interpolated, target_frequencies
@@ -328,11 +327,9 @@ class Alm(hp.Alm):
         if input_frequencies is None:
             input_frequencies = self.frequencies
 
-        interp = dpss_interpolator(
-            target_frequencies, input_frequencies, **kwargs
+        interpolated = dpss_coeffs(
+            input_alm, target_frequencies, input_frequencies, **kwargs
         )
-
-        interpolated = interp @ input_alm
 
         if return_alm:
             return interpolated, target_frequencies
