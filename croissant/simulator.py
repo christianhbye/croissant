@@ -68,7 +68,7 @@ class Simulator:
         ph, th = self.beam.phi, self.beam.theta
         ra, dec = topo_to_radec(ph, th, self.t_start, self.loc)
         # interpolate to ra/decs to get even sampling
-        dec = np.pi/2 - dec  # colatitude, [0, pi]
+        dec = np.pi / 2 - dec  # colatitude, [0, pi]
         ra -= np.pi  # move to [-pi, pi)
         smooth_dec = np.linspace(0, np.pi, 181)
         smooth_ra = np.linspace(-np.pi, np.pi, 360, endpoint=False)
