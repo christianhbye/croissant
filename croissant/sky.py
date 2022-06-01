@@ -40,7 +40,9 @@ def check_sky_shapes(sky_map, frequencies):
 
 
 class Sky(HealpixMap):
-    def __init__(self, sky_map, frequencies=None, nested_input=False):
+    def __init__(
+        self, sky_map, frequencies=None, nested_input=False, coords="galactic"
+    ):
         """
         Class that holds Sky objects. Thin wrapper for HealpixMap objects.
         """
@@ -50,6 +52,7 @@ class Sky(HealpixMap):
             data=sky_map,
             nested_input=nested_input,
             frequencies=frequencies,
+            coords=coords,
         )
 
     def _nside(self, data=None):
@@ -73,7 +76,12 @@ class Sky(HealpixMap):
         sky_map = gsm16.generate(frequencies)
         if sky_map.ndim == 1:
             sky_map.shape = (1, -1)
-        return cls(sky_map, frequencies=frequencies, nested_input=False)
+        obj = cls(
+            sky_map,
+            frequencies=frequencies,
+            nested_input=False,
+            coords="galactic"
+        )
 
     def power_law_map(
         self,
