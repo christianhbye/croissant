@@ -6,7 +6,9 @@ from multiprocessing import Pool
 import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 import warnings
+
 from .coordinates import topo_to_radec
+import dpss
 from .healpix import Alm
 
 
@@ -56,12 +58,10 @@ class Simulator:
             else:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
+        self.N_times = N_times
 
         self.beam = beam
         self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
-
-        nfreqs = len(self.frequencies)
-        self.waterfall = np.empty((N_times, nfreqs))
 
     def _prepare_beam(self):
         # rotate to ra/dec at first observing time given location
@@ -76,18 +76,41 @@ class Simulator:
         interp_beam = interp(smooth_dec, smooth_ra)
         # compute alms of beam from ra/dec
         alm = Alm.grid2alm(interp_beam, smooth_dec, smooth_ra, lmax=self.lmax)
-        self.beam_alm = alm
+        self.beam.alm = alm
+
+    def _compute_dpss(self, nterms=10):
+        # generate the set of target frequencies (subset of all freqs)
+        x = np.unique(
+            np.concatenate(
+                (
+                    self.sky.frequencies,
+                    self.beam.frequencies,
+                    self.frequencies,
+                ),
+                axis=None,
+            )
+        )
+
+        self.design_matrix = dpss.dpss_op(x, nterms=nterms)
+        self.sky.coeffs = dpss.freq2dpss(
+            self.sky.alm,
+            self.sky.frequencies,
+            self.frequencies,
+            self.design_matrix,
+        )
+        self.beam.coeffs = dpss.freq2dpss(
+            self.beam.alm,
+            self.beam.frequencies,
+            self.frequencies,
+            self.design_matrix,
+        )
 
     def _run_onetime(self, time, index=None):
         """
         Compute the convolution for one specfic time.
         """
-        sky_alm = self.sky.alm * self.sky.rotate_z_time(time)
-        try:
-            prod = self.beam_alm * sky_alm
-        except AttributeError:
-            self._prepare_beam()
-            prod = self.beam_alm * sky_alm
+        sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
+        prod = self.beam.coeffs * sky_coeffs
         conv = prod.sum(axis=1)
         return index, conv.real
 
@@ -96,12 +119,17 @@ class Simulator:
         Compute the convolution for a range of times.
         """
         self._prepare_beam()
+        nterms = kwargs.pop("nterms", None)
+        self._compute_dpss(nterms=nterms)
+        if nterms is None:
+            nterms = self.beam.coeffs.shape[0]
+        waterfall_dpss = np.empty((self.N_times, nterms), dtype="complex")
         if parallel:
             ncpu = kwargs.pop("ncpu", None)
 
             def get_res(result):
                 i, conv = result
-                self.waterfall[i] = conv
+                waterfall_dpss[i] = conv
 
             with Pool(processes=ncpu) as pool:
                 for i, t in enumerate(self.times):
@@ -114,7 +142,10 @@ class Simulator:
 
         for i, t in enumerate(self.times):
             conv = self._run_onetime(t)[1]
-            self.waterfall[i] = conv
+            waterfall_dpss[i] = conv
+
+        # convert back to frequency
+        self.waterfall = self.design_matrix @ waterfall_dpss.T
 
     def plot(self, **kwargs):
         """
