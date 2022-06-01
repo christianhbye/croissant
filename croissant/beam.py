@@ -2,13 +2,26 @@ import numpy as np
 
 
 class Beam:
-    def __init__(self, data, phi, theta, frequencies=None, horizon=None):
+    def __init__(
+        self,
+        data,
+        theta,
+        phi,
+        frequencies=None,
+    ):
         """
-        Class that holds antenna beam objects. Thin wrapper over Alm.
-        Data must have shape ([freqs,] theta, phi) if from_grid is True.
-        Otherwise must have shape ([freqs,] alm).
-        horizon_mask must have same shape as data and is assumed to be in the
-        same space (either both real space or both alms).
+        Parameters
+        ----------
+        data : array-like
+            The power beam. Must have shape ([freqs,] theta, phi).
+        theta : array-like
+            Zenith angle(s) in radians.
+        phi : array-like
+            Azimuth angle(s) in radians.
+        frequencies : array-like (optional)
+            The frequencies in MHz of the beam. Necessary if the beam is
+            specified at more than one frequency.
+
         """
         data = np.array(data)
         self.frequencies = np.squeeze(frequencies).reshape(-1)
@@ -18,9 +31,17 @@ class Beam:
         self.data = data
 
     def horizon_cut(self, horizon=None):
+        """
+        horizon : array-like (optional)
+            An array of 0s and 1s, specifying if a given phi/theta combination
+            is above the horizon or not. Must have shape (theta, phi) or
+            (freqs, theta, phi).
+        """
         if horizon is None:
             horizon = np.ones_like(self.data)
             horizon[:, self.theta < 0] = 0
+        elif horizon.ndim == 2:
+            horizon = np.expand_dims(horizon, axis=0)
         self.data = self.data * horizon
 
     @classmethod
