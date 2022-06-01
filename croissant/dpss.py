@@ -2,10 +2,8 @@ from hera_filters.dspec import dpss_operator, fit_solution_matrix
 import numpy as np
 
 
-def dpss_coeffs(
-    data,
-    freq_in,
-    freq_out=None,
+def dpss_op(
+    freq_out,
     filter_center=0,
     filter_half_width=20e-9,
     eigenval_cutoff=None,
@@ -14,8 +12,8 @@ def dpss_coeffs(
     avg_suppression=None,
 ):
     """
-    Transform data from frequency space to a basis of Discrete Prolate
-    Spheroidal Sequences (DPSS). Thin wrapper around
+    Compute operator for transforming data from frequency space to a basis of
+    Discrete Prolate Spheroidal Sequences (DPSS). Thin wrapper around
     hera_filters.dspec.dpss_operator suitable for a single antenna
     autocorrelation experiment.
 
@@ -30,10 +28,6 @@ def dpss_coeffs(
 
     Parameters
     ----------
-    data : array-like
-        The data to transform. The frequency axis must be the first axis.
-    freq_in : array-like
-        The frequencies in MHz that the data is sampled at.
     freq_out : array-like, optional
         The frequencies in MHz to map the inverse transform to. The DPSS modes
         will be used to interpolate to freq_out if necessary. Default: freq_in.
@@ -54,8 +48,6 @@ def dpss_coeffs(
 
     Returns
     -------
-    dpss_coeffs : np.ndarray
-        The data transformed to the DPSS basis.
     B : np.ndarray
         The design matrix specifying the inverse transform. That is,
         B @ dpss_coeffs will return the data in frequency domain (interpolated
@@ -68,34 +60,18 @@ def dpss_coeffs(
         and avg_suppression is specified and the rest are None.
 
     """
-    freq_in = np.array(freq_in) * 1e6  # Hz
-
-    if freq_out is None:
-        freq_out = freq_in.copy()
-        x = freq_in.copy()
-    else:
-        freq_out = np.array(freq_out) * 1e6
-        if freq_out.max() > freq_in.max() or freq_out.min() < freq_in.min():
-            raise ValueError(
-                "Some of the values of freq_out are outside the range of "
-                "freq_in."
-            )
-
-        x = np.unique(np.sort(np.append(freq_in, freq_out)))
-
+    x = np.array(freq_out) * 1e6
     kwargs = {
         "eigenval_cutoff": eigenval_cutoff,
         "edge_suppression": edge_suppression,
         "nterms": nterms,
         "avg_suppression": avg_suppression,
     }
-
     # remove Nones and put the specified value in a list
     kwarg = {key: [val] for key, val in kwargs.items() if val is not None}
     if not len(kwarg) == 1:
         raise ValueError(f"Specify one and only of {list[kwargs.keys()]}.")
 
-    W = np.eye(freq_in.size)
     B = dpss_operator(
         x,
         filter_centers=[filter_center],
@@ -103,6 +79,15 @@ def dpss_coeffs(
         cache=None,
         **kwarg,
     )[0]
-    A = B[np.isin(x, freq_in)]
+    return B
+
+def freq2dpss(data, freq_in, freq_out, design_matrix):
+    freq_in = np.array(freq_in)
+    freq_out = np.array(freq_out)
+    A = design_matrix[np.isin(freq_out, freq_in)]
+    W = np.eye(freq_in.size)
     coeffs = fit_solution_matrix(W, A) @ np.array(data)
-    return coeffs, B
+    return coeffs
+
+def dpss2freq(dpss_coeffs, design_matrix):
+    return design_matrix @ dpss_coeffs
