@@ -11,13 +11,47 @@ def nside2npix(nside):
     npix = 12 * nside**2
     return npix
 
+def grid2alm(data, theta, phi, lmax=None):
+    """
+    Compute the alms up to lmax of a data array sampled at given theta and phi.
+    phi and theta must be regularly sampled and in radians.
+    Put them in the healpy order.
+    """
+    theta = np.squeeze(theta).reshape(-1, 1)
+    phi = np.squeeze(phi).reshape(1, -1)
+    dth = theta[1, 0] - theta[0, 0]
+    dph = phi[0, 1] - phi[0, 0]
+    domega = np.sin(theta) * dth * dph
+
+    data = np.array(data)
+    if data.ndim == 2:
+        data = np.expand_dims(data, axis=0)  # add frequency axis
+
+    if lmax is None:
+        lmax = theta.size // 2 - 1
+    alm_size = hp.Alm.getsize(lmax, mmax=lmax)
+    alms = np.empty((data.shape[0], alm_size), dtype=complex)
+    for ell in range(lmax):
+        for emm in range(ell):
+            ylm = sph_harm(emm, ell, theta, phi)
+            alm = np.sum(data * ylm * domega, axis=(-1, -2))
+            ix = hp.Alm.getidx(lmax, ell, emm)
+            alms[:, ix] = alm
+    return alms
 
 # nside's for which pixel weights exist
 PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
 
 
 class HealpixMap:
-    def __init__(self, nside, data=None, nested_input=False, frequencies=None):
+    def __init__(
+        self,
+        nside,
+        data=None,
+        nested_input=False,
+        frequencies=None,
+        coords="galactic",
+    ):
         """
         The base class for healpix maps. This is a wrapper that does a lot of
         healpy operations in parallel for a list of frequencies.
@@ -36,6 +70,7 @@ class HealpixMap:
                 data = data[:, ix]
 
         self.data = data
+        self.coords = coords
 
     @property
     def npix(self):
@@ -65,6 +100,13 @@ class HealpixMap:
         new_map = hp.ud_grade(self.data, nside_out, **kwargs)
         self.data = new_map
         self.nside = nside_out
+
+    def switch_coords(self, to_coords):
+        rotated_map = coordinates.rotate_map(
+            self.data, from_coords=self.coords, to_coords=to_coords
+        )
+        self.data = rotated_map
+        self.coords = to_coords
 
     def alm(self, lmax=None):
         """
@@ -116,7 +158,13 @@ class HealpixMap:
 
 
 class Alm(hp.Alm):
-    def __init__(self, alm=None, lmax=None, frequencies=None):
+    def __init__(
+        self,
+        alm=None,
+        lmax=None,
+        frequencies=None,
+        coords="galactic"
+    ):
         """
         Base class for spherical harmonics coefficients.
         """
@@ -138,6 +186,7 @@ class Alm(hp.Alm):
                 UserWarning,
             )
         self.lmax = expected_lmax
+        self.coords = coords
 
     @property
     def alm_shape(self):
@@ -159,49 +208,40 @@ class Alm(hp.Alm):
         alm = hp_obj.alm(lmax=lmax)
         if lmax is None:
             lmax = hp.Alm().getlmax(alm.size)
-        return cls(alm=alm, lmax=lmax, frequencies=hp_obj.frequencies)
-
-    @staticmethod
-    def grid2alm(data, theta, phi, lmax=None):
-        """
-        Compute the alms up to lmax of a data array sampled at given theta
-        and phi.
-        phi and theta must be regularly sampled and in radians.
-        Put them in the healpy order.
-        """
-        theta = np.squeeze(theta).reshape(-1, 1)
-        phi = np.squeeze(phi).reshape(1, -1)
-        dth = theta[1, 0] - theta[0, 0]
-        dph = phi[0, 1] - phi[0, 0]
-        domega = np.sin(theta) * dth * dph
-
-        data = np.array(data)
-        if data.ndim == 2:
-            data = np.expand_dims(data, axis=0)  # add frequency axis
-
-        if lmax is None:
-            lmax = theta.size // 2 - 1
-        alm_size = hp.Alm.getsize(lmax, mmax=lmax)
-        alms = np.empty((data.shape[0], alm_size), dtype=complex)
-        for ell in range(lmax):
-            for emm in range(ell):
-                ylm = sph_harm(emm, ell, theta, phi)
-                alm = np.sum(data * ylm * domega, axis=(-1, -2))
-                ix = hp.Alm.getidx(lmax, ell, emm)
-                alms[:, ix] = alm
-        return alms
+        obj = cls(
+            alm=alm,
+            lmax=lmax,
+            frequencies=hp_obj.frequencies,
+            coords=hp_obj.coords
+        )
+        return obj
 
     @classmethod
-    def from_grid(cls, data, theta, phi, frequencies=None, lmax=None):
+    def from_grid(
+        cls,
+        data,
+        theta,
+        phi,
+        frequencies=None,
+        lmax=None,
+        coords="topographic",
+    ):
         """
         Construct an Alm from a grid in theta and phi.
         """
         data = np.array(data)
         theta = np.squeeze(theta).reshape(-1)
         phi = np.squeeze(phi).reshape(-1)
-        alms = cls.grid2alm(data, theta, phi, lmax)
-        return cls(alm=alms, lmax=lmax, frequencies=frequencies)
+        alms = grid2alm(data, theta, phi, lmax)
+        return cls(alm=alms, lmax=lmax, frequencies=frequencies, coords=coords)
 
+    def switch_coords(self, to_coords):
+        rotated_alm = coordinates.rotate_alm(
+            self.alm, from_coords=self.coords, to_coords=to_coords
+        )
+        self.alm = rotated_alm
+        self.coords = to_coords
+    
     def getlm(self, i=None):
         """
         Get the ell and emm corresponding to the numpy index of the alm
