@@ -34,7 +34,7 @@ def topo_to_radec(phi, theta, time, loc):
     loc = EarthLocation(lat=lat * u.deg, lon=lon * u.deg)
     obstime = Time(time)
     azs = [ph * u.rad for ph in phi]
-    alts = [(np.pi/2 - th) * u.rad for th in theta]
+    alts = [(np.pi / 2 - th) * u.rad for th in theta]
     altaz = AltAz(alt=alts, az=azs, location=loc, obstime=obstime)
     icrs = altaz.transform_to("icrs")
     ra = icrs.ra.rad

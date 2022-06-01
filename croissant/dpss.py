@@ -81,6 +81,7 @@ def dpss_op(
     )[0]
     return B
 
+
 def freq2dpss(data, freq_in, freq_out, design_matrix):
     freq_in = np.array(freq_in)
     freq_out = np.array(freq_out)
@@ -88,6 +89,7 @@ def freq2dpss(data, freq_in, freq_out, design_matrix):
     W = np.eye(freq_in.size)
     coeffs = fit_solution_matrix(W, A) @ np.array(data)
     return coeffs
+
 
 def dpss2freq(dpss_coeffs, design_matrix):
     return design_matrix @ dpss_coeffs

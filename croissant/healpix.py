@@ -3,6 +3,8 @@ import numpy as np
 from scipy.special import sph_harm
 import warnings
 
+from . import coordinates
+
 
 def nside2npix(nside):
     """
@@ -10,6 +12,7 @@ def nside2npix(nside):
     """
     npix = 12 * nside**2
     return npix
+
 
 def grid2alm(data, theta, phi, lmax=None):
     """
@@ -38,6 +41,7 @@ def grid2alm(data, theta, phi, lmax=None):
             ix = hp.Alm.getidx(lmax, ell, emm)
             alms[:, ix] = alm
     return alms
+
 
 # nside's for which pixel weights exist
 PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
@@ -159,11 +163,7 @@ class HealpixMap:
 
 class Alm(hp.Alm):
     def __init__(
-        self,
-        alm=None,
-        lmax=None,
-        frequencies=None,
-        coords="galactic"
+        self, alm=None, lmax=None, frequencies=None, coords="galactic"
     ):
         """
         Base class for spherical harmonics coefficients.
@@ -212,7 +212,7 @@ class Alm(hp.Alm):
             alm=alm,
             lmax=lmax,
             frequencies=hp_obj.frequencies,
-            coords=hp_obj.coords
+            coords=hp_obj.coords,
         )
         return obj
 
@@ -241,7 +241,7 @@ class Alm(hp.Alm):
         )
         self.alm = rotated_alm
         self.coords = to_coords
-    
+
     def getlm(self, i=None):
         """
         Get the ell and emm corresponding to the numpy index of the alm

@@ -80,8 +80,9 @@ class Sky(HealpixMap):
             sky_map,
             frequencies=frequencies,
             nested_input=False,
-            coords="galactic"
+            coords="galactic",
         )
+        return obj
 
     def power_law_map(
         self,
