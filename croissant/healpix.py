@@ -1,6 +1,5 @@
 import healpy as hp
 import numpy as np
-from .dpss import dpss_coeffs
 from scipy.special import sph_harm
 import warnings
 
@@ -93,36 +92,6 @@ class HealpixMap:
                 alm.append(i_alm)
             alm = np.array(alm)
         return alm
-
-    def interp_frequencies(
-        self,
-        target_frequencies,
-        input_frequencies=None,
-        input_map=None,
-        return_map=False,
-        **kwargs,
-    ):
-        """
-        A linear interpolator in frequency space usng DPSS.
-
-        Raises ValueError in case of shape mismatch (matmul)
-        """
-        if input_map is None:
-            input_map = self.data
-            if input_map is None:
-                raise ValueError("No inut map provided.")
-        if input_frequencies is None:
-            input_frequencies = self.frequencies
-
-        interpolated = dpss_coeffs(
-            input_map, target_frequencies, input_frequencies, **kwargs
-        )
-
-        if return_map:
-            return interpolated, target_frequencies
-        else:
-            self.data = interpolated
-            self.frequencies = target_frequencies
 
     def plot(self, frequency=None, **kwargs):
         """
@@ -306,36 +275,6 @@ class Alm(hp.Alm):
                 )
                 hp_map[i] = map_i
         return hp_map
-
-    def interp_frequencies(
-        self,
-        target_frequencies,
-        input_frequencies=None,
-        input_alm=None,
-        return_alm=False,
-        **kwargs,
-    ):
-        """
-        Interpolate the alm's in frequency using DPSS.
-
-        Raises ValueError in case of shape mismatch (matmul)
-        """
-        if input_alm is None:
-            input_alm = self.alm
-            if input_alm is None:
-                raise ValueError("No inut alm provided.")
-        if input_frequencies is None:
-            input_frequencies = self.frequencies
-
-        interpolated = dpss_coeffs(
-            input_alm, target_frequencies, input_frequencies, **kwargs
-        )
-
-        if return_alm:
-            return interpolated, target_frequencies
-        else:
-            self.alm = interpolated
-            self.frequencies = target_frequencies
 
     def rotate_z_phi(self, phi):
         """
