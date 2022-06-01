@@ -7,9 +7,9 @@ import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 import warnings
 
+from . import dpss
 from .coordinates import topo_to_radec
-import dpss
-from .healpix import Alm
+from .healpix import Alm, grid2alm
 
 
 class Simulator:
@@ -25,18 +25,22 @@ class Simulator:
         N_times=None,
         delta_t=None,
         frequencies=None,
+        horizon=None,
     ):
         """
         Simulator class. Prepares and runs simulations.
         """
+        # set up frequencies to run the simulation at
         if frequencies is None:
             frequencies = sky.frequencies
         self.frequencies = frequencies
+        # set up the location of the telescope as astropy.EarthLocation object
         self.loc = EarthLocation(
             lat=obs_lat * units.deg,
             lon=obs_lon * units.deg,
             height=obs_alt * units.m,
         )
+        # set up observing time as astropy.Time object
         self.t_start = Time(t_start, location=self.loc)
         if delta_t is not None:
             try:
@@ -59,9 +63,13 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-
+        # apply horizon mask to beam
+        beam.horizon_cut(horizon=horizon)
         self.beam = beam
+        # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.beam.lmax)
+        if self.sky.coords != "equitorial":
+            self.sky.switch_coords("equitorial")
 
     def _prepare_beam(self):
         # rotate to ra/dec at first observing time given location
@@ -75,7 +83,7 @@ class Simulator:
         interp = RectSphereBivariateSpline(dec, ra, self.beam.data)
         interp_beam = interp(smooth_dec, smooth_ra)
         # compute alms of beam from ra/dec
-        alm = Alm.grid2alm(interp_beam, smooth_dec, smooth_ra, lmax=self.lmax)
+        alm = grid2alm(interp_beam, smooth_dec, smooth_ra, lmax=self.lmax)
         self.beam.alm = alm
 
     def _compute_dpss(self, nterms=10):
