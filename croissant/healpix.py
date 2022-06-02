@@ -1,8 +1,9 @@
 import healpy as hp
 import numpy as np
-from scipy.special import sph_harm
+from pyshtools.expand import SHExpandLSQ
 
 from . import coordinates
+from .constants import sidereal_day
 
 
 def nside2npix(nside):
@@ -13,32 +14,32 @@ def nside2npix(nside):
     return npix
 
 
-def grid2alm(data, theta, phi, lmax=None):
-    """
-    Compute the alms up to lmax of a data array sampled at given theta and phi.
-    phi and theta must be regularly sampled and in radians.
-    Put them in the healpy order.
-    """
-    theta = np.squeeze(theta).reshape(-1, 1)
-    phi = np.squeeze(phi).reshape(1, -1)
-    dth = theta[1, 0] - theta[0, 0]
-    dph = phi[0, 1] - phi[0, 0]
-    domega = np.sin(theta) * dth * dph
-
-    data = np.array(data)
-    if data.ndim == 2:
-        data = np.expand_dims(data, axis=0)  # add frequency axis
+def angle2alm(data, theta, phi, lmax=None):
+    """ """
+    flat_theta = np.ravel(theta).copy() * 180 / np.pi
+    flat_phi = np.ravel(phi).copy() * 180 / np.pi
+    flat_data = np.reshape(data, (-1, flat_theta.size))
 
     if lmax is None:
         lmax = theta.size // 2 - 1
+
+    nfreqs = flat_data.shape[0]
     alm_size = hp.Alm.getsize(lmax, mmax=lmax)
-    alms = np.empty((data.shape[0], alm_size), dtype=complex)
-    for ell in range(lmax + 1):
-        for emm in range(ell + 1):
-            ylm = sph_harm(emm, ell, phi, theta)  # opposite convention
-            alm = np.sum(data * ylm * domega, axis=(-1, -2))
-            ix = hp.Alm.getidx(lmax, ell, emm)
-            alms[:, ix] = alm
+    alms = np.empty((nfreqs, alm_size))
+    for i in range(nfreqs):
+        cilm, chi_sq = SHExpandLSQ(
+            flat_data[i],
+            flat_theta,
+            flat_phi,
+            lmax,
+            norm=1,
+            csphase=1,
+        )
+        for ell in range(lmax + 1):
+            for emm in range(ell + 1):
+                ix = hp.Alm.getidx(lmax, ell, emm)
+                alms[i, ix] = cilm[0, ell, emm]
+
     return alms
 
 
@@ -63,10 +64,10 @@ class HealpixMap:
         """
         hp.pixelfunc.check_nside(nside, nest=nested_input)
         self.nside = nside
-        self.frequencies = np.squeeze(frequencies).reshape(-1)
+        self.frequencies = np.ravel(frequencies).copy()
 
         if data is not None:
-            data = np.array(data)
+            data = np.array(data, copy=True)
             data.shape = (self.frequencies.size, self.npix)
             if nested_input:
                 ix = hp.nest2ring(self.nside, np.arange(self.npix))
@@ -179,7 +180,7 @@ class Alm(hp.Alm):
         if alm is None and lmax is None:
             raise ValueError("Specify at least one of lmax and alm.")
 
-        self.frequencies = np.squeeze(frequencies).reshape(-1)
+        self.frequencies = np.ravel(frequencies).copy()
         if alm is None:
             self.lmax = lmax
             self.alm = np.zeros(self.alm_shape)
@@ -218,7 +219,7 @@ class Alm(hp.Alm):
         return obj
 
     @classmethod
-    def from_grid(
+    def from_angles(
         cls,
         data,
         theta,
@@ -231,9 +232,8 @@ class Alm(hp.Alm):
         Construct an Alm from a grid in theta and phi.
         """
         data = np.array(data)
-        theta = np.squeeze(theta).reshape(-1)
-        phi = np.squeeze(phi).reshape(-1)
-        alms = grid2alm(data, theta, phi, lmax)
+        theta, phi = np.meshgrid(theta, phi)
+        alms = angle2alm(data, theta, phi, lmax)
         obj = cls(alm=alms, lmax=lmax, frequencies=frequencies, coords=coords)
         return obj
 
@@ -340,7 +340,6 @@ class Alm(hp.Alm):
         """
         if not world == "earth":
             raise NotImplementedError("Moon will be added shortly.")
-        sidereal_day = 86164.0905
         dphi = 2 * np.pi * delta_t / sidereal_day
         phase = self.rotate_z_phi(dphi)
         return phase
