@@ -83,6 +83,7 @@ class Simulator:
         interp = RectSphereBivariateSpline(dec, ra, self.beam.data)
         interp_beam = interp(smooth_dec, smooth_ra)
         # compute alms of beam from ra/dec
+        smooth_ra += np.pi  # must be 0-2pi for scipy spherical harms
         alm = grid2alm(interp_beam, smooth_dec, smooth_ra, lmax=self.lmax)
         self.beam.alm = alm
 
