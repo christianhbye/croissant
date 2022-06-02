@@ -76,7 +76,8 @@ class Simulator:
         ra, dec = topo_to_radec(phi, theta, self.t_start, self.loc)
         dec = np.pi / 2 - dec  # colatitude, [0, pi]
         # compute alms of beam from ra/dec
-        alm = angle2alm(self.beam.data, dec, ra, lmax=self.lmax)
+        ra_grid, dec_grid = np.meshgrid(ra, dec)
+        alm = angle2alm(self.beam.data, dec_grid, ra_grid, lmax=self.lmax)
         self.beam.alm = alm
 
     def _compute_dpss(self, nterms=10):
