@@ -1,0 +1,6 @@
+- check healpix alm spherical harmonics, in particular if we can:
+- move to basis of real spherical harmonics only (if they have the same rotation property)
+- check normalization and condon-shortley phase of spherical harmonics
+
+- make sample notebook run
+- tests ...
