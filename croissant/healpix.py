@@ -1,7 +1,6 @@
 import healpy as hp
 import numpy as np
 from scipy.special import sph_harm
-import warnings
 
 from . import coordinates
 
@@ -34,9 +33,9 @@ def grid2alm(data, theta, phi, lmax=None):
         lmax = theta.size // 2 - 1
     alm_size = hp.Alm.getsize(lmax, mmax=lmax)
     alms = np.empty((data.shape[0], alm_size), dtype=complex)
-    for ell in range(lmax):
-        for emm in range(ell):
-            ylm = sph_harm(emm, ell, theta, phi)
+    for ell in range(lmax + 1):
+        for emm in range(ell + 1):
+            ylm = sph_harm(emm, ell, phi, theta)  # opposite convention
             alm = np.sum(data * ylm * domega, axis=(-1, -2))
             ix = hp.Alm.getidx(lmax, ell, emm)
             alms[:, ix] = alm
@@ -88,8 +87,17 @@ class HealpixMap:
         """
         Construct a healpy map class from an Alm object (defined below).
         """
+        if nside is None:
+            nside = (alm_obj.lmax + 1) // 3
         hp_map = alm_obj.hp_map(nside=nside)
-        return cls(nside, data=hp_map, frequencies=alm_obj.frequencies)
+        obj = cls(
+            nside,
+            data=hp_map,
+            nested_input=False,
+            frequencies=alm_obj.frequencies,
+            coords=alm_obj.coords,
+        )
+        return obj
 
     def ud_grade(self, nside_out, **kwargs):
         """
@@ -173,19 +181,15 @@ class Alm(hp.Alm):
 
         self.frequencies = np.squeeze(frequencies).reshape(-1)
         if alm is None:
-            alm = np.zeros(self.alm_shape)
+            self.lmax = lmax
+            self.alm = np.zeros(self.alm_shape)
+        elif lmax is None:
+            self.alm = np.squeeze(alm).reshape(self.frequencies.size, -1)
+            self.lmax = super().getlmax(alm.shape[1])
         else:
-            alm = np.array(alm)
-            alm.shape = self.alm_shape
+            self.lmax = lmax
+            self.alm = np.array(alm).reshape(*self.alm_shape)
 
-        expected_lmax = super().getlmax(alm.shape[1])
-        if lmax not in [expected_lmax, None]:
-            warnings.warn(
-                f"Expected lmax = {expected_lmax} based on alm shape,"
-                f"got lmax = {lmax}. Setting lmax to the expected value.",
-                UserWarning,
-            )
-        self.lmax = expected_lmax
         self.coords = coords
 
     @property
@@ -193,9 +197,6 @@ class Alm(hp.Alm):
         """
         Get the expected shape of the spherical harmonics.
         """
-        if self.lmax is None:
-            return None
-
         Nfreq = self.frequencies.size
         shape = (Nfreq, self.size)
         return shape
@@ -233,7 +234,8 @@ class Alm(hp.Alm):
         theta = np.squeeze(theta).reshape(-1)
         phi = np.squeeze(phi).reshape(-1)
         alms = grid2alm(data, theta, phi, lmax)
-        return cls(alm=alms, lmax=lmax, frequencies=frequencies, coords=coords)
+        obj = cls(alm=alms, lmax=lmax, frequencies=frequencies, coords=coords)
+        return obj
 
     def switch_coords(self, to_coords):
         rotated_alm = coordinates.rotate_alm(
