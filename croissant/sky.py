@@ -69,9 +69,7 @@ class Sky(HealpixMap):
         """
         Construct a sky object with pygdsm
         """
-        frequencies = np.array(frequencies)
-        if frequencies.ndim == 0:
-            frequencies = np.expand_dims(frequencies, axis=0)
+        frequencies = np.squeeze(frequencies).reshape(-1)
         gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution=res)
         sky_map = gsm16.generate(frequencies)
         if sky_map.ndim == 1:
