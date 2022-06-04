@@ -1,51 +1,37 @@
+from astropy_healpix import HEALPix
+from astropy import units
 import healpy as hp
 import numpy as np
-from pyshtools.expand import SHExpandLSQ
 
 from . import coordinates
 from .constants import sidereal_day
 
 
-def nside2npix(nside):
-    """
-    Compute the numpber of pixels in a healpix map given an nside.
-    """
-    npix = 12 * nside**2
-    return npix
-
-
-def angle2alm(data, theta, phi, lmax=None):
-    """ """
-    flat_theta = np.ravel(theta).copy() * 180 / np.pi
-    flat_phi = np.ravel(phi).copy() * 180 / np.pi
-    flat_data = np.reshape(data, (-1, flat_theta.size))
-
-    if lmax is None:
-        lmax = theta.size // 2 - 1
-
-    nfreqs = flat_data.shape[0]
-    alm_size = hp.Alm.getsize(lmax, mmax=lmax)
-    alms = np.empty((nfreqs, alm_size))
-    for i in range(nfreqs):
-        cilm, chi_sq = SHExpandLSQ(
-            flat_data[i],
-            flat_theta,
-            flat_phi,
-            lmax,
-            norm=1,
-            csphase=1,
-        )
-        for ell in range(lmax + 1):
-            for emm in range(ell + 1):
-                ix = hp.Alm.getidx(lmax, ell, emm)
-                alms[i, ix] = cilm[0, ell, emm]
-
-    return alms
-
-
 # nside's for which pixel weights exist
 PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
 
+def map2alm(data, lmax):
+    """
+    Compute the spherical harmonics coefficents of a healpix map.
+    """
+    data = np.array(data, copy=True)
+    npix = data.shape[-1]
+    nside = hp.npix2nside(npix)
+    use_pix_weights = nside in PIX_WEIGHTS_NSIDE
+    use_ring_weights = not use_pix_weights
+    kwargs = {
+        "lmax": lmax,
+        "mmax": lmax,
+        "use_weights": use_ring_weights,
+        "use_pixel_weights": use_pix_weights,
+    }
+    if data.ndim == 1:
+        alm = hp.map2alm(data, **kwargs)
+    else:
+        alm = np.empty((len(data), hp.Alm.getsize(lmax, mmax=lmax))
+        for i in range(len(data)):
+            alm[i] = hp.map2alm(data[i], **kwargs)
+    return alm
 
 class HealpixMap:
     def __init__(
@@ -81,7 +67,7 @@ class HealpixMap:
         """
         Get the number of pixels of the map.
         """
-        return nside2npix(self.nside)
+        return hp.nside2npix(self.nside)
 
     @classmethod
     def from_alm(cls, alm_obj, nside=None):
@@ -125,28 +111,9 @@ class HealpixMap:
         """
         Compute the spherical harmonics coefficents of the map.
         """
-        if self.data is None:
-            raise ValueError("data is None, cannot compute alms.")
         if lmax is None:
             lmax = 3 * self.nside - 1
-        use_pix_weights = self.nside in PIX_WEIGHTS_NSIDE
-        use_ring_weights = not use_pix_weights
-        kwargs = {
-            "lmax": lmax,
-            "mmax": lmax,
-            "use_weights": use_ring_weights,
-            "use_pixel_weights": use_pix_weights,
-        }
-        if self.frequencies is None:
-            alm = hp.map2alm(self.data, **kwargs)
-        else:
-            nfreqs = self.frequencies.size
-            alm = []
-            for i in range(nfreqs):
-                i_alm = hp.map2alm(self.data[i], **kwargs)
-                alm.append(i_alm)
-            alm = np.array(alm)
-        return alm
+        return map2alm(self.data, lmax)
 
     def plot(self, frequency=None, **kwargs):
         """
@@ -231,11 +198,7 @@ class Alm(hp.Alm):
         """
         Construct an Alm from a grid in theta and phi.
         """
-        data = np.array(data)
-        theta, phi = np.meshgrid(theta, phi)
-        alms = angle2alm(data, theta, phi, lmax)
-        obj = cls(alm=alms, lmax=lmax, frequencies=frequencies, coords=coords)
-        return obj
+        raise NotImplementedError
 
     def switch_coords(self, to_coords):
         rotated_alm = coordinates.rotate_alm(
@@ -307,7 +270,7 @@ class Alm(hp.Alm):
                 mmax=self.lmax,
             )
         else:
-            hp_map = np.empty((len(self.frequencies), nside2npix(nside)))
+            hp_map = np.empty((len(self.frequencies), hp.nside2npix(nside)))
             for i, freq in enumerate(self.frequencies):
                 map_i = hp.alm2map(
                     self.alm[i].astype("complex"),
