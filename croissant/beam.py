@@ -1,10 +1,12 @@
 import numpy as np
+from scipy.interpolate import RectSphereBivariateSpline
+
 
 def interpolate(data, theta, phi, to_theta, to_phi):
     """
     Interpolate on a sphere from specfied theta and phi. The data must be
     on a rectangular grid.
-    
+
     Parameters
     ----------
     data : array-like
@@ -57,6 +59,7 @@ def interpolate(data, theta, phi, to_theta, to_phi):
         interp_data[i] = interp(to_theta, to_phi, grid=False)
     return interp_data
 
+
 class Beam:
     def __init__(
         self,
@@ -66,14 +69,17 @@ class Beam:
         frequencies=None,
     ):
         """
+        Initialize beam object. The beam must be specified at a rectangular
+        grid for most methods (including simulation methods) to work.
+
         Parameters
         ----------
         data : array-like
             The power beam. Must have shape ([freqs,] theta, phi).
         theta : array-like
-            Zenith angle(s) in radians.
+            Zenith angle(s) in radians. Must be in [0, pi].
         phi : array-like
-            Azimuth angle(s) in radians.
+            Azimuth angle(s) in radians. Must be in [0, 2*pi).
         frequencies : array-like (optional)
             The frequencies in MHz of the beam. Necessary if the beam is
             specified at more than one frequency.
@@ -100,7 +106,6 @@ class Beam:
         elif horizon.ndim == 2:
             horizon = np.expand_dims(horizon, axis=0)
         self.data = self.data * horizon
-
 
     @classmethod
     def from_file(path):

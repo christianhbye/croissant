@@ -4,7 +4,6 @@ from astropy.time import Time
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import numpy as np
-from scipy.interpolate import RectSphereBivariateSpline
 import warnings
 
 from . import dpss
@@ -86,7 +85,7 @@ class Simulator:
         interp_beam = interpolate(
             self.beam.data, self.beam.theta, self.beam.phi, theta, phi
         )
-            
+
         self.beam.alm = map2alm(interp_beam, self.lmax)
 
     def compute_dpss(self, nterms=10):
@@ -125,7 +124,7 @@ class Simulator:
         conv = prod.sum(axis=1)
         return index, conv.real
 
-    def run(self, parallel=False):
+    def run(self, parallel=False, **kwargs):
         """
         Compute the convolution for a range of times.
         """

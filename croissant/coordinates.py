@@ -83,19 +83,20 @@ def radec2topo(ra, dec, time, loc):
     if type(loc) != EarthLocation:
         lat, lon, alt = loc
         loc = EarthLocation(
-            lat=lat*units.deg, lon=lon*units.deg, height=alt*units.m
+            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
         )
     if type(time) != Time:
         time = Time(time, scale="utc", location=loc)
 
-    icrs = ICRS(ra=ra*units.deg, dec=dec*units.deg)
+    icrs = ICRS(ra=ra * units.deg, dec=dec * units.deg)
     # transform to altaz
     altaz = icrs.transform_to(AltAz(location=loc, obstime=time))
-    theta = np.pi/2 - altaz.alt.rad
+    theta = np.pi / 2 - altaz.alt.rad
     phi = altaz.az.rad
     return theta, phi
 
-def healpix2lonlat(nside, pix=None)
+
+def healpix2lonlat(nside, pix=None):
     """
     Compute the longtitudes and latitudes of the pixel centers of a healpix
     map.
@@ -120,6 +121,7 @@ def healpix2lonlat(nside, pix=None)
         pix = np.arange(nside2npix(nside))
     lon, lat = pix2ang(nside, pix, nest=False, lonlat=True)
     return lon, lat
+
 
 def _hp_rotate(from_coords, to_coords):
     coords = {"galactic": "G", "ecliptic": "E", "equitorial": "C"}

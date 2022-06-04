@@ -1,5 +1,3 @@
-from astropy_healpix import HEALPix
-from astropy import units
 import healpy as hp
 import numpy as np
 
@@ -9,6 +7,7 @@ from .constants import sidereal_day
 
 # nside's for which pixel weights exist
 PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
+
 
 def map2alm(data, lmax):
     """
@@ -28,10 +27,11 @@ def map2alm(data, lmax):
     if data.ndim == 1:
         alm = hp.map2alm(data, **kwargs)
     else:
-        alm = np.empty((len(data), hp.Alm.getsize(lmax, mmax=lmax))
+        alm = np.empty((len(data), hp.Alm.getsize(lmax, mmax=lmax)))
         for i in range(len(data)):
             alm[i] = hp.map2alm(data[i], **kwargs)
     return alm
+
 
 class HealpixMap:
     def __init__(
