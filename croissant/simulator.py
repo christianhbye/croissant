@@ -7,9 +7,8 @@ import numpy as np
 import warnings
 
 from . import dpss
-from .beam import interpolate
-from .coordinates import healpix2lonlat, radec2topo
-from .healpix import Alm, map2alm
+from .coordinates import radec2topo
+from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
 
 class Simulator:
@@ -81,12 +80,16 @@ class Simulator:
         ra, dec = healpix2lonlat(nside)
         # get corresponding theta/phi
         theta, phi = radec2topo(ra, dec, self.t_start, self.loc)
-        # interpolate beam to those theta/phi's
-        interp_beam = interpolate(
-            self.beam.data, self.beam.theta, self.beam.phi, theta, phi
+        pixel_centers = np.array([theta, phi]).T
+        # get healpix map
+        hp_maps = grid2healpix(
+            self.beam.data,
+            nside,
+            self.beam.theta,
+            self.beam.phi,
+            pixel_centers=pixel_centers,
         )
-
-        self.beam.alm = map2alm(interp_beam, self.lmax)
+        self.beam.alm = map2alm(hp_maps, self.lmax)
 
     def compute_dpss(self, nterms=10):
         # generate the set of target frequencies (subset of all freqs)

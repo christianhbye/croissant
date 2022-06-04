@@ -1,7 +1,7 @@
 from astropy.coordinates import AltAz, EarthLocation, ICRS
 from astropy.time import Time
 from astropy import units
-from healpy import nside2npix, pix2ang, Rotator
+from healpy import Rotator
 import numpy as np
 
 
@@ -94,33 +94,6 @@ def radec2topo(ra, dec, time, loc):
     theta = np.pi / 2 - altaz.alt.rad
     phi = altaz.az.rad
     return theta, phi
-
-
-def healpix2lonlat(nside, pix=None):
-    """
-    Compute the longtitudes and latitudes of the pixel centers of a healpix
-    map.
-
-    Parameters
-    ----------
-    nside : int
-        The nside of the healpix map.
-    pix : array-like (optional)
-        Which pixels to get the longtitudes and latitudes of. Defaults to all
-        pixels.
-
-    Returns
-    -------
-    lon : scalar or np.ndarray
-        The longtitude(s) in degrees.
-    lat : scalar or np.ndarray
-        The latitude(s) in degrees.
-
-    """
-    if pix is None:
-        pix = np.arange(nside2npix(nside))
-    lon, lat = pix2ang(nside, pix, nest=False, lonlat=True)
-    return lon, lat
 
 
 def _hp_rotate(from_coords, to_coords):

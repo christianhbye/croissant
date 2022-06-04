@@ -1,18 +1,160 @@
 import healpy as hp
 import numpy as np
+from scipy.interpolate import RectSphereBivariateSpline
 
 from . import coordinates
 from .constants import sidereal_day
 
 
-# nside's for which pixel weights exist
-PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
+def healpix2lonlat(nside, pix=None):
+    """
+    Compute the longtitudes and latitudes of the pixel centers of a healpix
+    map.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the healpix map.
+    pix : array-like (optional)
+        Which pixels to get the longtitudes and latitudes of. Defaults to all
+        pixels.
+
+    Returns
+    -------
+    lon : scalar or np.ndarray
+        The longtitude(s) in degrees.
+    lat : scalar or np.ndarray
+        The latitude(s) in degrees.
+
+    """
+    if pix is None:
+        pix = np.arange(hp.nside2npix(nside))
+    lon, lat = hp.pix2ang(nside, pix, nest=False, lonlat=True)
+    return lon, lat
+
+
+def grid_interp(data, theta, phi, to_theta, to_phi):
+    """
+    Interpolate on a sphere from specfied theta and phi. The data must be
+    on a rectangular grid.
+
+    Parameters
+    ----------
+    data : array-like
+        The data to interpolate. The last two dimensions must be (theta, phi).
+        Can optionally have a 0th dimmension (e.g. a frequency dimension).
+    theta : 1d-array
+        The polar angles (colatitudes) in radians. Must be regularly sampled
+        and strictly increasing.
+    phi : 1d-array
+        The azimuthal angles in radians. Must be regularly sampled and strictly
+        increasing. Must be in the interval [0, 2*pi).
+    to_theta : array-like
+        The polar angles to interpolate to in radians.
+    to_phi : array-like
+        The azimuthal angles to interpolate to in radians.
+
+    Returns
+    -------
+    interp_data : np.ndarray
+        The interpolated data.
+
+    """
+    theta = np.ravel(theta).copy()
+    phi = np.ravel(phi).copy()
+    data = np.array(data, copy=True).reshape(-1, theta.size, phi.size)
+
+    # remove poles before interpolating
+    northpole = theta[0] == 0
+    southpole = theta[-1] == np.pi
+    if northpole:
+        theta = theta[1:]
+    if southpole:
+        theta = theta[:-1]
+    phi -= np.pi  # different conventions
+
+    interp_data = np.empty((len(data), to_theta.size))
+    for i in range(len(data)):
+        # remove poles from data and assign to list
+        pole_values = [None, None]
+        if northpole:
+            pole_values[0] = data[0]
+            data = data[1:]
+        if southpole:
+            pole_values[1] = data[-1]
+            data = data[:-1]
+
+        interp = RectSphereBivariateSpline(
+            theta, phi, data, pole_value=pole_values
+        )
+        interp_data[i] = interp(to_theta, to_phi, grid=False)
+    return interp_data
+
+
+def grid2healpix(data, nside, theta=None, phi=None, pixel_centers=None):
+    """
+    Transform data defined on a rectangular grid on a sphere to healpix map(s).
+    To compute a healpix map in a different coordinate system, compute the
+    pixel centers of the target coordinate system and set the keyword argument
+    pixel_centers.
+
+    Parameters
+    ----------
+    data : array-like
+        The data to transform. The last two dimensions must be (theta, phi).
+        It may have an optional 0th dimension to generate multiple maps at
+        the same time.
+    nside : int
+        The nside of the output healpix map.
+    theta : 1d-array (optional)
+        The polar angles in radians. Must be in [0, pi]. Defaults to 1-degree
+        sampling.
+    phi : 1d-array (optional)
+        The azimuthal angles in radians. Must be in [0, 2pi). Defaults to
+        1-degree sampling.
+    pixel_centers: 2d-array (optional)
+        The centers of the pixels in radians. Must have shape (npix, 2) and be
+        ordered like healpix RING pixels. The 0th column corresponds to theta
+        and the 1st to phi.
+
+    Returns
+    -------
+    hp_map : np.ndarray
+        The healpix map(s) in RING order with shape (n_maps, n_pixels).
+
+    """
+    npix = hp.nside2npix(nside)
+    if pixel_centers is not None:
+        if np.shape(pixel_centers) != (npix, 2):
+            raise ValueError(f"Shape must be ({npix}, 2).")
+        pix_theta = pixel_centers[:, 0]
+        pix_phi = pixel_centers[:, 1]
+    else:
+        lon, lat = healpix2lonlat(nside)
+        pix_theta = np.pi - np.deg2rad(lat)
+        pix_phi = np.deg2rad(lon)
+
+    if theta is None:
+        theta = np.linspace(0, np.pi, num=181)
+    else:
+        theta = np.array(theta, copy=True)
+
+    if phi is None:
+        phi = np.linspace(0, 2 * np.pi, num=360, endpoint=False)
+    else:
+        phi = np.array(phi, copy=True)
+
+    hp_map = grid_interp(data, theta, phi, pix_theta, pix_phi)
+    return hp_map
 
 
 def map2alm(data, lmax):
     """
     Compute the spherical harmonics coefficents of a healpix map.
     """
+    # nside's for which pixel weights exist
+    PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
+
     data = np.array(data, copy=True)
     npix = data.shape[-1]
     nside = hp.npix2nside(npix)
