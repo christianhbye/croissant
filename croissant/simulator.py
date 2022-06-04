@@ -4,11 +4,13 @@ from astropy.time import Time
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import numpy as np
+from scipy.interpolate import RectSphereBivariateSpline
 import warnings
 
 from . import dpss
-from .coordinates import topo_to_radec
-from .healpix import Alm, angle2alm
+from .beam import interpolate
+from .coordinates import healpix2lonlat, radec2topo
+from .healpix import Alm, map2alm
 
 
 class Simulator:
@@ -61,26 +63,33 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        # apply horizon mask to beam
+        # apply horizon mask and initialize beam
         beam.horizon_cut(horizon=horizon)
         self.beam = beam
+        self.beam_alm()
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
         if self.sky.coords != "equitorial":
             self.sky.switch_coords("equitorial")
+        # compute dpss coeffs
+        self.compute_dpss()
 
-    def _prepare_beam(self):
-        # rotate to ra/dec at first observing time given location
-        phi = self.beam.phi.copy()
-        theta = self.beam.theta.copy()
-        ra, dec = topo_to_radec(phi, theta, self.t_start, self.loc)
-        dec = np.pi / 2 - dec  # colatitude, [0, pi]
-        # compute alms of beam from ra/dec
-        ra_grid, dec_grid = np.meshgrid(ra, dec)
-        alm = angle2alm(self.beam.data, dec_grid, ra_grid, lmax=self.lmax)
-        self.beam.alm = alm
+    def beam_alm(self, nside=64):
+        """
+        Get the alm's of the beam in the equitorial coordinate system.
+        """
+        # get ra/dec at healpix centers
+        ra, dec = healpix2lonlat(nside)
+        # get corresponding theta/phi
+        theta, phi = radec2topo(ra, dec, self.t_start, self.loc)
+        # interpolate beam to those theta/phi's
+        interp_beam = interpolate(
+            self.beam.data, self.beam.theta, self.beam.phi, theta, phi
+        )
+            
+        self.beam.alm = map2alm(interp_beam, self.lmax)
 
-    def _compute_dpss(self, nterms=10):
+    def compute_dpss(self, nterms=10):
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
@@ -116,17 +125,11 @@ class Simulator:
         conv = prod.sum(axis=1)
         return index, conv.real
 
-    def run(self, parallel=False, **kwargs):
+    def run(self, parallel=False):
         """
         Compute the convolution for a range of times.
         """
-        print("prep beam")
-        self._prepare_beam()
-        nterms = kwargs.pop("nterms", None)
-        print("compute dpss")
-        self._compute_dpss(nterms=nterms)
-        if nterms is None:
-            nterms = self.beam.coeffs.shape[0]
+        nterms = self.beam.coeffs.shape[0]
         waterfall_dpss = np.empty((self.N_times, nterms), dtype="complex")
         if parallel:
             ncpu = kwargs.pop("ncpu", None)
