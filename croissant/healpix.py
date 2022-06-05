@@ -65,27 +65,23 @@ def grid_interp(data, theta, phi, to_theta, to_phi):
     data = np.array(data, copy=True).reshape(-1, theta.size, phi.size)
 
     # remove poles before interpolating
+    pole_values = np.full((len(data), 2), None)
     northpole = theta[0] == 0
     southpole = theta[-1] == np.pi
     if northpole:
         theta = theta[1:]
+        pole_values[:, 0] = data[:, 0, 0]
+        data = data[:, 1:]
     if southpole:
         theta = theta[:-1]
+        pole_values[:, 1] = data[:, -1, 0]
+        data = data[:, :-1]
     phi -= np.pi  # different conventions
 
     interp_data = np.empty((len(data), to_theta.size))
     for i in range(len(data)):
-        # remove poles from data and assign to list
-        pole_values = [None, None]
-        if northpole:
-            pole_values[0] = data[0]
-            data = data[1:]
-        if southpole:
-            pole_values[1] = data[-1]
-            data = data[:-1]
-
         interp = RectSphereBivariateSpline(
-            theta, phi, data, pole_value=pole_values
+            theta, phi, data[i], pole_values=pole_values[i]
         )
         interp_data[i] = interp(to_theta, to_phi, grid=False)
     return interp_data
@@ -131,7 +127,7 @@ def grid2healpix(data, nside, theta=None, phi=None, pixel_centers=None):
         pix_phi = pixel_centers[:, 1]
     else:
         lon, lat = healpix2lonlat(nside)
-        pix_theta = np.pi - np.deg2rad(lat)
+        pix_theta = np.pi / 2 - np.deg2rad(lat)
         pix_phi = np.deg2rad(lon)
 
     if theta is None:
@@ -169,7 +165,9 @@ def map2alm(data, lmax):
     if data.ndim == 1:
         alm = hp.map2alm(data, **kwargs)
     else:
-        alm = np.empty((len(data), hp.Alm.getsize(lmax, mmax=lmax)))
+        alm = np.empty(
+            (len(data), hp.Alm.getsize(lmax, mmax=lmax)), dtype=np.complex128
+        )
         for i in range(len(data)):
             alm[i] = hp.map2alm(data[i], **kwargs)
     return alm
@@ -292,13 +290,15 @@ class Alm(hp.Alm):
         self.frequencies = np.ravel(frequencies).copy()
         if alm is None:
             self.lmax = lmax
-            self.alm = np.zeros(self.alm_shape)
+            self.alm = np.zeros(self.alm_shape, dtype=np.complex128)
         elif lmax is None:
-            self.alm = np.squeeze(alm).reshape(self.frequencies.size, -1)
+            alm = np.array(alm, copy=True, dtype=np.complex128)
+            self.alm = alm.reshape(self.frequencies.size, -1)
             self.lmax = super().getlmax(alm.shape[1])
         else:
             self.lmax = lmax
-            self.alm = np.array(alm).reshape(*self.alm_shape)
+            alm = np.array(alm, copy=True, dtype=np.complex128)
+            self.alm = alm.reshape(*self.alm_shape)
 
         self.coords = coords
 
@@ -318,7 +318,7 @@ class Alm(hp.Alm):
         """
         alm = hp_obj.alm(lmax=lmax)
         if lmax is None:
-            lmax = hp.Alm().getlmax(alm.size)
+            lmax = hp.Alm.getlmax(alm.size)
         obj = cls(
             alm=alm,
             lmax=lmax,

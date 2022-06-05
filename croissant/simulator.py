@@ -132,7 +132,7 @@ class Simulator:
         Compute the convolution for a range of times.
         """
         nterms = self.beam.coeffs.shape[0]
-        waterfall_dpss = np.empty((self.N_times, nterms), dtype="complex")
+        waterfall_dpss = np.empty((self.N_times, nterms), dtype=np.complex128)
         if parallel:
             ncpu = kwargs.pop("ncpu", None)
 
@@ -141,7 +141,7 @@ class Simulator:
                 waterfall_dpss[i] = conv
 
             with Pool(processes=ncpu) as pool:
-                for i, t in enumerate(self.times):
+                for i, t in enumerate(self.dt):
                     pool.apply_async(
                         self._run_onetime,
                         args=t,
@@ -150,13 +150,22 @@ class Simulator:
                     )
 
         else:
-            for i, t in enumerate(self.times):
+            for i, t in enumerate(self.dt):
                 print(f"{t=}")
                 conv = self._run_onetime(t)[1]
                 waterfall_dpss[i] = conv
 
         # convert back to frequency
-        self.waterfall = self.design_matrix @ waterfall_dpss.T
+        waterfall = self.design_matrix @ waterfall_dpss.T
+        if not np.allclose(waterfall.imag, 0):
+            warnings.warn(
+                (
+                    "Non-zero imaginary part of visibility is getting discarded, "
+                    f"max(vis.imag) = {np.max(np.abs(waterfall.imag))}."
+                ),
+                UserWarning,
+            )
+        self.waterfall = waterfall.real
 
     def plot(self, **kwargs):
         """
@@ -166,8 +175,8 @@ class Simulator:
         _extent = [
             self.frequencies.min(),
             self.frequencies.max(),
-            self.times.max(),
-            self.times.min(),
+            self.dt[-1],
+            self.dt[0],
         ]
         extent = kwargs.pop("extent", _extent)
         interpolation = kwargs.pop("interpolation", "none")
