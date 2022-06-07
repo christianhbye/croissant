@@ -17,7 +17,7 @@ def dpss_op(
     hera_filters.dspec.dpss_operator suitable for a single antenna
     autocorrelation experiment.
 
-    Specify one and only one of eigenval_cutoff (min eigenvalue of sinc matrix),
+    Specify one of eigenval_cutoff (min eigenvalue of sinc matrix),
     edge_suppression (degree of tone suppression at edge of filter window),
     nterms (number of DPSS terms to include), and
     avg_suppression (the avg suppression of tones within filter edges) to
