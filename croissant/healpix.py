@@ -360,6 +360,8 @@ class Alm(hp.Alm):
         """
         Get the index of the alm array for a given ell and emm.
         """
+        if not (0 <= emm <= ell <= self.lmax):
+            raise ValueError("Ell or emm are out of bounds.")
         return super().getidx(self.lmax, ell, emm)
 
     @property
@@ -395,8 +397,13 @@ class Alm(hp.Alm):
         """
         Get the value of an a_lm given the ell and emm.
         """
-        ix = self.getidx(ell, emm)
-        return self.alm[freq_idx, ix]
+        if emm >= 0:
+            ix = self.getidx(ell, emm)
+            coeff = self.alm[freq_idx, ix]
+        else:  # for m < 0, alm = (-1)^m * al|m|.conj()
+            ix = self.getidx(ell, -emm)
+            coeff = (-1) ** emm * self.alm[freq_idx, ix].conj()
+        return coeff
 
     def hp_map(self, nside=None):
         """
