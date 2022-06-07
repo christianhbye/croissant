@@ -148,10 +148,9 @@ class Simulator:
         sky = np.array(sky, copy=True).T
         beam = np.array(beam, copy=True).T
         lmax = hp.Alm.getlmax(beam.shape[0])
-        prod = sky[:lmax+1] * beam[:lmax+1]  # m = 0
-        prod += sky[lmax+1:] * beam[lmax+1:]  # m > 0
-        prod += np.conj(sky[lmax+1:] * beam[lmax+1:])  # m < 0
-        conv = prod.sum(axis=0)
+        conv = np.sum(sky[:lmax+1] * beam[:lmax+1], axis=0)  # m = 0
+        conv += np.sum(sky[lmax+1:] * beam[lmax+1:].conj(), axis=0)  # m > 0
+        conv += np.sum(sky[lmax+1:].conj() * beam[lmax+1:], axis=0)  # m < 0
         return conv.T
 
     def _run_onetime(self, time, index=None):
@@ -160,16 +159,17 @@ class Simulator:
         """
         sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
         conv = self.alm_dot(sky_coeffs, self.beam.coeffs)
-        # normalize
-        conv /= self.alm_dot(np.ones_like(self.beam.coeffs), self.beam.coeffs)
+        # normalize by beam integral over sphere = a00 * Y00 * 4pi
+        conv /= self.beam.coeffs[:, 0] * np.sqrt(4*np.pi) 
         return index, conv
 
     def run(self, parallel=False, **kwargs):
         """
         Compute the convolution for a range of times.
         """
-        nterms = self.beam.coeffs.shape[0]
-        waterfall_dpss = np.empty((self.N_times, nterms), dtype=np.complex128)
+        waterfall_dpss = np.empty(
+            (self.N_times, self.nterms), dtype=np.complex128
+        )
         if parallel:
             ncpu = kwargs.pop("ncpu", None)
 
@@ -188,7 +188,6 @@ class Simulator:
 
         else:
             for i, t in enumerate(self.dt):
-                print(f"{t=}")
                 conv = self._run_onetime(t)[1]
                 waterfall_dpss[i] = conv
 
