@@ -1,6 +1,7 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
+import healpy as hp
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import numpy as np
@@ -16,7 +17,6 @@ class Simulator:
         self,
         beam,
         sky,
-        lmax,
         obs_loc,
         t_start,
         t_end=None,
@@ -24,11 +24,14 @@ class Simulator:
         delta_t=None,
         frequencies=None,
         horizon=None,
+        lmax=32,
+        dpss_nterms=10,
     ):
         """
         Simulator class. Prepares and runs simulations.
         """
         self.lmax = lmax
+        self.nterms = dpss_nterms
         # set up frequencies to run the simulation at
         if frequencies is None:
             frequencies = sky.frequencies
@@ -91,7 +94,7 @@ class Simulator:
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
 
-    def compute_dpss(self, nterms=10):
+    def compute_dpss(self):
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
@@ -104,7 +107,7 @@ class Simulator:
             )
         )
 
-        self.design_matrix = dpss.dpss_op(x, nterms=nterms)
+        self.design_matrix = dpss.dpss_op(x, nterms=self.nterms)
         self.sky.coeffs = dpss.freq2dpss(
             self.sky.alm,
             self.sky.frequencies,
@@ -118,14 +121,48 @@ class Simulator:
             self.design_matrix,
         )
 
+    @staticmethod
+    def alm_dot(sky, beam):
+        """
+        Compute the alm dot product between sky and beam. This assumes healpix
+        convention for alms. The sky and beam may have extra dimensions
+        (like a frequency axis). These must come before the alm axis, that is,
+        the sky can have shape (N_freq, N_alm) for example.
+
+        Parameters
+        ----------
+        sky : array-like
+            The alms of the sky.
+        beam : array-like
+            The alms of the beam.
+
+        Returns
+        -------
+        conv : np.ndarray
+            The dot product of the sky and beam alms. This is the convolution
+            of the sky and the beam since the spherical harmonics are
+            orthonormal.
+
+        """
+        # transpose data so alm axis is first
+        sky = np.array(sky, copy=True).T
+        beam = np.array(beam, copy=True).T
+        lmax = hp.Alm.getlmax(beam.shape[0])
+        prod = sky[:lmax+1] * beam[:lmax+1]  # m = 0
+        prod += sky[lmax+1:] * beam[lmax+1:]  # m > 0
+        prod += np.conj(sky[lmax+1:] * beam[lmax+1:])  # m < 0
+        conv = prod.sum(axis=0)
+        return conv.T
+
     def _run_onetime(self, time, index=None):
         """
         Compute the convolution for one specfic time.
         """
         sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
-        prod = self.beam.coeffs * sky_coeffs
-        conv = prod.sum(axis=1)
-        return index, conv.real
+        conv = self.alm_dot(sky_coeffs, self.beam.coeffs)
+        # normalize
+        conv /= self.alm_dot(np.ones_like(self.beam.coeffs), self.beam.coeffs)
+        return index, conv
 
     def run(self, parallel=False, **kwargs):
         """
@@ -160,18 +197,19 @@ class Simulator:
         if not np.allclose(waterfall.imag, 0):
             warnings.warn(
                 (
-                    "Non-zero imaginary part of visibility is getting discarded, "
+                    "Non-zero imaginary part of visibility is discarded, "
                     f"max(vis.imag) = {np.max(np.abs(waterfall.imag))}."
                 ),
                 UserWarning,
             )
-        self.waterfall = waterfall.real
+        self.waterfall = waterfall.T.real
 
     def plot(self, **kwargs):
         """
         Plot the result of the simulation.
         """
-        plt.figure()
+        figsize = kwargs.pop("figsize", None)
+        plt.figure(figsize=figsize)
         _extent = [
             self.frequencies.min(),
             self.frequencies.max(),
