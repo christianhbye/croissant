@@ -148,10 +148,13 @@ class Simulator:
         sky = np.array(sky, copy=True).T
         beam = np.array(beam, copy=True).T
         lmax = hp.Alm.getlmax(beam.shape[0])
-        conv = np.sum(sky[:lmax+1] * beam[:lmax+1], axis=0)  # m = 0
-        conv += np.sum(sky[lmax+1:] * beam[lmax+1:].conj(), axis=0)  # m > 0
-        conv += np.sum(sky[lmax+1:].conj() * beam[lmax+1:], axis=0)  # m < 0
-        return conv.T
+        # m = 0 modes are already real:
+        prod = sky[:lmax+1].real * beam[:lmax+1].real
+        # m != 0 (see docs/math for derivation):
+        prod += 2 * sky[lmax+1:].real * beam[lmax+1:].real
+        prod += 2 * sky[lmax+1:].imag * sky[lmax+1:].imag
+        conv = np.sum(prod, axis=0).T
+        return conv
 
     def _run_onetime(self, time, index=None):
         """
@@ -193,15 +196,7 @@ class Simulator:
 
         # convert back to frequency
         waterfall = self.design_matrix @ waterfall_dpss.T
-        if not np.allclose(waterfall.imag, 0):
-            warnings.warn(
-                (
-                    "Non-zero imaginary part of visibility is discarded, "
-                    f"max(vis.imag) = {np.max(np.abs(waterfall.imag))}."
-                ),
-                UserWarning,
-            )
-        self.waterfall = waterfall.T.real
+        self.waterfall = waterfall.T
 
     def plot(self, **kwargs):
         """

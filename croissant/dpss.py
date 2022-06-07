@@ -79,7 +79,8 @@ def dpss_op(
         cache=None,
         **kwarg,
     )[0]
-    return B
+    assert np.allclose(B.imag, 0), "design matrix isn't real!!" #FIXME
+    return B.real
 
 
 def freq2dpss(data, freq_in, freq_out, design_matrix):
