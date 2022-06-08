@@ -2,8 +2,7 @@ import healpy as hp
 import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 
-from . import coordinates
-from .constants import sidereal_day
+from . import coordinates, constants
 
 
 def healpix2lonlat(nside, pix=None):
@@ -22,9 +21,9 @@ def healpix2lonlat(nside, pix=None):
     Returns
     -------
     lon : scalar or np.ndarray
-        The longtitude(s) in degrees.
+        The longtitude(s) in degrees. Range: [0, 360).
     lat : scalar or np.ndarray
-        The latitude(s) in degrees.
+        The latitude(s) in degrees. Range: [-90, 90].
 
     """
     if pix is None:
@@ -148,13 +147,11 @@ def map2alm(data, lmax):
     """
     Compute the spherical harmonics coefficents of a healpix map.
     """
-    # nside's for which pixel weights exist
-    PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
 
-    data = np.array(data, copy=True)
+    data = np.array(data)
     npix = data.shape[-1]
     nside = hp.npix2nside(npix)
-    use_pix_weights = nside in PIX_WEIGHTS_NSIDE
+    use_pix_weights = nside in constants.PIX_WEIGHTS_NSIDE
     use_ring_weights = not use_pix_weights
     kwargs = {
         "lmax": lmax,
@@ -193,7 +190,7 @@ class HealpixMap:
         self.frequencies = np.ravel(frequencies).copy()
 
         if data is not None:
-            data = np.array(data, copy=True)
+            data = np.array(data, copy=True, dtype=np.float64)
             data.shape = (self.frequencies.size, self.npix)
             if nested_input:
                 ix = hp.nest2ring(self.nside, np.arange(self.npix))
@@ -378,20 +375,12 @@ class Alm(hp.Alm):
         """
         return self.lmax
 
-    def set_coeff(self, value, ell, emm, freq_idx=None):
+    def set_coeff(self, value, ell, emm, freq_idx=0):
         """
         Set the value of an a_lm given the ell and emm.
         """
         ix = self.getidx(ell, emm)
-        if self.alm.ndim == 1:
-            self.alm[ix] = value
-        else:
-            if freq_idx is None:
-                if self.alm.shape[0] > 1:
-                    raise ValueError("No frequency index given.")
-                else:
-                    freq_idx = 0
-            self.alm[freq_idx, ix] = value
+        self.alm[freq_idx, ix] = value
 
     def get_coeff(self, ell, emm, freq_idx=0):
         """
@@ -452,6 +441,6 @@ class Alm(hp.Alm):
         """
         if not world == "earth":
             raise NotImplementedError("Moon will be added shortly.")
-        dphi = 2 * np.pi * delta_t / sidereal_day
+        dphi = 2 * np.pi * delta_t / constants.sidereal_day
         phase = self.rotate_z_phi(dphi)
         return phase
