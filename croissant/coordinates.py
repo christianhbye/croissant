@@ -1,8 +1,10 @@
 from astropy.coordinates import AltAz, EarthLocation, ICRS
 from astropy.time import Time
 from astropy import units
-from healpy import Rotator
+from healpy import npix2nside, Rotator
 import numpy as np
+
+from .constants import PIX_WEIGHTS_NSIDE
 
 
 def topo2radec(phi, theta, time, loc, grid=True):
@@ -97,12 +99,12 @@ def radec2topo(ra, dec, time, loc):
 
 
 def _hp_rotate(from_coords, to_coords):
-    coords = {"galactic": "G", "ecliptic": "E", "equitorial": "C"}
+    coords = {"galactic": "G", "ecliptic": "E", "equatorial": "C"}
     fc = from_coords.lower()
     tc = to_coords.lower()
     if fc not in coords or tc not in coords:
         raise ValueError(
-            f"Invalid coordinate system name, must be in {list[coords.keys()]}"
+            f"Invalid coordinate system name, must be in {list(coords.keys())}"
         )
     rot = Rotator(coord=[coords[fc], coords[tc]])
     return rot
@@ -110,17 +112,35 @@ def _hp_rotate(from_coords, to_coords):
 
 def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
     rot = _hp_rotate(from_coords, to_coords)
-    rotated_map = np.empty_like(sky_map)
-    for i, m in enumerate(sky_map):  # each frequency
-        rm = rot.rotate_map_alms(m)
-        rotated_map[i] = rm
+    sky_map = np.array(sky_map, copy=True, dtype=np.float64)
+    npix = sky_map.shape[-1]
+    nside = npix2nside(npix)
+    use_pix_weights = nside in PIX_WEIGHTS_NSIDE
+    if sky_map.ndim == 1:
+        rotated_map = rot.rotate_map_alms(
+            sky_map, use_pixel_weights=use_pix_weights
+        )
+    elif sky_map.ndim == 2:
+        rotated_map = np.empty_like(sky_map)
+        for i, m in enumerate(sky_map):  # each frequency
+            rm = rotate_map(m, from_coords=from_coords, to_coords=to_coords)
+            rotated_map[i] = rm
+    else:
+        raise ValueError("sky_map must be a 1d map or a (2d) list of maps.")
     return rotated_map
 
 
 def rotate_alm(alm, from_coords="galactic", to_coords="equitorial"):
     rot = _hp_rotate(from_coords, to_coords)
-    rotated_alm = np.empty_like(alm)
-    for i, a in enumerate(alm):  # for each frequency
-        ra = rot.rotate_alm(a)
-        rotated_alm[i] = ra
+    alm = np.array(alm, copy=True, dtype=np.complex128)
+    if alm.ndim == 1:
+        rotated_alm = rot.rotate_alm(alm)
+    elif alm.ndim == 2:
+        rotated_alm = np.empty_like(alm)
+        for i, a in enumerate(alm):  # for each frequency
+            rotated_alm[i] = rotate_alm(
+                a, from_coords=from_coords, to_coords=to_coords
+            )
+    else:
+        raise ValueError(f"alm must have 1 or 2 dimensions, not {alm.ndim}.")
     return rotated_alm
