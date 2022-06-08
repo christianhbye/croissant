@@ -2,7 +2,7 @@ from copy import deepcopy
 import healpy
 import numpy as np
 import pytest
-from croissant import healpix as hp
+from croissant import coordinates, healpix as hp
 
 
 def test_healpix2lonlat():
@@ -92,35 +92,51 @@ def test_map2alm():
     assert np.isclose(alm0[0] + c * np.sqrt(4 * np.pi), alm1[0])
 
 
-def test_nested_check():
-    nside = 10  # this is invalid for NESTED but OK for RING
+def test_nested_input():
     freqs = np.linspace(1, 50, 50)
+    nside = 10  # this is invalid for NESTED but OK for RING
     npix = healpy.nside2npix(nside)
-    data = np.ones((freqs.size, npix)) * 10
-    kwargs = {"data": data, "nested_input": True, "frequencies": freqs}
-    # it should raise an error
+    data = 10 * np.ones((freqs.size, npix))
+    kwargs = {"data": data, "nested_input": False, "frequencies": freqs}
+    hp.HealpixMap(nside, **kwargs)  # should work
+    # should raise an error if nested is True
+    kwargs["nested_input"] = True
     with pytest.raises(ValueError):
         hp.HealpixMap(nside, **kwargs)
-    kwargs["nested_input"] = False
-    hp.HealpixMap(nside, **kwargs)  # should work
 
-
-def test_npix():
-    nside = 8  # make it valid for nested so that the ud_grade can run
+    # valid nested input
+    nside = 8
     npix = healpy.nside2npix(nside)
-    freqs = np.linspace(1, 50, 50)
-    data = np.ones((freqs.size, npix))
-    kwargs = {"data": data, "nested_input": False, "frequencies": freqs}
-    hpm = hp.HealpixMap(nside, **kwargs)
-    assert hpm.npix == npix
-    assert hpm.npix == hpm.data.shape[-1]
+    data = np.arange(npix) ** 2
+    kwargs = {"data": data, "nested_input": True, "frequencies": None}
+    hp_map = hp.HealpixMap(nside, **kwargs)
+    # hp_map data is in the RING scheme:
+    ring_ix = healpy.nest2ring(nside, np.arange(npix))
+    data_ring = data[ring_ix]
+    assert np.allclose(hp_map.data, data_ring)
+
+
+def test_from_alm():
+    nside = 10
+    lmax = 3 * nside - 1
+    alm = hp.Alm(lmax=lmax)
+    a00 = 10
+    alm.set_coeff(a00, 0, 0)
+    hp_map = hp.HealpixMap.from_alm(alm, nside=None)
+    # healpix map should be able to infer the nside from lmax
+    assert hp_map.nside == nside
+    npix = healpy.nside2npix(nside)
+    # the map should just be = a00 * Y00 everywhere
+    Y00 = 1 / np.sqrt(4 * np.pi)
+    expected_map = np.full((1, npix), a00 * Y00)
+    assert np.allclose(hp_map.data, expected_map)
 
 
 def test_ud_grade():
     freqs = np.linspace(1, 50, 50)
     nside = 8
     npix = healpy.nside2npix(nside)
-    data = np.ones((freqs.size, npix)) * np.arange(npix).reshape(1, -1)
+    data = np.repeat(np.arange(npix).reshape(1, -1), freqs.size, axis=0)
     kwargs = {"data": data, "nested_input": False, "frequencies": freqs}
     hpm = hp.HealpixMap(nside, **kwargs)
     nside_out = [1, 2, 8, 32]
@@ -131,17 +147,54 @@ def test_ud_grade():
         assert np.allclose(hp_copy.data, healpy.ud_grade(hpm.data, ns))
 
 
-def test_alm():
+def test_switch_coords():
     nside = 8
     npix = healpy.nside2npix(nside)
-    avg = 10.0
-    data = avg * np.ones(npix)  # constant map
-    kwargs = {"data": data, "nested_input": False, "frequencies": None}
-    hpm = hp.HealpixMap(nside, **kwargs)
-    # constant map
-    alm = hp.Alm.from_healpix(hpm)
-    assert alm.lmax == 3 * nside - 1  # default lmax
-    a00 = alm.get_coeff(0, 0)
-    assert np.allclose(a00, avg * np.sqrt(4 * np.pi))
-    alm.set_coeff(0, 0, 0)  # set a00 to 0, all coeffs should be 0 after this
-    assert np.allclose(alm.alm, 0, atol=1e-2)
+    data = np.arange(npix)
+    # switch from galactic to equatorial
+    coords = "galactic"
+    new_coords = "equatorial"
+    hp_map = hp.HealpixMap(nside, data=data, coords=coords)
+    assert hp_map.coords == coords
+    hp_map.switch_coords(new_coords)
+    assert hp_map.coords == new_coords
+    expected_data = coordinates.rotate_map(
+        data, from_coords=coords, to_coords=new_coords
+    )
+    assert np.allclose(hp_map.data, expected_data)
+
+    # several maps at once
+    freqs = np.arange(10).reshape(-1, 1)
+    data = np.arange(npix).reshape(1, -1) * freqs
+    hp_map = hp.HealpixMap(nside, data=data, frequencies=freqs, coords=coords)
+    assert hp_map.coords == coords
+    hp_map.switch_coords(new_coords)
+    assert hp_map.coords == new_coords
+    expected_data = coordinates.rotate_map(
+        data, from_coords=coords, to_coords=new_coords
+    )
+    assert np.allclose(hp_map.data, expected_data)
+
+
+def test_alm():
+    nside = 32
+    npix = healpy.nside2npix(nside)
+    data = np.arange(npix)
+    hp_map = hp.HealpixMap(nside, data=data)
+    # test default lmax
+    alm = hp_map.alm(lmax=None)
+    expected_lmax = 3 * nside - 1  # should be default
+    expected_size = healpy.Alm.getsize(expected_lmax, mmax=expected_lmax)
+    assert alm.shape == (1, expected_size)
+    # specify lmax
+    lmax = 10
+    alm = hp_map.alm(lmax=lmax)
+    expected_size = healpy.Alm.getsize(lmax, mmax=lmax)
+    assert alm.shape == (1, expected_size)
+
+    # several maps at once
+    freqs = np.arange(10).reshape(-1, 1)
+    data = np.arange(npix).reshape(1, -1) * freqs
+    hp_map = hp.HealpixMap(nside, data=data, frequencies=freqs)
+    alm = hp_map.alm(lmax=lmax)
+    assert alm.shape == (freqs.size, expected_size)
