@@ -393,7 +393,7 @@ class Alm(hp.Alm):
                     freq_idx = 0
             self.alm[freq_idx, ix] = value
 
-    def get_coeff(self, ell, emm, freq_idx=None):
+    def get_coeff(self, ell, emm, freq_idx=0):
         """
         Get the value of an a_lm given the ell and emm.
         """
