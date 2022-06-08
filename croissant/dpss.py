@@ -79,7 +79,7 @@ def dpss_op(
         cache=None,
         **kwarg,
     )[0]
-    assert np.allclose(B.imag, 0), "design matrix isn't real!!" #FIXME
+    assert np.allclose(B.imag, 0), "design matrix isn't real!!"  # FIXME
     return B.real
 
 

@@ -1,8 +1,8 @@
 import healpy as hp
 import numpy as np
-import pytest
 
-from croissant import sky, healpix
+from croissant import sky
+
 
 def test_power_law_map():
     nside = 1

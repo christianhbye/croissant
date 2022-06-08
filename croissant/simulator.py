@@ -3,7 +3,6 @@ from astropy.coordinates import EarthLocation
 from astropy.time import Time
 import healpy as hp
 import matplotlib.pyplot as plt
-from multiprocessing import Pool
 import numpy as np
 import warnings
 
@@ -149,9 +148,9 @@ class Simulator:
         beam = np.array(beam, copy=True).T
         lmax = hp.Alm.getlmax(beam.shape[0])
         # m = 0 modes are already real:
-        al0 = sky[:lmax+1].real * beam[:lmax+1].real
+        al0 = sky[: lmax + 1].real * beam[: lmax + 1].real
         # m != 0 (see docs/math for derivation):
-        alm = 2 * (sky[lmax+1:] * beam[lmax+1:].conj()).real
+        alm = 2 * (sky[lmax + 1 :] * beam[lmax + 1 :].conj()).real
         conv = al0.sum(axis=0) + alm.sum(axis=0)
         return conv.T
 
@@ -165,9 +164,10 @@ class Simulator:
         )
         # normalize by beam integral over sphere = a00 * Y00 * 4pi
         norm = dpss.dpss2freq(
-            self.beam.coeffs[:, 0].real * np.sqrt(4*np.pi), self.design_matrix
+            self.beam.coeffs[:, 0].real * np.sqrt(4 * np.pi),
+            self.design_matrix,
         )
-        return conv/norm
+        return conv / norm
 
     def run(self):
         """
@@ -196,7 +196,7 @@ class Simulator:
         interpolation = kwargs.pop("interpolation", "none")
         aspect = kwargs.pop("aspect", "auto")
         power = kwargs.pop("power", 0)
-        weight = self.frequencies **power
+        weight = self.frequencies**power
         plt.imshow(
             self.waterfall * weight.reshape(1, -1),
             extent=extent,
