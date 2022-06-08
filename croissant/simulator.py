@@ -149,54 +149,36 @@ class Simulator:
         beam = np.array(beam, copy=True).T
         lmax = hp.Alm.getlmax(beam.shape[0])
         # m = 0 modes are already real:
-        prod = sky[:lmax+1].real * beam[:lmax+1].real
+        al0 = sky[:lmax+1].real * beam[:lmax+1].real
         # m != 0 (see docs/math for derivation):
-        prod += 2 * sky[lmax+1:].real * beam[lmax+1:].real
-        prod += 2 * sky[lmax+1:].imag * sky[lmax+1:].imag
-        conv = np.sum(prod, axis=0).T
-        return conv
+        alm = 2 * (sky[lmax+1:] * beam[lmax+1:].conj()).real
+        conv = al0.sum(axis=0) + alm.sum(axis=0)
+        return conv.T
 
-    def _run_onetime(self, time, index=None):
+    def _run_onetime(self, time):
         """
         Compute the convolution for one specfic time.
         """
         sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
-        conv = self.alm_dot(sky_coeffs, self.beam.coeffs)
+        conv = dpss.dpss2freq(
+            self.alm_dot(sky_coeffs, self.beam.coeffs), self.design_matrix
+        )
         # normalize by beam integral over sphere = a00 * Y00 * 4pi
-        conv /= self.beam.coeffs[:, 0] * np.sqrt(4*np.pi) 
-        return index, conv
+        norm = dpss.dpss2freq(
+            self.beam.coeffs[:, 0].real * np.sqrt(4*np.pi), self.design_matrix
+        )
+        return conv/norm
 
-    def run(self, parallel=False, **kwargs):
+    def run(self):
         """
         Compute the convolution for a range of times.
         """
-        waterfall_dpss = np.empty(
-            (self.N_times, self.nterms), dtype=np.complex128
-        )
-        if parallel:
-            ncpu = kwargs.pop("ncpu", None)
+        waterfall = np.empty((self.N_times, self.frequencies.size))
+        for i, t in enumerate(self.dt):
+            conv = self._run_onetime(t)
+            waterfall[i] = conv
 
-            def get_res(result):
-                i, conv = result
-                waterfall_dpss[i] = conv
-
-            with Pool(processes=ncpu) as pool:
-                for i, t in enumerate(self.dt):
-                    pool.apply_async(
-                        self._run_onetime,
-                        args=t,
-                        kwds={"index": i},
-                        callback=get_res,
-                    )
-
-        else:
-            for i, t in enumerate(self.dt):
-                conv = self._run_onetime(t)[1]
-                waterfall_dpss[i] = conv
-
-        # convert back to frequency
-        waterfall = self.design_matrix @ waterfall_dpss.T
-        self.waterfall = waterfall.T
+        self.waterfall = waterfall
 
     def plot(self, **kwargs):
         """
@@ -213,8 +195,10 @@ class Simulator:
         extent = kwargs.pop("extent", _extent)
         interpolation = kwargs.pop("interpolation", "none")
         aspect = kwargs.pop("aspect", "auto")
+        power = kwargs.pop("power", 0)
+        weight = self.frequencies **power
         plt.imshow(
-            self.waterfall,
+            self.waterfall * weight.reshape(1, -1),
             extent=extent,
             aspect=aspect,
             interpolation=interpolation,
