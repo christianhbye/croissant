@@ -70,7 +70,7 @@ def dpss_op(
     # remove Nones and put the specified value in a list
     kwarg = {key: [val] for key, val in kwargs.items() if val is not None}
     if not len(kwarg) == 1:
-        raise ValueError(f"Specify one and only of {list[kwargs.keys()]}.")
+        raise ValueError(f"Specify one and only of {list(kwargs.keys())}.")
 
     B = dpss_operator(
         x,

@@ -10,12 +10,14 @@ def test_dpss_op():
         _ = dpss.dpss_op(x)
 
     with pytest.raises(ValueError):
-        _ = dpss.dpss_op(x, eignval_cutoff=1e-12, nterms=10)  # too many kwargs
+        _ = dpss.dpss_op(
+            x, eigenval_cutoff=1e-12, nterms=10
+        )  # too many kwargs
 
     nterms = 10
-    design_matrix = dpss_op(x, nterms=nterms)
+    design_matrix = dpss.dpss_op(x, nterms=nterms)
     assert design_matrix.shape == (x.size, nterms)
-    assert design_matrix == design_matrix.real
+    assert np.allclose(design_matrix, design_matrix.real)
 
 
 def test_freq2dpss2freq():
@@ -29,18 +31,19 @@ def test_freq2dpss2freq():
     nterms = 10
     A = dpss.dpss_op(x, nterms=nterms)  # design matrix
 
-    data = [[f**2, np.sin(f)] for f in [f1, f2, f3]]  # mock data
+    # mock data
+    data = [np.array([f**2, np.sin(f)]) for f in [f1, f2, f3]]
 
     # compute dpss coeffs
-    d1 = freq2dpss(data[0].T, x, f1, A)
-    d2 = freq2dpss(data[1].T, x, f2, A)
-    d3 = freq2dpss(data[2].T, x, f3, A)
+    d1 = dpss.freq2dpss(data[0].T, f1, x, A)
+    d2 = dpss.freq2dpss(data[1].T, f2, x, A)
+    d3 = dpss.freq2dpss(data[2].T, f3, x, A)
 
     assert d1.shape == d2.shape == d3.shape == (nterms, 2)
 
-    f1_ = dpss2freq(d1)
-    assert f1.shape == f1_
-    f2_ = dpss2freq(d2)
-    assert f2.shape == f2_
-    f3_ = dpss2freq(d3)
-    assert f3.shape == f3_
+    d1_ = dpss.dpss2freq(d1, A)
+    assert data[0].T.shape == d1_[np.isin(x, f1)].shape
+    d2_ = dpss.dpss2freq(d2, A)
+    assert data[1].T.shape == d2_[np.isin(x, f2)].shape
+    d3_ = dpss.dpss2freq(d3, A)
+    assert data[2].T.shape == d3_[np.isin(x, f3)].shape
