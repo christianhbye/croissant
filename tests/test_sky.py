@@ -1,26 +1,14 @@
+import healpy as hp
 import numpy as np
 import pytest
 
 from croissant import sky, healpix
 
-
-def test_npix2nside():
-    npix = [12, 48, 7500, 30000, 120000]
-    for npv in npix:
-        nside = sky.npix2nside(npv)
-        assert healpix.nside2npix(nside) == npv
-
-    # invalid npix:
-    with pytest.raises(ValueError):
-        sky.npix2nside(37)
-        sky.npix2nside(72)
-
-
 def test_power_law_map():
     nside = 1
-    npix = healpix.nside2npix(nside)
+    npix = hp.nside2npix(nside)
     freq = 1
-    data = np.random.rand(1, npix)
+    data = np.arange(npix).reshape(1, -1)
     test_sky = sky.Sky(data, frequencies=freq)
     freq_out = np.linspace(1, 50)
     beta = 3
