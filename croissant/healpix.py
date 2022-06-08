@@ -280,6 +280,12 @@ class Alm(hp.Alm):
     ):
         """
         Base class for spherical harmonics coefficients.
+
+        Alm can be indexed with [freq_index, ell, emm] to get the
+        coeffiecient corresponding to the given frequency index, and values of
+        ell and emm. The frequencies can be index in the usual numpy way and
+        may be 0 if the alms are specified for only one frequency.
+
         """
         if alm is None and lmax is None:
             raise ValueError("Specify at least one of lmax and alm.")
@@ -287,7 +293,7 @@ class Alm(hp.Alm):
         self.frequencies = np.ravel(frequencies).copy()
         if alm is None:
             self.lmax = lmax
-            self.alm = np.zeros(self.alm_shape, dtype=np.complex128)
+            self.all_zero()
         elif lmax is None:
             alm = np.array(alm, copy=True, dtype=np.complex128)
             self.alm = alm.reshape(self.frequencies.size, -1)
@@ -295,12 +301,52 @@ class Alm(hp.Alm):
         else:
             self.lmax = lmax
             alm = np.array(alm, copy=True, dtype=np.complex128)
-            self.alm = alm.reshape(*self.alm_shape)
+            self.alm = alm.reshape(*self.shape)
 
         self.coords = coords
 
+    def __setitem__(self, key, value):
+        """
+        Set the value of the alm given the frequency index and the values of
+        ell and emm.
+        """
+        # if alm only has one frequency, it doesn't matter if the freq_idx is
+        # not specified:
+        if self.shape[0] == 1 and len(key) == 2:
+            ell, emm = key
+            key = [0, ell, emm]
+        if len(key) != 3:
+            raise IndexError(
+                f"Key has length {len(key)}, but must have length 3 to specify"
+                " frequency index, ell, and emm."
+            )
+        freq_idx, ell, emm = key
+        ix = self.getidx(ell, emm)
+        self.alm[freq_idx, ix] = value
+
+    def __getitem__(self, key):
+        # if alm only has one frequency, it doesn't matter if the freq_idx is
+        # not specified:
+        if self.alm.shape[0] == 1 and len(key) == 2:
+            ell, emm = key
+            key = [0, ell, emm]
+        if len(key) != 3:
+            raise IndexError(
+                f"Key has length {len(key)}, but must have length 3 to specify"
+                " frequency index, ell, and emm."
+            )
+        freq_idx, ell, emm = key
+        ix = self.getidx(ell, np.abs(emm))
+        coeff = self.alm[freq_idx, ix]
+        if emm < 0:
+            coeff = (-1) ** emm * coeff.conj()
+        return coeff
+
+    def all_zero(self):
+        self.alm = np.zeros(self.shape, dtype=np.complex128)
+
     @property
-    def alm_shape(self):
+    def shape(self):
         """
         Get the expected shape of the spherical harmonics.
         """
@@ -374,25 +420,6 @@ class Alm(hp.Alm):
         Get the maxmium ell of the Alm object.
         """
         return self.lmax
-
-    def set_coeff(self, value, ell, emm, freq_idx=0):
-        """
-        Set the value of an a_lm given the ell and emm.
-        """
-        ix = self.getidx(ell, emm)
-        self.alm[freq_idx, ix] = value
-
-    def get_coeff(self, ell, emm, freq_idx=0):
-        """
-        Get the value of an a_lm given the ell and emm.
-        """
-        if emm >= 0:
-            ix = self.getidx(ell, emm)
-            coeff = self.alm[freq_idx, ix]
-        else:  # for m < 0, alm = (-1)^m * al|m|.conj()
-            ix = self.getidx(ell, -emm)
-            coeff = (-1) ** emm * self.alm[freq_idx, ix].conj()
-        return coeff
 
     def hp_map(self, nside=None):
         """
