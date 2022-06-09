@@ -170,6 +170,22 @@ def map2alm(data, lmax):
     return alm
 
 
+def alm2map(alm, nside=64, mmax=None):
+    alm = np.array(alm, copy=True)
+    if alm.ndim == 1:
+        alm.shape = (1, -1)
+    nfreqs = alm.shape[0]
+    lmax = hp.Alm.getlmax(alm.shape[1], mmax=mmax)
+    if mmax is None:
+        mmax = lmax
+    npix = hp.nside2npix(nside)
+    hp_map = np.empty((nfreqs, npix))
+    for i in range(nfreqs):
+        map_i = hp.alm2map(alm[i], nside, lmax=lmax, mmax=mmax)
+        hp_map[i] = map_i
+    return hp_map
+
+
 class HealpixMap:
     def __init__(
         self,
@@ -441,18 +457,7 @@ class Alm(hp.Alm):
         """
         Construct a healpy map from the Alm.
         """
-        nfreqs = self.frequencies.size
-        npix = hp.nside2npix(nside)
-        hp_map = np.empty((nfreqs, npix))
-        for i in range(nfreqs):
-            map_i = hp.alm2map(
-                self.alm[i],
-                nside,
-                lmax=self.lmax,
-                mmax=self.lmax,
-            )
-            hp_map[i] = map_i
-        return hp_map
+        return alm2map(self.alm, nside=nside, mmax=None)
 
     def rotate_z_phi(self, phi):
         """
