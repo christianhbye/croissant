@@ -102,7 +102,7 @@ def test_nested_input():
         "data": data,
         "nside": nside,
         "nested_input": False,
-        "frequencies": freqs
+        "frequencies": freqs,
     }
     hp.HealpixMap(**kwargs)  # should work
     # should raise an error if nested is True
@@ -115,7 +115,10 @@ def test_nested_input():
     npix = healpy.nside2npix(nside)
     data = np.arange(npix) ** 2
     kwargs = {
-        "data": data, "nside": nside, "nested_input": True, "frequencies": None
+        "data": data,
+        "nside": nside,
+        "nested_input": True,
+        "frequencies": None,
     }
     hp_map = hp.HealpixMap(**kwargs)
     # hp_map data is in the RING scheme:
@@ -148,7 +151,7 @@ def test_ud_grade():
         "data": data,
         "nside": nside,
         "nested_input": False,
-        "frequencies": freqs
+        "frequencies": freqs,
     }
     hpm = hp.HealpixMap(**kwargs)
     nside_out = [1, 2, 8, 32]
