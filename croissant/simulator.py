@@ -7,6 +7,7 @@ import numpy as np
 import warnings
 
 from . import dpss
+from .constants import Y00
 from .coordinates import radec2topo
 from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
@@ -164,7 +165,7 @@ class Simulator:
         )
         # normalize by beam integral over sphere = a00 * Y00 * 4pi
         norm = dpss.dpss2freq(
-            self.beam.coeffs[:, 0].real * np.sqrt(4 * np.pi),
+            self.beam.coeffs[:, 0].real * Y00 * 4 * np.pi,
             self.design_matrix,
         )
         return conv / norm
