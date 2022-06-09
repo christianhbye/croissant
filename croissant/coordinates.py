@@ -7,7 +7,7 @@ import numpy as np
 from .constants import PIX_WEIGHTS_NSIDE
 
 
-def topo2radec(phi, theta, time, loc, grid=True):
+def topo2radec(theta, phi, time, loc, grid=True):
     """
     Convert topocentric coordinates to ra/dec at given time. Useful for
     antenna beams.
@@ -23,8 +23,6 @@ def topo2radec(phi, theta, time, loc, grid=True):
     grid : bool
         If True then phi and theta are assumed to be coordinate axes of a grid.
         This has no effect if phi and theta have size 1.
-    return_matrix : bool
-        If True, return the rotation matrix. Else, return the coordinates.
 
     Returns
     -------
