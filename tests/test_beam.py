@@ -29,17 +29,25 @@ def test_horizon_cut():
     data = np.ones((1, theta.size, phi.size)) * frequencies**2
     beam = Beam(data, theta, phi, frequencies=frequencies)
 
-    # default horizon, i.e. cuts everywhere below theta = 0
+    # default horizon, i.e. cuts everywhere at theta > np.pi/2
     beam.horizon_cut(horizon=None)
-    below_horizon = theta < 0
+    below_horizon = theta > np.pi / 2
     assert np.allclose(beam.data[:, below_horizon, :], 0)
-    assert np.allclose(beam.data[:, ~below_horizon, :], data)
+    assert np.allclose(
+        beam.data[:, ~below_horizon, :], data[:, ~below_horizon, :]
+    )
 
     # custom horizon
     beam = Beam(data, theta, phi, frequencies=frequencies)
     horizon = np.ones(data.shape)
-    horizon[:, theta < np.pi / 8, :] = 0
-    horizon[:, :, phi < np.pi] = 0
+    th_cut = theta > np.pi / 2 - np.pi / 8
+    ph_cut = phi < np.pi
+    horizon[:, th_cut, :] = 0
+    horizon[:, :, ph_cut] = 0
     beam.horizon_cut(horizon=horizon)
-    assert np.allclose(beam.data[:, theta < np.pi / 8, :], 0)
-    assert np.allclose(beam.data[:, :, phi < np.pi], 0)
+    assert np.allclose(beam.data[:, th_cut, :], 0)
+    assert np.allclose(beam.data[:, :, ph_cut], 0)
+    assert np.allclose(
+        beam.data[:, ~th_cut, :][:, :, ~ph_cut],
+        data[:, ~th_cut, :][:, :, ~ph_cut],
+    )

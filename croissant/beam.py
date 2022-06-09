@@ -31,8 +31,8 @@ class Beam:
         data = np.array(data, copy=True)
         self.frequencies = np.ravel(frequencies).copy()
         self.nfreqs = self.frequencies.size
-        self.theta = np.array(theta, copy=True)
-        self.phi = np.array(phi, copy=True)
+        self.theta = np.ravel(theta).copy()
+        self.phi = np.ravel(phi).copy()
         if self.theta.min() < 0 or self.theta.max() > np.pi:
             raise ValueError("Theta must be in the range [0, pi].")
         if self.phi.min() < 0 or self.phi.max() >= 2 * np.pi:
@@ -72,7 +72,7 @@ class Beam:
         """
         if horizon is None:
             horizon = np.ones_like(self.data)
-            horizon[:, self.theta < 0] = 0
+            horizon[:, self.theta > np.pi / 2] = 0
         else:
             horizon = np.array(horizon, copy=True)
             horizon.shape = (-1, self.theta.size, self.phi.size)
