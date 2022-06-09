@@ -183,7 +183,7 @@ def alm2map(alm, nside=64, mmax=None):
     for i in range(nfreqs):
         map_i = hp.alm2map(alm[i], nside, lmax=lmax, mmax=mmax)
         hp_map[i] = map_i
-    return hp_map
+    return np.squeeze(hp_map)
 
 
 class HealpixMap:
