@@ -421,29 +421,21 @@ class Alm(hp.Alm):
         """
         return self.lmax
 
-    def hp_map(self, nside=None):
+    def hp_map(self, nside=64):
         """
         Construct a healpy map from the Alm.
         """
-        if nside is None:
-            nside = (self.lmax + 1) // 3
-        if self.frequencies is None:
-            hp_map = hp.alm2map(
-                self.alm.astype("complex"),
+        nfreqs = self.frequencies.size
+        npix = hp.nside2npix(nside)
+        hp_map = np.empty((nfreqs, npix))
+        for i in range(nfreqs):
+            map_i = hp.alm2map(
+                self.alm[i],
                 nside,
                 lmax=self.lmax,
                 mmax=self.lmax,
             )
-        else:
-            hp_map = np.empty((len(self.frequencies), hp.nside2npix(nside)))
-            for i, freq in enumerate(self.frequencies):
-                map_i = hp.alm2map(
-                    self.alm[i].astype("complex"),
-                    nside,
-                    lmax=self.lmax,
-                    mmax=self.lmax,
-                )
-                hp_map[i] = map_i
+            hp_map[i] = map_i
         return hp_map
 
     def rotate_z_phi(self, phi):

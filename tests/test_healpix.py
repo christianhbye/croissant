@@ -3,6 +3,7 @@ import healpy
 import numpy as np
 import pytest
 from croissant import coordinates, healpix as hp
+from croissant.constants import Y00
 
 
 def test_healpix2lonlat():
@@ -73,7 +74,7 @@ def test_map2alm():
     data = np.ones(npix)
     lmax = 5
     alm = hp.map2alm(data, lmax)
-    assert np.isclose(alm[0], np.sqrt(4 * np.pi))  # a00 = Y00 * 4pi
+    assert np.isclose(alm[0], Y00 * 4 * np.pi)  # a00 = Y00 * 4pi
     assert np.allclose(alm[1:], 0)  # rest of alms should be 0
 
     # multiple maps at once
@@ -89,7 +90,7 @@ def test_map2alm():
     assert np.allclose(alm[1], alm1)
     # d1 is d0 + constant value so they should only differ at a00
     assert np.allclose(alm0[1:], alm1[1:])
-    assert np.isclose(alm0[0] + c * np.sqrt(4 * np.pi), alm1[0])
+    assert np.isclose(alm0[0] + c * Y00 * 4 * np.pi, alm1[0])
 
 
 def test_nested_input():
@@ -127,7 +128,6 @@ def test_from_alm():
     assert hp_map.nside == nside
     npix = healpy.nside2npix(nside)
     # the map should just be = a00 * Y00 everywhere
-    Y00 = 1 / np.sqrt(4 * np.pi)
     expected_map = np.full((1, npix), a00 * Y00)
     assert np.allclose(hp_map.data, expected_map)
 
@@ -327,3 +327,26 @@ def test_getidx():
     ell_, emm_ = alm.getlm(i=ix)
     assert ell == ell_
     assert emm == emm_
+
+
+def test_hp_map():
+    # make constant map
+    lmax = 10
+    nside = 100
+    alm = hp.Alm(lmax=lmax)
+    a00 = 5
+    alm[0, 0] = a00
+    hp_map = alm.hp_map(nside=nside)
+    npix = hp_map.shape[-1]
+    assert nside == healpy.npix2nside(npix)
+    expected_map = np.full((1, npix), a00 * Y00)
+    assert np.allclose(hp_map, expected_map)
+
+    # make many maps
+    frequencies = np.linspace(1, 50, 50)
+    alm = hp.Alm(lmax=lmax, frequencies=frequencies)
+    alm[:, 0, 0] = a00 * frequencies
+    hp_map = alm.hp_map(nside=nside)
+    expected_maps = np.full((frequencies.size, npix), a00 * Y00)
+    expected_maps *= frequencies.reshape(-1, 1)
+    assert np.allclose(hp_map, expected_maps)
