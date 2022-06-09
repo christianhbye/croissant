@@ -3,7 +3,7 @@ import healpy
 import numpy as np
 import pytest
 from croissant import coordinates, healpix as hp
-from croissant.constants import Y00
+from croissant.constants import sidereal_day, Y00
 
 
 def test_healpix2lonlat():
@@ -350,3 +350,23 @@ def test_hp_map():
     expected_maps = np.full((frequencies.size, npix), a00 * Y00)
     expected_maps *= frequencies.reshape(-1, 1)
     assert np.allclose(hp_map, expected_maps)
+
+
+def test_rotate_z_phi():
+    lmax = 10
+    alm = hp.Alm(lmax=lmax)
+    phi = np.pi / 2
+    phase = alm.rotate_z_phi(phi)
+    for ell in range(lmax + 1):
+        for emm in range(ell + 1):
+            ix = alm.getidx(ell, emm)
+            assert np.isclose(phase[0, ix], np.exp(1j * emm * phi))
+
+
+def test_rotate_z_time():
+    alm = hp.Alm(lmax=20, frequencies=np.linspace(1, 50, 50))
+    div = [1, 2, 4, 8]
+    for d in div:
+        dt = sidereal_day / d
+        dphi = 2 * np.pi / d
+        assert np.allclose(alm.rotate_z_time(dt), alm.rotate_z_phi(dphi))
