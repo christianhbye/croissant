@@ -92,6 +92,61 @@ def test_map2alm():
     assert np.allclose(alm0[1:], alm1[1:])
     assert np.isclose(alm0[0] + c * Y00 * 4 * np.pi, alm1[0])
 
+def test_alm2map():
+    # make constant map with mmax = lmax
+    lmax = 10
+    mmax = lmax
+    a00 = 3
+    size = healpy.Alm.getsize(lmax, mmax=mmax)
+    alm = np.zeros(size, dtype=np.complex128)
+    alm[0] = a00
+    nside = 32
+    hp_map = hp.alm2map(alm, nside=nside, mmax=mmax)
+    npix = hp_map.shape[-1]
+    assert nside == healpy.npix2nside(npix)
+    expected_map = np.full(npix, a00 * Y00)
+    assert np.allclose(hp_map, expected_map)
+
+    # constant map with mmax < lmax
+    mmax = 5
+    size = healpy.Alm.getsize(lmax, mmax=mmax)
+    alm = np.zeros(size, dtype=np.complex128)
+    alm[0] = a00
+    hp_map = hp.alm2map(alm, nside=nside, mmax=mmax)
+    npix = hp_map.shape[-1]
+    assert nside == healpy.npix2nside(npix)
+    expected_map = np.full(npix, a00 * Y00)
+    assert np.allclose(hp_map, expected_map)
+
+    # make many maps
+    frequencies = np.linspace(1, 50, 50)
+    mmax = lmax
+    size = healpy.Alm.getsize(lmax, mmax=mmax)
+    alm = np.zeros((frequencies.size, size), dtype=np.complex128)
+    alm[:, 0] = a00 * frequencies**2.5
+    hp_map = hp.alm2map(alm, nside=nside, mmax=mmax)
+    expected_maps = np.full((frequencies.size, npix), a00 * Y00)
+    expected_maps *= frequencies.reshape(-1, 1)**2.5
+    assert np.allclose(hp_map, expected_maps)
+
+    # inverting map2alm
+    lmax = 10
+    mmax = lmax
+    size = healpy.Alm.getsize(lmax, mmax=mmax)
+    alm = np.zeros(size, dtype=np.complex128)
+    lm_dict = {
+        (0,0): 5.1, (2,0): 7.4, (3,2): 3+5j, (4,1): -4.3 + 1.3j, (7, 7): 11
+    }
+    for ell, emm in lm_dict:
+        ix = healpy.Alm.getidx(lmax, ell, emm)
+        alm[ix] = lm_dict[(ell, emm)]
+    
+    nside = 64
+    m = hp.alm2map(alm, nside=nside)
+    alm_ = hp.map2alm(m, lmax)
+    assert np.allclose(alm, alm_)
+    m_ = hp.alm2map(alm_, nside=nside)
+    assert np.allclose(m, m_)
 
 def test_nested_input():
     freqs = np.linspace(1, 50, 50)
@@ -348,6 +403,7 @@ def test_getidx():
     assert emm == emm_
 
 
+
 def test_hp_map():
     # make constant map
     lmax = 10
@@ -369,7 +425,6 @@ def test_hp_map():
     expected_maps = np.full((frequencies.size, npix), a00 * Y00)
     expected_maps *= frequencies.reshape(-1, 1)
     assert np.allclose(hp_map, expected_maps)
-
 
 def test_rotate_z_phi():
     lmax = 10
