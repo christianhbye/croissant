@@ -5,7 +5,11 @@ from .healpix import HealpixMap
 
 class Sky(HealpixMap):
     def __init__(
-        self, sky_map, frequencies=None, nested_input=False, coords="galactic"
+        self,
+        sky_map=None,
+        frequencies=None,
+        nested_input=False,
+        coords="galactic"
     ):
         """
         Class that holds Sky objects. Thin wrapper for HealpixMap objects.
@@ -19,11 +23,11 @@ class Sky(HealpixMap):
         )
 
     @classmethod
-    def gsm(cls, frequencies, res="lo"):
+    def gsm(cls, frequencies):
         """
         Construct a sky object with pygdsm
         """
-        gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution=res)
+        gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution="lo")
         sky_map = gsm16.generate(frequencies)
         obj = cls(
             sky_map,
@@ -83,7 +87,7 @@ class Sky(HealpixMap):
         if ref_freq is None:
             ref_freq = self.frequencies
         else:
-            ref_freq = np.array(ref_freq, copy=True)
+            ref_freq = np.ravel(ref_freq).copy()
 
         if ref_map is None:
             ref_map = self.data
