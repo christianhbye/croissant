@@ -9,7 +9,7 @@ class Sky(HealpixMap):
         sky_map=None,
         frequencies=None,
         nested_input=False,
-        coords="galactic"
+        coords="galactic",
     ):
         """
         Class that holds Sky objects. Thin wrapper for HealpixMap objects.
