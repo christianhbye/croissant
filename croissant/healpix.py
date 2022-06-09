@@ -173,8 +173,8 @@ def map2alm(data, lmax):
 class HealpixMap:
     def __init__(
         self,
-        nside,
         data=None,
+        nside=None,
         nested_input=False,
         frequencies=None,
         coords="galactic",
@@ -185,19 +185,35 @@ class HealpixMap:
         It ensures that all maps have the right shapes and provdes an
         interpolation method.
         """
-        hp.pixelfunc.check_nside(nside, nest=nested_input)
-        self.nside = nside
-        self.frequencies = np.ravel(frequencies).copy()
+        self.frequencies = np.atleast_1d(frequencies).copy()
+        self.coords = coords
 
-        if data is not None:
+        if data is None:
+            nested_input = False
+            self.nside = nside
+        else:
             data = np.array(data, copy=True, dtype=np.float64)
-            data.shape = (self.frequencies.size, self.npix)
-            if nested_input:
-                ix = hp.nest2ring(self.nside, np.arange(self.npix))
-                data = data[:, ix]
+            data.shape = (self.frequencies.size, -1)
+            npix = data.shape[-1]
+            self.nside = hp.npix2nside(npix)
+
+        if nside is not None and nside != self.nside:
+            raise ValueError(
+                (
+                    "Mismatch between nside and data shape. The data has"
+                    f" shape {data.shape} which suggests nside = {self.nside},"
+                    f" but nside is set to {nside}."
+                )
+            )
+
+        if self.nside is not None:
+            hp.pixelfunc.check_nside(self.nside, nest=nested_input)
+
+        if nested_input:
+            ix = hp.nest2ring(self.nside, np.arange(self.npix))
+            data = data[:, ix]
 
         self.data = data
-        self.coords = coords
 
     @property
     def npix(self):
@@ -215,8 +231,8 @@ class HealpixMap:
             nside = (alm_obj.lmax + 1) // 3
         hp_map = alm_obj.hp_map(nside=nside)
         obj = cls(
-            nside,
             data=hp_map,
+            nside=nside,
             nested_input=False,
             frequencies=alm_obj.frequencies,
             coords=alm_obj.coords,

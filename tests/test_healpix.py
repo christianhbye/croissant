@@ -98,19 +98,26 @@ def test_nested_input():
     nside = 10  # this is invalid for NESTED but OK for RING
     npix = healpy.nside2npix(nside)
     data = 10 * np.ones((freqs.size, npix))
-    kwargs = {"data": data, "nested_input": False, "frequencies": freqs}
-    hp.HealpixMap(nside, **kwargs)  # should work
+    kwargs = {
+        "data": data,
+        "nside": nside,
+        "nested_input": False,
+        "frequencies": freqs
+    }
+    hp.HealpixMap(**kwargs)  # should work
     # should raise an error if nested is True
     kwargs["nested_input"] = True
     with pytest.raises(ValueError):
-        hp.HealpixMap(nside, **kwargs)
+        hp.HealpixMap(**kwargs)
 
     # valid nested input
     nside = 8
     npix = healpy.nside2npix(nside)
     data = np.arange(npix) ** 2
-    kwargs = {"data": data, "nested_input": True, "frequencies": None}
-    hp_map = hp.HealpixMap(nside, **kwargs)
+    kwargs = {
+        "data": data, "nside": nside, "nested_input": True, "frequencies": None
+    }
+    hp_map = hp.HealpixMap(**kwargs)
     # hp_map data is in the RING scheme:
     ring_ix = healpy.nest2ring(nside, np.arange(npix))
     data_ring = data[ring_ix]
@@ -137,8 +144,13 @@ def test_ud_grade():
     nside = 8
     npix = healpy.nside2npix(nside)
     data = np.repeat(np.arange(npix).reshape(1, -1), freqs.size, axis=0)
-    kwargs = {"data": data, "nested_input": False, "frequencies": freqs}
-    hpm = hp.HealpixMap(nside, **kwargs)
+    kwargs = {
+        "data": data,
+        "nside": nside,
+        "nested_input": False,
+        "frequencies": freqs
+    }
+    hpm = hp.HealpixMap(**kwargs)
     nside_out = [1, 2, 8, 32]
     for ns in nside_out:
         hp_copy = deepcopy(hpm)
@@ -154,7 +166,7 @@ def test_switch_coords():
     # switch from galactic to equatorial
     coords = "galactic"
     new_coords = "equatorial"
-    hp_map = hp.HealpixMap(nside, data=data, coords=coords)
+    hp_map = hp.HealpixMap(data=data, nside=nside, coords=coords)
     assert hp_map.coords == coords
     hp_map.switch_coords(new_coords)
     assert hp_map.coords == new_coords
@@ -166,7 +178,9 @@ def test_switch_coords():
     # several maps at once
     freqs = np.arange(10).reshape(-1, 1)
     data = np.arange(npix).reshape(1, -1) * freqs
-    hp_map = hp.HealpixMap(nside, data=data, frequencies=freqs, coords=coords)
+    hp_map = hp.HealpixMap(
+        data=data, nside=nside, frequencies=freqs, coords=coords
+    )
     assert hp_map.coords == coords
     hp_map.switch_coords(new_coords)
     assert hp_map.coords == new_coords
@@ -180,7 +194,7 @@ def test_alm():
     nside = 32
     npix = healpy.nside2npix(nside)
     data = np.arange(npix)
-    hp_map = hp.HealpixMap(nside, data=data)
+    hp_map = hp.HealpixMap(data=data, nside=nside)
     # test default lmax
     alm = hp_map.alm(lmax=None)
     expected_lmax = 3 * nside - 1  # should be default
@@ -195,7 +209,7 @@ def test_alm():
     # several maps at once
     freqs = np.arange(10).reshape(-1, 1)
     data = np.arange(npix).reshape(1, -1) * freqs
-    hp_map = hp.HealpixMap(nside, data=data, frequencies=freqs)
+    hp_map = hp.HealpixMap(data=data, nside=nside, frequencies=freqs)
     alm = hp_map.alm(lmax=lmax)
     assert alm.shape == (freqs.size, expected_size)
 
@@ -271,7 +285,9 @@ def test_from_healpix():
     freqs = np.linspace(1, 50, 50)
     data = np.arange(npix).reshape(1, -1) * freqs.reshape(-1, 1) ** 2
     coords = "equatorial"
-    hp_map = hp.HealpixMap(nside, data=data, frequencies=freqs, coords=coords)
+    hp_map = hp.HealpixMap(
+        data=data, nside=nside, frequencies=freqs, coords=coords
+    )
     lmax = 10
     alm = hp.Alm.from_healpix(hp_map, lmax=lmax)
     assert alm.lmax == lmax
