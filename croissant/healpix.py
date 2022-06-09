@@ -327,7 +327,7 @@ class Alm(hp.Alm):
     def __getitem__(self, key):
         # if alm only has one frequency, it doesn't matter if the freq_idx is
         # not specified:
-        if self.alm.shape[0] == 1 and len(key) == 2:
+        if self.shape[0] == 1 and len(key) == 2:
             ell, emm = key
             key = [0, ell, emm]
         if len(key) != 3:
