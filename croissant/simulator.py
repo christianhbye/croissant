@@ -70,8 +70,8 @@ class Simulator:
         self.beam_alm()
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
-        if self.sky.coords != "equitorial":
-            self.sky.switch_coords("equitorial")
+        if self.sky.coords != "equatorial":
+            self.sky.switch_coords("equatorial")
         # compute dpss coeffs
         self.compute_dpss()
 
