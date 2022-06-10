@@ -1,6 +1,7 @@
 from astropy.coordinates import AltAz, EarthLocation, ICRS
 from astropy.time import Time
 from astropy import units
+import healpy as hp
 import numpy as np
 
 from croissant import coordinates as coord
@@ -86,3 +87,73 @@ def test_radec2topo():
     ra_ = np.where(ra_ >= 360 - 1e-10, ra_ - 360, ra_)
     assert np.allclose(dec, dec_)
     assert np.allclose(ra, ra_)
+
+
+def test_hp_rotate():
+    # verify that this method yields the same as the healpy example in the docs
+    rot = coord.hp_rotate("galactic", "ecliptic")
+    theta_gal, phi_gal = np.pi / 2, 0
+    theta_ecl, phi_ecl = rot(theta_gal, phi_gal)
+    assert np.isclose(theta_ecl, 1.66742347999)  # from healpy docs
+    assert np.isclose(phi_ecl, -1.6259571125)
+    vec_gal = np.array([1, 0, 0])
+    vec_ecl = rot(vec_gal)
+    assert np.allclose(vec_ecl, [-0.05487563, -0.99382135, -0.09647686])
+
+
+def test_rotate_map():
+    # pixel weights are not computed for nside = 8
+    nside = 8
+    npix = hp.nside2npix(nside)
+    m = np.arange(npix)
+    rm = coord.rotate_map(m, from_coords="galactic", to_coords="equatorial")
+    hp_rot = hp.Rotator(coord=["G", "C"])
+    hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=False)
+    assert np.allclose(rm, hprm)
+
+    # compare for nside 64 which uses pixel weights
+    nside = 64
+    npix = hp.nside2npix(nside)
+    m = np.arange(npix)
+    rm = coord.rotate_map(m, from_coords="equatorial", to_coords="ecliptic")
+    hp_rot = hp.Rotator(coord=["C", "E"])
+    hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=True)
+    assert np.allclose(rm, hprm)
+    # without pixel weights it should be different
+    hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=False)
+    assert not np.allclose(rm, hprm)
+
+    # several maps at once
+    f = np.linspace(1, 50, 50).reshape(-1, 1)
+    maps = m.reshape(1, -1) * f**3.2
+    rm = coord.rotate_map(maps, from_coords="galactic", to_coords="equatorial")
+    hp_rot = hp.Rotator(coord=["G", "C"])
+    hprm = np.empty((f.size, npix))
+    for i, m in enumerate(maps):
+        hprm[i] = hp_rot.rotate_map_alms(m, use_pixel_weights=True)
+    assert np.allclose(rm, hprm)
+
+
+def test_rotate_alm():
+    lmax = 10
+    size = hp.Alm.getsize(lmax)
+    alm = np.arange(size) + 5j * np.arange(size) ** 2
+    rot_alm = coord.rotate_alm(
+        alm, from_coords="galactic", to_coords="equatorial"
+    )
+    hp_rot = hp.Rotator(coord=["G", "C"])
+    hp_rot_alm = hp_rot.rotate_alm(alm)
+    assert np.allclose(rot_alm, hp_rot_alm)
+
+    # multiple sets of alms at once
+    alm.shape = (1, size)
+    f = np.linspace(1, 50, 50).reshape(-1, 1)
+    alms = np.repeat(alm, f.size, axis=0) * f**2
+    assert alms.shape == (50, size)
+    rot_alms = coord.rotate_alm(
+        alms, from_coords="galactic", to_coords="equatorial"
+    )
+    hp_rot_alms = np.empty_like(alms) 
+    for i, a in enumerate(alms):
+        hp_rot_alms[i] = hp_rot.rotate_alm(a)
+    assert np.allclose(rot_alms, hp_rot_alms)
