@@ -32,12 +32,12 @@ def topo2radec(theta, phi, time, loc, grid=True):
         The declination(s) in radians.
 
     """
-    phi = np.squeeze(phi).reshape(-1)
-    theta = np.squeeze(theta).reshape(-1)
+    phi = np.ravel(phi)
+    theta = np.ravel(theta)
     if grid:  # phi and theta are coordinate axis
         phi, theta = np.meshgrid(phi, theta)
-        phi = np.flatten(phi)
-        theta = np.flatten(theta)
+        phi = phi.ravel()
+        theta = theta.ravel()
     # Allow loc to be earth location object and time to be Time object
     if type(loc) != EarthLocation:
         lat, lon, alt = loc
