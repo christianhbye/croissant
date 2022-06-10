@@ -60,7 +60,7 @@ def dpss_op(
         and avg_suppression is specified and the rest are None.
 
     """
-    x = np.array(freq_out) * 1e6
+    x = np.ravel(freq_out) * 1e6
     kwargs = {
         "eigenval_cutoff": eigenval_cutoff,
         "edge_suppression": edge_suppression,
@@ -84,8 +84,8 @@ def dpss_op(
 
 
 def freq2dpss(data, freq_in, freq_out, design_matrix):
-    freq_in = np.array(freq_in)
-    freq_out = np.array(freq_out)
+    freq_in = np.ravel(freq_in)
+    freq_out = np.ravel(freq_out)
     A = design_matrix[np.isin(freq_out, freq_in)]
     W = np.eye(freq_in.size)
     coeffs = fit_solution_matrix(W, A) @ np.array(data)
