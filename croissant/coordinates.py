@@ -96,7 +96,7 @@ def radec2topo(ra, dec, time, loc):
     return theta, phi
 
 
-def _hp_rotate(from_coords, to_coords):
+def hp_rotate(from_coords, to_coords):
     coords = {"galactic": "G", "ecliptic": "E", "equatorial": "C"}
     fc = from_coords.lower()
     tc = to_coords.lower()
@@ -109,7 +109,7 @@ def _hp_rotate(from_coords, to_coords):
 
 
 def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
-    rot = _hp_rotate(from_coords, to_coords)
+    rot = hp_rotate(from_coords, to_coords)
     sky_map = np.array(sky_map, copy=True, dtype=np.float64)
     npix = sky_map.shape[-1]
     nside = npix2nside(npix)
@@ -129,7 +129,7 @@ def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
 
 
 def rotate_alm(alm, from_coords="galactic", to_coords="equitorial"):
-    rot = _hp_rotate(from_coords, to_coords)
+    rot = hp_rotate(from_coords, to_coords)
     alm = np.array(alm, copy=True, dtype=np.complex128)
     if alm.ndim == 1:
         rotated_alm = rot.rotate_alm(alm)
