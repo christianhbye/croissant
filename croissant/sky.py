@@ -114,4 +114,4 @@ class Sky(HealpixMap):
 
         else:
             self.data = sky_map
-            self.frequencies = freq_out
+            self.frequencies = np.ravel(freq_out)
