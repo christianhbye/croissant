@@ -74,7 +74,7 @@ class Simulator:
         # compute dpss coeffs
         self.compute_dpss()
 
-    def beam_alm(self, nside=64):
+    def beam_alm(self, nside=128):
         """
         Get the alm's of the beam in the equitorial coordinate system.
         """
