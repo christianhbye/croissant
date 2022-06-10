@@ -128,7 +128,7 @@ def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
     return rotated_map
 
 
-def rotate_alm(alm, from_coords="galactic", to_coords="equitorial"):
+def rotate_alm(alm, from_coords="galactic", to_coords="equatorial"):
     rot = hp_rotate(from_coords, to_coords)
     alm = np.array(alm, copy=True, dtype=np.complex128)
     if alm.ndim == 1:

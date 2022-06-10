@@ -170,7 +170,7 @@ def map2alm(data, lmax):
     return alm
 
 
-def alm2map(alm, nside=64, mmax=None):
+def alm2map(alm, nside=128, mmax=None):
     alm = np.array(alm, copy=True)
     if alm.ndim == 1:
         alm.shape = (1, -1)

@@ -153,7 +153,7 @@ def test_rotate_alm():
     rot_alms = coord.rotate_alm(
         alms, from_coords="galactic", to_coords="equatorial"
     )
-    hp_rot_alms = np.empty_like(alms) 
+    hp_rot_alms = np.empty_like(alms)
     for i, a in enumerate(alms):
         hp_rot_alms[i] = hp_rot.rotate_alm(a)
     assert np.allclose(rot_alms, hp_rot_alms)
