@@ -95,3 +95,87 @@ def test_compute_dpss():
         sky_alm, frequencies, frequencies, design_matrix
     )
     assert np.allclose(sky_coeff, sim.sky.coeffs)
+
+
+def test_alm_dot():
+    lmax = 10
+    size = healpy.Alm.getsize(lmax)
+    sky_alm = np.zeros(size, dtype=np.complex128)
+    # constant temperature sky
+    sky_alm[0] = 1e4
+
+    # dipole beam
+    beam_alm = np.zeros(size, dtype=np.complex128)
+    ix20 = healpy.Alm.getidx(lmax, 2, 0)  # 2,0 index
+    a20 = 10
+    a00 = 3 * np.sqrt(5) / 2 * a20  # a00 of dipole
+    beam_alm[0] = a00
+    beam_alm[ix20] = a20
+
+    assert np.isclose(Simulator.alm_dot(sky_alm, beam_alm), a00 * 1e4)
+
+    # constant temeprature sky in space with power law in frequency
+    freq = np.linspace(1, 50, 50)
+    sky_alm = np.zeros((freq.size, size), dtype=np.complex128)
+    sky_alm[:, 0] = 1e4 * freq ** (-2.5)  # spectral power law
+
+    # short dipole with nu^2 dependency
+    beam_alm = np.zeros((freq.size, size), dtype=np.complex128)
+    beam_alm[:, 0] = a00 * freq**2
+    beam_alm[:, ix20] = a20 * freq**2
+
+    # the resulting convolution should go as nu^-.5
+    conv = Simulator.alm_dot(sky_alm, beam_alm)
+    expected_conv = a00 * 1e4 * freq ** (-0.5)
+    assert np.allclose(conv, expected_conv)
+
+    # test that weighting of nonzero m-modes is right
+    sky_alm = np.zeros(size, dtype=np.complex128)
+    sky_alm[0] = 1e4  # a00
+    sky_alm[ix20] = 100  # a20
+    ix31 = healpy.Alm.getidx(lmax, 3, 1)
+    sky_alm[ix31] = -20.2 + 20.4j  # a31
+    ix66 = healpy.Alm.getidx(lmax, 6, 6)
+    sky_alm[ix66] = 1.0 - 3.0j  # a66
+
+    beam_alm = np.zeros(size, dtype=np.complex128)
+    beam_alm[0] = a00
+    beam_alm[ix20] = a20
+    beam_alm[ix31] = 3.0 + 2j
+    beam_alm[ix66] = -1 - 3j
+
+    conv = Simulator.alm_dot(sky_alm, beam_alm)
+    # the expected output is the dot product of the coefficients but with
+    # the m!=0 modes weighted double accounting for m and -m
+    expected_conv = sky_alm[0] * beam_alm[0]  # a00
+    expected_conv += sky_alm[ix20] * beam_alm[ix20]  # a20
+    expected_conv += 2 * np.real(sky_alm[ix31] * beam_alm[ix31].conj())  # a31
+    expected_conv += 2 * np.real(sky_alm[ix66] * beam_alm[ix66].conj())  # a66
+    assert np.isclose(conv, expected_conv)
+
+
+def test_run_onetime():
+    sim = Simulator(beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t)
+    # test simulator at t_start, i.e. before the sky is rotated
+    vis = sim.run_onetime(0.)  # computed visibility
+    # manual computation
+    expected_vis_dpss = Simulator.alm_dot(sim.sky.coeffs, sim.beam.coeffs)
+    expected_vis = dpss.dpss2freq(expected_vis_dpss, sim.design_matrix)
+    expected_vis /= beam.total_power
+    assert np.allclose(vis, expected_vis)
+
+    # test simulator at later time
+    dt = 5 * 3600  # 5 hrs
+    vis = sim.run_onetime(dt)  # computed visibility
+    # manual computation
+    rot_sky_coeffs = sim.sky.coeffs * sim.sky.rotate_z_time(dt)
+    expected_vis_dpss = Simulator.alm_dot(rot_sky_coeffs, sim.beam.coeffs)
+    expected_vis = dpss.dpss2freq(expected_vis_dpss, sim.design_matrix)
+    expected_vis /= beam.total_power
+    assert np.allclose(vis, expected_vis)
+
+
+def test_run():
+    sim = Simulator(beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t)
+    sim.run()
+    assert np.allclose(sim.waterfall, [sim.run_onetime(t) for t in sim.dt])
