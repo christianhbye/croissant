@@ -154,14 +154,13 @@ class Simulator:
         conv = al0.sum(axis=0) + alm.sum(axis=0)
         return conv.T
 
-    def _run_onetime(self, time):
+    def run_onetime(self, time):
         """
         Compute the convolution for one specfic time.
         """
-        sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
-        conv = dpss.dpss2freq(
-            self.alm_dot(sky_coeffs, self.beam.coeffs), self.design_matrix
-        )
+        rot_sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
+        dpss_conv = self.alm_dot(rot_sky_coeffs, self.beam.coeffs)
+        conv = dpss.dpss2freq(dpss_conv, self.design_matrix)
         # normalize by beam integral over sphere before horizon cut
         norm = self.beam.total_power
         return conv / norm
@@ -172,7 +171,7 @@ class Simulator:
         """
         waterfall = np.empty((self.N_times, self.frequencies.size))
         for i, t in enumerate(self.dt):
-            conv = self._run_onetime(t)
+            conv = self.run_onetime(t)
             waterfall[i] = conv
 
         self.waterfall = waterfall
