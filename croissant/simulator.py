@@ -88,7 +88,9 @@ class Simulator:
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
 
-    def compute_dpss(self):
+    def compute_dpss(self, nterms=None):
+        if nterms is None:
+            nterms = self.nterms
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
@@ -101,7 +103,7 @@ class Simulator:
             )
         )
 
-        self.design_matrix = dpss.dpss_op(x, nterms=self.nterms)
+        self.design_matrix = dpss.dpss_op(x, nterms=nterms)
         self.sky.coeffs = dpss.freq2dpss(
             self.sky.alm,
             self.sky.frequencies,
@@ -141,12 +143,16 @@ class Simulator:
             res[i] = prod
 
         if dpss:
-            waterfall = self.design_matrix @ res @ self.design_matrix.T
+            waterfall = np.einsum(
+                "jk, ikj -> ij",
+                self.design_matrix,
+                res @ self.design_matrix.T,
+            )
         else:
-            waterfall = res
+            waterfall = res.diagonal(axis1=1, axis2=2)  #FIXME
 
         norm = self.beam.total_power.reshape(1, -1)
-        self.waterfall = waterfall.diagonal(axis1=1, axis2=2) / norm
+        self.waterfall = waterfall / norm
 
     def plot(self, **kwargs):
         """
