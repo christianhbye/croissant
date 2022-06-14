@@ -1,7 +1,6 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
-import healpy as hp
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -23,14 +22,12 @@ class Simulator:
         delta_t=None,
         frequencies=None,
         horizon=None,
-        lmax=32,
-        dpss_nterms=10,
+        lmax=16,
     ):
         """
         Simulator class. Prepares and runs simulations.
         """
         self.lmax = lmax
-        self.nterms = dpss_nterms
         # set up frequencies to run the simulation at
         if frequencies is None:
             frequencies = sky.frequencies
@@ -71,8 +68,6 @@ class Simulator:
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
         if self.sky.coords != "equatorial":
             self.sky.switch_coords("equatorial")
-        # compute dpss coeffs
-        self.compute_dpss()
 
     def beam_alm(self, nside=128):
         """
@@ -120,61 +115,38 @@ class Simulator:
             self.design_matrix,
         )
 
-    @staticmethod
-    def alm_dot(sky, beam):
-        """
-        Compute the alm dot product between sky and beam. This assumes healpix
-        convention for alms. The sky and beam may have extra dimensions
-        (like a frequency axis). These must come before the alm axis, that is,
-        the sky can have shape (N_freq, N_alm) for example.
-
-        Parameters
-        ----------
-        sky : array-like
-            The alms of the sky.
-        beam : array-like
-            The alms of the beam.
-
-        Returns
-        -------
-        conv : np.ndarray
-            The dot product of the sky and beam alms. This is the convolution
-            of the sky and the beam since the spherical harmonics are
-            orthonormal.
-
-        """
-        # transpose data so alm axis is first
-        sky = np.array(sky, copy=True).T
-        beam = np.array(beam, copy=True).T
-        lmax = hp.Alm.getlmax(beam.shape[0])
-        # m = 0 modes are already real:
-        al0 = sky[: lmax + 1].real * beam[: lmax + 1].real
-        # m != 0 (see docs/math for derivation):
-        alm = 2 * (sky[lmax + 1 :] * beam[lmax + 1 :].conj()).real
-        conv = al0.sum(axis=0) + alm.sum(axis=0)
-        return conv.T
-
-    def run_onetime(self, time):
-        """
-        Compute the convolution for one specfic time.
-        """
-        rot_sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(time)
-        dpss_conv = self.alm_dot(rot_sky_coeffs, self.beam.coeffs)
-        conv = dpss.dpss2freq(dpss_conv, self.design_matrix)
-        # normalize by beam integral over sphere before horizon cut
-        norm = self.beam.total_power
-        return conv / norm
-
-    def run(self):
+    def run(self, dpss=True, dpss_nterms=30):
         """
         Compute the convolution for a range of times.
         """
-        waterfall = np.empty((self.N_times, self.frequencies.size))
-        for i, t in enumerate(self.dt):
-            conv = self.run_onetime(t)
-            waterfall[i] = conv
+        if dpss:
+            self.nterms = dpss_nterms
+            self.compute_dpss()
+        else:
+            self.nterms = self.frequencies.size
+            self.sky.coeffs = self.sky.alm
+            self.beam.coeffs = self.beam.alm
 
-        self.waterfall = waterfall
+        res = np.empty((self.N_times, self.nterms, self.nterms))
+        for i, t in enumerate(self.dt):
+            rot_sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(t)
+            prod = (
+                rot_sky_coeffs[:, : self.lmax + 1].real
+                @ self.beam.coeffs[:, : self.lmax + 1].T.real
+            )
+            prod += 2 * np.real(
+                rot_sky_coeffs[:, self.lmax + 1 :]
+                @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
+            )
+            res[i] = prod
+
+        if dpss:
+            waterfall = self.design_matrix @ res @ self.design_matrix.T
+        else:
+            waterfall = res
+
+        norm = self.beam.total_power.reshape(1, -1)
+        self.waterfall = waterfall.diagonal(axis1=1, axis2=2) / norm
 
     def plot(self, **kwargs):
         """
