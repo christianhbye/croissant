@@ -2,6 +2,7 @@ from astropy.time import Time
 from astropy import units
 import healpy
 import numpy as np
+from scipy.special import sph_harm
 
 from croissant.beam import Beam
 from croissant import dpss
@@ -66,7 +67,9 @@ def test_simulator_init():
 
 
 def test_beam_alm():
-    sim = Simulator(beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t)
+    sim = Simulator(
+        beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
+    )
 
     # test beam alm by inverting it
     nside = 64
@@ -85,9 +88,10 @@ def test_beam_alm():
 
 
 def test_compute_dpss():
-    sim = Simulator(beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t)
-
-    # 10 is the default nterms in Simulator.__init__
+    sim = Simulator(
+        beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
+    )
+    sim.compute_dpss(nterms=10)
     design_matrix = dpss.dpss_op(frequencies, nterms=10)
     assert np.allclose(design_matrix, sim.design_matrix)
     sky_alm = rotate_alm(sky.alm(lmax=lmax))
@@ -116,14 +120,19 @@ def test_run():
     power = frequencies**2 * np.cos(theta) ** 2  # dipole
     power = np.repeat(power, phi.size, axis=2)
     beam = Beam(power, theta, phi, frequencies=frequencies)
-    sim = Simulator(beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t)
+    sim = Simulator(
+        beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
+    )
     sim.run(dpss=False)
     beam_a00 = sim.beam.alm[0, 0]  # a00 @ freq = 1 MHz
     sky_a00 = sim.sky.alm[0, 0]  # a00 @ freq = 1 MHz
     # resulting visibility spectrum should go as nu^-.5
-    expected_vis = beam_a00 * sky_a00 * frequencies ** (-0.5)
+    expected_vis = beam_a00 * sky_a00 * np.squeeze(frequencies) ** (-0.5)
     expected_vis /= sim.beam.total_power
     expected_vis.shape = (1, -1)  # add time axis
+    assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
+    # with dpss
+    sim.run(dpss=True, dpss_nterms=50)
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
 
     # test with nonzero m-modes
@@ -138,20 +147,34 @@ def test_run():
     phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
     phi, theta = np.meshgrid(phi, theta, sparse=True)
     beam00 = 10  # a00
-    beam20 = np.cos(theta) ** 2  # a20
-    beam31 = (
-        np.exp(1j * phi) * np.sin(theta) * (5 * np.cos(theta) ** 2 - 1)
-    )  # a31
-    beam66 = np.exp(6j * phi) * np.sin(theta) ** 6  # a66
-    power = beam00 + beam20 + beam31 + beam66
+    beam20 = 5  # a20
+    beam31 = 1+2j  # a31
+    beam66 = -11 - 13.4j  # a66
+    power = (beam00 * sph_harm(0, 0, phi, theta)
+            + beam20 * sph_harm(0, 2, phi, theta) 
+            + beam31 * sph_harm(1, 3, phi, theta)
+            + beam66 * sph_harm(6, 6, phi, theta))
     beam = Beam(power, theta, phi, frequencies=None)
-
-    sim = Simulator(beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t)
+    # horizon will add other harmonics to beam so do this check without it
+    horizon = np.ones_like(power)  # no horizon
+    # rotating to ra/dec too - FIX THIS ##XXX
+    sim = Simulator(
+        beam,
+        sky,
+        (0, 0, 0),
+        t_start,
+        N_times=1,
+        delta_t=delta_t,
+        horizon=horizon,
+        lmax=lmax,
+    )
+    sim.run(dpss=False)
     expected_vis = (
         sky_alm[0, 0] * beam00
         + sky_alm[2, 0] * beam20
-        + 2 * np.real(sky_alm[3, 1] * beam31.conj())
-        + 2 * np.real(sky_alm[6, 6] * beam66.conj())
+        + 2 * np.real(sky_alm[3, 1] * np.conj(beam31))
+        + 2 * np.real(sky_alm[6, 6] * np.conj(beam66))
     )
     expected_vis /= sim.beam.total_power
-    assert np.isclose(sim.waterfall, expected_vis)
+    assert np.max(np.abs(sim.waterfall - expected_vis)) < 1e-3
+    #assert np.allclose(sim.waterfall, expected_vis)
