@@ -23,16 +23,18 @@ class Sky(HealpixMap):
         )
 
     @classmethod
-    def gsm(cls, freq, power_law=False, spectral_index=None):
+    def gsm(cls, freq, power_law=False, gen_freq=None, spectral_index=None):
         """
         Construct a sky object with pygdsm
         """
         freq = np.ravel(freq)
-        # frequencies to generate map at
-        if power_law:
-            gen_freq = freq[0]  # if power law, only generate one map with GSM
-        else:
-            gen_freq = freq
+        # frequencies to generate maps at
+        if not power_law:
+            gen_freq = freq  # generate at all freqs
+        elif gen_freq is None:
+            # if power law, only generate one map with GSM
+            # use largest frequency since it's lkely inside the GSM range
+            gen_freq = freq[-1]
 
         gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution="lo")
         sky_map = gsm16.generate(gen_freq)
