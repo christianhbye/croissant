@@ -14,7 +14,7 @@ def test_compute_total_power():
     frequencies = np.linspace(1, 50, 50).reshape(-1, 1, 1)
     data = np.cos(theta.reshape(1, -1, 1)) ** 2 * frequencies**2
     data = np.repeat(data, phi.size, axis=2)
-    beam = Beam(data, theta, phi, frequencies=frequencies)
+    beam = Beam(data, theta=theta, phi=phi, frequencies=frequencies)
     power = beam.compute_total_power()
     expected_power = 4 * np.pi / 3 * frequencies**2
     assert np.allclose(power, expected_power.ravel())
@@ -27,7 +27,7 @@ def test_horizon_cut():
     frequencies = np.linspace(1, 50, 50).reshape(-1, 1, 1)
     # make a beam that's constant in space, but varies in frequency
     data = np.ones((1, theta.size, phi.size)) * frequencies**2
-    beam = Beam(data, theta, phi, frequencies=frequencies)
+    beam = Beam(data, theta=theta, phi=phi, frequencies=frequencies)
 
     # default horizon, i.e. cuts everywhere at theta > np.pi/2
     beam.horizon_cut(horizon=None)
