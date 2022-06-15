@@ -2,7 +2,7 @@ import healpy as hp
 import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 
-from . import coordinates, constants
+from . import rotations, constants
 
 
 def healpix2lonlat(nside, pix=None):
@@ -270,7 +270,7 @@ class HealpixMap:
         self.nside = nside_out
 
     def switch_coords(self, to_coords):
-        rotated_map = coordinates.rotate_map(
+        rotated_map = rotations.rotate_map(
             self.data, from_coords=self.coords, to_coords=to_coords
         )
         self.data = rotated_map
@@ -418,7 +418,7 @@ class Alm(hp.Alm):
         raise NotImplementedError
 
     def switch_coords(self, to_coords):
-        rotated_alm = coordinates.rotate_alm(
+        rotated_alm = rotations.rotate_alm(
             self.alm, from_coords=self.coords, to_coords=to_coords
         )
         self.alm = rotated_alm
@@ -459,28 +459,34 @@ class Alm(hp.Alm):
         """
         return alm2map(self.alm, nside=nside, mmax=None)
 
-    def rotate_z_phi(self, phi):
+    def rotate_alm_angle(self, phi):
         """
         Get the coefficients that rotate the alms around the z-axis by phi
         (measured counterclockwise).
 
         Parameters
         ----------
-        phi : float
-            The angle to rotate the azimuth by in radians.
+        phi : array-like
+            The angle(s) to rotate the azimuth by in radians.
+
+        Returns
+        -------
+        phase : np.ndarray
+            The coefficients that rotate the alms by phi. Will have shape
+            (phi.size, 1, alm.size) to be broadcastable with alm shapes.
 
         """
-        emms = self.getlm()[1]
-        phase = np.exp(1j * emms * phi)
-        phase.shape = (1, -1)  # frequency axis
+        phi = np.ravel(phi)
+        phase = rotations.rot_alm_z(phi, self.lmax)
+        phase.shape = (phi.size, 1, self.size)
         return phase
 
-    def rotate_z_time(self, delta_t, world="earth"):
+    def rotate_alm_time(self, times, world="earth"):
         """
         Rotate alms in time counterclockwise around the z-axis.
         """
         if not world == "earth":
             raise NotImplementedError("Moon will be added shortly.")
-        dphi = 2 * np.pi * delta_t / constants.sidereal_day
-        phase = self.rotate_z_phi(dphi)
+        dphi = 2 * np.pi * times / constants.sidereal_day
+        phase = self.rotate_alm_angle(dphi)
         return phase

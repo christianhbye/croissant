@@ -2,7 +2,7 @@ from copy import deepcopy
 import healpy
 import numpy as np
 import pytest
-from croissant import coordinates, healpix as hp
+from croissant import rotations, healpix as hp
 from croissant.constants import sidereal_day, Y00
 
 
@@ -234,7 +234,7 @@ def test_switch_coords():
     assert hp_map.coords == coords
     hp_map.switch_coords(new_coords)
     assert hp_map.coords == new_coords
-    expected_data = coordinates.rotate_map(
+    expected_data = rotations.rotate_map(
         data, from_coords=coords, to_coords=new_coords
     )
     assert np.allclose(hp_map.data, expected_data)
@@ -248,7 +248,7 @@ def test_switch_coords():
     assert hp_map.coords == coords
     hp_map.switch_coords(new_coords)
     assert hp_map.coords == new_coords
-    expected_data = coordinates.rotate_map(
+    expected_data = rotations.rotate_map(
         data, from_coords=coords, to_coords=new_coords
     )
     assert np.allclose(hp_map.data, expected_data)
@@ -371,7 +371,7 @@ def test_alm_switch_coords():
     assert alm.coords == coords
     alm.switch_coords(new_coords)
     assert alm.coords == new_coords
-    expected_data = coordinates.rotate_alm(
+    expected_data = rotations.rotate_alm(
         data, from_coords=coords, to_coords=new_coords
     )
     assert np.allclose(alm.alm, expected_data)
@@ -383,7 +383,7 @@ def test_alm_switch_coords():
     assert alm.coords == coords
     alm.switch_coords(new_coords)
     assert alm.coords == new_coords
-    expected_data = coordinates.rotate_alm(
+    expected_data = rotations.rotate_alm(
         data, from_coords=coords, to_coords=new_coords
     )
     assert np.allclose(alm.alm, expected_data)
@@ -432,21 +432,32 @@ def test_hp_map():
     assert np.allclose(hp_map, expected_maps)
 
 
-def test_rotate_z_phi():
+def test_rotate_alm_angle():
     lmax = 10
     alm = hp.Alm(lmax=lmax)
     phi = np.pi / 2
-    phase = alm.rotate_z_phi(phi)
+    phase = alm.rotate_alm_angle(phi)
     for ell in range(lmax + 1):
         for emm in range(ell + 1):
             ix = alm.getidx(ell, emm)
-            assert np.isclose(phase[0, ix], np.exp(1j * emm * phi))
+            assert np.isclose(phase[0, 0, ix], np.exp(1j * emm * phi))
+
+    # rotate a set of angles
+    phi = np.linspace(0, 2 * np.pi, num=361)  # 1 deg spacing
+    phase = alm.rotate_alm_angle(phi)
+    for ell in range(lmax + 1):
+        for emm in range(ell + 1):
+            ix = alm.getidx(ell, emm)
+            assert np.allclose(phase[:, 0, ix], np.exp(1j * emm * phi))
+
+    # check that phi = 0 and phi = 2pi give the same answer
+    assert np.allclose(phase[0], phase[-1])
 
 
-def test_rotate_z_time():
+def test_rotate_alm_time():
     alm = hp.Alm(lmax=20, frequencies=np.linspace(1, 50, 50))
     div = [1, 2, 4, 8]
     for d in div:
         dt = sidereal_day / d
         dphi = 2 * np.pi / d
-        assert np.allclose(alm.rotate_z_time(dt), alm.rotate_z_phi(dphi))
+        assert np.allclose(alm.rotate_alm_time(dt), alm.rotate_alm_angle(dphi))

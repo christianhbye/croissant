@@ -1,7 +1,7 @@
 from astropy.coordinates import AltAz, EarthLocation, ICRS
 from astropy.time import Time
 from astropy import units
-from healpy import npix2nside, Rotator
+from healpy import Alm, npix2nside, Rotator
 import numpy as np
 
 from .constants import PIX_WEIGHTS_NSIDE
@@ -142,3 +142,30 @@ def rotate_alm(alm, from_coords="galactic", to_coords="equatorial"):
     else:
         raise ValueError(f"alm must have 1 or 2 dimensions, not {alm.ndim}.")
     return rotated_alm
+
+
+def rot_alm_z(phi, lmax):
+    """
+    Get the coefficients that rotate alms around the z-axis by phi
+    (measured counterclockwise).
+
+    Parameters
+    ----------
+    phi : array-like
+        The angle(s) to rotate the azimuth by in radians.
+    lmax : int
+        The maximum ell of the alm.
+
+    Returns
+    -------
+     phase : np.ndarray
+        The coefficients that rotate the alms by phi. Will have shape
+        (alm.size) if phi is a scalar or (phi.size, alm.size) if phi
+        is an array.
+
+    """
+
+    phi = np.reshape(phi, (-1, 1))
+    emms = Alm.getlm(lmax)[1].reshape(1, -1)
+    phase = np.exp(1j * emms * phi)
+    return np.squeeze(phase)

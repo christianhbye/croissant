@@ -6,7 +6,7 @@ import numpy as np
 import warnings
 
 from . import dpss
-from .coordinates import radec2topo
+from .rotations import radec2topo
 from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
 
@@ -134,23 +134,22 @@ class Simulator:
         """
         Compute the convolution for a range of times.
         """
+        phases = self.sky.rotate_alm_time(self.dt)  # the rotation phases
         if dpss:
             self.nterms = dpss_nterms
             self.compute_dpss()
-            res = np.empty((self.N_times, self.nterms, self.nterms))
-            for i, t in enumerate(self.dt):
-                rot_sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(t)
-                # m = 0 modes
-                prod = (
-                    rot_sky_coeffs[:, : self.lmax + 1].real
-                    @ self.beam.coeffs[:, : self.lmax + 1].T.real
-                )
-                # for m != 0 we must account for +m and -m
-                prod += 2 * np.real(
-                    rot_sky_coeffs[:, self.lmax + 1 :]
-                    @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
-                )
-                res[i] = prod
+            # get the sky coefficients at each time
+            rot_sky_coeffs = np.expand_dims(self.sky.coeffs, axis=0) * phases
+            # m = 0 modes
+            res = (
+                rot_sky_coeffs[:, :, : self.lmax + 1].real
+                @ self.beam.coeffs[:, : self.lmax + 1].T.real
+            )
+            # for m != 0 we must account for +m and -m
+            res += 2 * np.real(
+                rot_sky_coeffs[:, :, self.lmax + 1 :]
+                @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
+            )
 
             waterfall = np.einsum(
                 "jk, ikj -> ij",
@@ -159,24 +158,23 @@ class Simulator:
             )
 
         else:
-            waterfall = np.empty((self.N_times, self.frequencies.size))
-            for i, t in enumerate(self.dt):
-                rot_sky_coeffs = self.sky.alm * self.sky.rotate_z_time(t)
-                # m = 0 modes (already real)
-                res = np.einsum(
-                    "ij, ij -> i",
-                    rot_sky_coeffs[:, : self.lmax + 1].real,
-                    self.beam.alm[:, : self.lmax + 1].real,
+            # add time dimensions and rotate the sky alms
+            rot_sky_coeffs = np.expand_dims(self.sky.alm, axis=0) * phases
+            beam_coeffs = np.expand_dims(self.beam.alm, axis=0)
+            # m = 0 modes (already real)
+            waterfall = np.einsum(
+                "ijk, ijk -> ij",
+                rot_sky_coeffs[:, :, : self.lmax + 1].real,
+                beam_coeffs[:, :, : self.lmax + 1].real,
+            )
+            # for m != 0 we must account for +m and -m
+            waterfall += 2 * np.real(
+                np.einsum(
+                    "ijk, ijk -> ij",
+                    rot_sky_coeffs[:, :, self.lmax + 1 :],
+                    beam_coeffs.conj()[:, :, self.lmax + 1 :],
                 )
-                # for m != 0 we must account for +m and -m
-                res += 2 * np.real(
-                    np.einsum(
-                        "ij, ij -> i",
-                        rot_sky_coeffs[:, self.lmax + 1 :],
-                        self.beam.alm.conj()[:, self.lmax + 1 :],
-                    )
-                )
-                waterfall[i] = res
+            )
 
         norm = self.beam.total_power.reshape(1, -1)
         self.waterfall = waterfall / norm
