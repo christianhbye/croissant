@@ -60,10 +60,13 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        # apply horizon mask and initialize beam
-        beam.horizon_cut(horizon=horizon)
-        self.beam = beam
-        self.beam_alm()
+        if beam.alm is None:
+            # apply horizon mask and initialize beam
+            beam.horizon_cut(horizon=horizon)
+            self.beam = beam
+            self.beam_alm()  # compute alms in ra/dec
+        else:
+            self.beam = beam
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
         if self.sky.coords != "equatorial":
@@ -75,8 +78,18 @@ class Simulator:
         """
         # get ra/dec at healpix centers
         ra, dec = healpix2lonlat(nside)
+
         # get corresponding theta/phi
-        theta, phi = radec2topo(ra, dec, self.t_start, self.loc)
+        if self.beam.coords.lower() == "topocentric":
+            theta, phi = radec2topo(ra, dec, self.t_start, self.loc)
+        elif self.beam.coords.lower() == "equatorial":
+            theta = np.pi / 2 - np.deg2rad(dec)
+            phi = np.deg2rad(ra)
+        else:
+            raise ValueError(
+                f"Cannot convert from {self.beam.coordinates} to ra/dec."
+            )
+
         pixel_centers = np.array([theta, phi]).T
         # get healpix map
         hp_maps = grid2healpix(
@@ -124,32 +137,46 @@ class Simulator:
         if dpss:
             self.nterms = dpss_nterms
             self.compute_dpss()
-        else:
-            self.nterms = self.frequencies.size
-            self.sky.coeffs = self.sky.alm
-            self.beam.coeffs = self.beam.alm
+            res = np.empty((self.N_times, self.nterms, self.nterms))
+            for i, t in enumerate(self.dt):
+                rot_sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(t)
+                # m = 0 modes
+                prod = (
+                    rot_sky_coeffs[:, : self.lmax + 1].real
+                    @ self.beam.coeffs[:, : self.lmax + 1].T.real
+                )
+                # for m != 0 we must account for +m and -m
+                prod += 2 * np.real(
+                    rot_sky_coeffs[:, self.lmax + 1 :]
+                    @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
+                )
+                res[i] = prod
 
-        res = np.empty((self.N_times, self.nterms, self.nterms))
-        for i, t in enumerate(self.dt):
-            rot_sky_coeffs = self.sky.coeffs * self.sky.rotate_z_time(t)
-            prod = (
-                rot_sky_coeffs[:, : self.lmax + 1].real
-                @ self.beam.coeffs[:, : self.lmax + 1].T.real
-            )
-            prod += 2 * np.real(
-                rot_sky_coeffs[:, self.lmax + 1 :]
-                @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
-            )
-            res[i] = prod
-
-        if dpss:
             waterfall = np.einsum(
                 "jk, ikj -> ij",
                 self.design_matrix,
                 res @ self.design_matrix.T,
             )
+
         else:
-            waterfall = res.diagonal(axis1=1, axis2=2)  #FIXME
+            waterfall = np.empty((self.N_times, self.frequencies.size))
+            for i, t in enumerate(self.dt):
+                rot_sky_coeffs = self.sky.alm * self.sky.rotate_z_time(t)
+                # m = 0 modes (already real)
+                res = np.einsum(
+                    "ij, ij -> i",
+                    rot_sky_coeffs[:, : self.lmax + 1].real,
+                    self.beam.alm[:, : self.lmax + 1].real,
+                )
+                # for m != 0 we must account for +m and -m
+                res += 2 * np.real(
+                    np.einsum(
+                        "ij, ij -> i",
+                        rot_sky_coeffs[:, self.lmax + 1 :],
+                        self.beam.alm.conj()[:, self.lmax + 1 :],
+                    )
+                )
+                waterfall[i] = res
 
         norm = self.beam.total_power.reshape(1, -1)
         self.waterfall = waterfall / norm
