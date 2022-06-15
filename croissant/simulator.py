@@ -1,6 +1,7 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
 from astropy.time import Time
+from copy import deepcopy
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -60,13 +61,14 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        if beam.alm is None:
+        sim_beam = deepcopy(beam)
+        if sim_beam.alm is None:
             # apply horizon mask and initialize beam
-            beam.horizon_cut(horizon=horizon)
-            self.beam = beam
+            sim_beam.horizon_cut(horizon=horizon)
+            self.beam = sim_beam
             self.beam_alm()  # compute alms in ra/dec
         else:
-            self.beam = beam
+            self.beam = sim_beam
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
         if self.sky.coords != "equatorial":
