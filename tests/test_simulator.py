@@ -34,6 +34,7 @@ def test_simulator_init():
     # check that the times are set conisstently regardless of
     # which parameters that specify it
     delta_t, step = np.linspace(0, sidereal_day, N_times, retstep=True)
+    step = step * units.s
     t_end = Time(t_start) + delta_t[-1] * units.s
     # specify end, ntimes:
     sim = Simulator(
@@ -174,8 +175,4 @@ def test_run():
         + 2 * np.real(sky_alm[6, 6] * np.conj(beam66))
     )
     expected_vis /= sim.beam.total_power
-    assert np.isclose(sim.waterfall, expected_vis)
-
-    # with dpss
-    sim.run(dpss=True, dpss_nterms=50)
     assert np.isclose(sim.waterfall, expected_vis)
