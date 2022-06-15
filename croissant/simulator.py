@@ -140,7 +140,6 @@ class Simulator:
             self.compute_dpss()
             # get the sky coefficients at each time
             rot_sky_coeffs = np.expand_dims(self.sky.coeffs, axis=0) * phases
-            #beam_coeffs = np.expand_dims(self.beam.coeffs, axis=0)  # time axis
             # m = 0 modes
             res = (
                 rot_sky_coeffs[:, :, : self.lmax + 1].real
