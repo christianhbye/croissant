@@ -1,5 +1,8 @@
 from healpy import nside2npix
 import numpy as np
+import warnings
+
+from .constants import Y00
 from .healpix import grid2healpix
 
 
@@ -7,9 +10,11 @@ class Beam:
     def __init__(
         self,
         data,
-        theta,
-        phi,
+        theta=None,
+        phi=None,
         frequencies=None,
+        alm=False,
+        coords="topocentric",
     ):
         """
         Initialize beam object. The beam must be specified at a rectangular
@@ -31,20 +36,29 @@ class Beam:
         data = np.array(data, copy=True)
         self.frequencies = np.ravel(frequencies).copy()
         self.nfreqs = self.frequencies.size
-        self.theta = np.ravel(theta).copy()
-        self.phi = np.ravel(phi).copy()
-        if self.theta.min() < 0 or self.theta.max() > np.pi:
-            raise ValueError("Theta must be in the range [0, pi].")
-        if self.phi.min() < 0 or self.phi.max() >= 2 * np.pi:
-            raise ValueError("Phi must be in the range [0, 2pi).")
-        if not (
-            np.allclose(np.diff(self.theta), self.theta[1] - self.theta[0])
-            and np.allclose(np.diff(self.phi), self.phi[1] - self.phi[0])
-        ):
-            raise ValueError("The data must be sampled on a rectangular grid.")
-        data.shape = (self.nfreqs, theta.size, phi.size)
-        self.data = data
+        if not alm:
+            self.theta = np.ravel(theta).copy()
+            self.phi = np.ravel(phi).copy()
+            if self.theta.min() < 0 or self.theta.max() > np.pi:
+                raise ValueError("Theta must be in the range [0, pi].")
+            if self.phi.min() < 0 or self.phi.max() >= 2 * np.pi:
+                raise ValueError("Phi must be in the range [0, 2pi).")
+            if not (
+                np.allclose(np.diff(self.theta), self.theta[1] - self.theta[0])
+                and np.allclose(np.diff(self.phi), self.phi[1] - self.phi[0])
+            ):
+                raise ValueError(
+                    "The data must be sampled on a rectangular grid."
+                )
+            data.shape = (self.nfreqs, theta.size, phi.size)
+            self.data = data
+            self.alm = None
+        else:
+            data.shape = (self.nfreqs, -1)
+            self.data = None
+            self.alm = data
         self.total_power = self.compute_total_power()  # before horizon cut
+        self.coords = coords
 
     def compute_total_power(self, nside=128):
         """
@@ -53,11 +67,14 @@ class Beam:
         It should be computed before applying the horizon cut in order to
         account for ground loss.
         """
-        healpix_beam = grid2healpix(
-            self.data, nside, theta=self.theta, phi=self.phi
-        )
-        npix = nside2npix(nside)
-        power = healpix_beam.sum(axis=-1) * 4 * np.pi / npix
+        if self.data is not None:  # from grid
+            healpix_beam = grid2healpix(
+                self.data, nside, theta=self.theta, phi=self.phi
+            )
+            npix = nside2npix(nside)
+            power = healpix_beam.sum(axis=-1) * 4 * np.pi / npix
+        else:  # from alm
+            power = self.alm[0, 0] * Y00 * 4 * np.pi
         return power
 
     def horizon_cut(self, horizon=None):
@@ -70,6 +87,14 @@ class Beam:
             horizon and 1 is interpreted as above it. The elements must be in
             the range [0, 1].
         """
+        # has no effect on alm beam
+        if self.data is None:
+            warnings.warn(
+                "Horizon cut is not implemented for alm beams.",
+                UserWarning,
+            )
+            return
+
         if horizon is None:
             horizon = np.ones_like(self.data)
             horizon[:, self.theta > np.pi / 2] = 0
