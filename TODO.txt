@@ -1,3 +1,0 @@
-- beam reconstruction
-- sky reconstruction
-- math docs
