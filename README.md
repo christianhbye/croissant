@@ -10,9 +10,6 @@ Moreover, the time evolution of the simulation is very natural in this represent
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
-Finally, CROISSANT is parallelizable as the time domain of the simulation easily can be run in parallell, 
-
-
 ## Installation
 `pip install croissant-sim` (see https://pypi.org/project/croissant-sim/1.0.0/)
 
