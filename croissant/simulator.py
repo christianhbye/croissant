@@ -116,7 +116,7 @@ class Simulator:
             )
         )
 
-        self.design_matrix = dpss.dpss_op(x, nterms=nterms)
+        self.design_matrix = dpss.dpss_op(x, nterms=self.nterms)
         self.sky.coeffs = dpss.freq2dpss(
             self.sky.alm,
             self.sky.frequencies,
