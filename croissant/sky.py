@@ -3,77 +3,60 @@ from pygdsm import GlobalSkyModel2016 as GSM
 from .healpix import HealpixMap
 
 
-def npix2nside(npix):
-    """
-    Compute the nside of a healpix map given the number of pixels in the map.
-    """
-    err = f"Invalid value of npix: {npix}."
-    ns_sq = npix / 12
-    if not np.isclose(ns_sq, int(ns_sq)):
-        raise ValueError(err)
-    else:
-        ns_sq = int(ns_sq)
-    nside = np.sqrt(ns_sq)
-    if not np.isclose(nside, int(nside)):
-        raise ValueError(err)
-    else:
-        nside = int(nside)
-        return nside
-
-
-def check_sky_shapes(sky_map, frequencies):
-    """
-    Check that all shapes match for a sky class.
-    """
-    sh = np.shape(sky_map)
-    sh_err = f"Unexpected shape of sky map: {sh}."
-    npix = sh[-1]
-    if len(sh) > 2:
-        raise ValueError(sh_err)
-    elif type(frequencies) in [None, float, int]:
-        allowed_shapes = [(1, npix), (npix,)]
-    else:
-        nfreqs = len(frequencies)
-        allowed_shapes = [(nfreqs, npix)]
-    if sh not in allowed_shapes:
-        raise ValueError(sh_err)
-
-
 class Sky(HealpixMap):
-    def __init__(self, sky_map, frequencies=None, nested_input=False):
+    def __init__(
+        self,
+        sky_map=None,
+        frequencies=None,
+        nested_input=False,
+        coords="galactic",
+    ):
         """
         Class that holds Sky objects. Thin wrapper for HealpixMap objects.
         """
-        check_sky_shapes(sky_map, frequencies)
         super().__init__(
-            self._nside(data=sky_map),
             data=sky_map,
+            nside=None,
             nested_input=nested_input,
             frequencies=frequencies,
+            coords=coords,
         )
 
-    def _nside(self, data=None):
-        """
-        Compute the nside of a sky map.
-        """
-        if data is None:
-            data = self.data
-        npix = np.shape(data)[-1]
-        return npix2nside(npix)
-
     @classmethod
-    def gsm(cls, frequencies, res="hi"):
+    def gsm(cls, freq, power_law=False, gen_freq=None, spectral_index=None):
         """
         Construct a sky object with pygdsm
         """
-        frequencies = np.array(frequencies)
-        if frequencies.ndim == 0:
-            frequencies = np.expand_dims(frequencies, axis=0)
-        gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution=res)
-        sky_map = gsm16.generate(frequencies)
-        if sky_map.ndim == 1:
-            sky_map.shape = (1, -1)
-        return cls(sky_map, frequencies=frequencies, nested_input=False)
+        freq = np.ravel(freq)
+        # frequencies to generate maps at
+        if not power_law:
+            gen_freq = freq  # generate at all freqs
+        elif gen_freq is None:
+            # if power law, only generate one map with GSM
+            # use largest frequency since it's lkely inside the GSM range
+            gen_freq = freq[-1]
+
+        gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution="lo")
+        sky_map = gsm16.generate(gen_freq)
+
+        if power_law:
+            kwargs = {
+                "ref_map": sky_map,
+                "ref_freq": gen_freq,
+                "return_map": True,
+            }
+            if spectral_index is not None:
+                kwargs["spectral_index"] = spectral_index
+            sky_map = Sky().power_law_map(freq, **kwargs)
+
+        obj = cls(
+            sky_map,
+            frequencies=freq,
+            nested_input=False,
+            coords="galactic",
+        )
+
+        return obj
 
     def power_law_map(
         self,
@@ -120,22 +103,19 @@ class Sky(HealpixMap):
             shapes don't match.
             If multiple maps are provided but they don't follow the power law
             specified.
+
         """
         if ref_freq is None:
             ref_freq = self.frequencies
-            if ref_freq is None:
-                raise ValueError("No reference frequency is provided.")
+        else:
+            ref_freq = np.ravel(ref_freq).copy()
+
         if ref_map is None:
             ref_map = self.data
-            if ref_map is None:
-                raise ValueError("No reference map is provided.")
-        ref_freq = np.array(ref_freq)
-        if len(ref_map.shape) == 1:
-            ref_map.shape = (1, -1)
-        if not ref_freq.shape[0] == ref_map.shape[0]:
-            raise ValueError(
-                "Shape mismatch between reference frequencies and maps."
-            )
+        else:
+            ref_map = np.array(ref_map, copy=True)
+            if ref_map.ndim == 1:
+                ref_map.shape = (1, -1)
 
         def _pow_law(f):
             t0 = ref_map[0].reshape(1, -1)
@@ -151,8 +131,8 @@ class Sky(HealpixMap):
         sky_map = _pow_law(freq_out)
 
         if return_map:
-            return sky_map, freq_out
+            return sky_map
 
         else:
             self.data = sky_map
-            self.frequencies = freq_out
+            self.frequencies = np.ravel(freq_out)
