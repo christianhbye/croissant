@@ -6,7 +6,7 @@ import numpy as np
 from croissant.beam import Beam
 from croissant import dpss
 from croissant.constants import sidereal_day
-from croissant.coordinates import radec2topo, rotate_alm
+from croissant.rotations import radec2topo, rotate_alm
 from croissant.healpix import Alm, alm2map, grid_interp, HealpixMap
 from croissant.simulator import Simulator
 from croissant.sky import Sky
