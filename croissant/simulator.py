@@ -103,9 +103,7 @@ class Simulator:
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
 
-    def compute_dpss(self, nterms=None):
-        if nterms is None:
-            nterms = self.nterms
+    def compute_dpss(self):
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
