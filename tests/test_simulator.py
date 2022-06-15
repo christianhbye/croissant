@@ -137,8 +137,8 @@ def test_run():
 
     # test with nonzero m-modes
     sky_alm = Alm(lmax=lmax, coords="equatorial")
-    sky_alm[0, 0] = 100
-    sky_alm[2, 0] = 60
+    sky_alm[0, 0] = 1e7
+    sky_alm[2, 0] = 1e4
     sky_alm[3, 1] = -20.2 + 20.4j
     sky_alm[6, 6] = 1.0 - 3.0j
     sky = HealpixMap.from_alm(sky_alm, nside=128)
