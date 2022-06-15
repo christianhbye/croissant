@@ -7,7 +7,7 @@ import numpy as np
 from croissant import coordinates as coord
 
 
-def test_top2radec():
+def test_topo2radec():
     phi = np.linspace(0, 2 * np.pi, num=360, endpoint=False)
     theta = np.linspace(0, np.pi, num=181)
     loc = EarthLocation(
