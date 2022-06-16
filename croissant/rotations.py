@@ -23,7 +23,7 @@ def topo2radec(theta, phi, time, loc, grid=True):
         an astropy.time.Time object.
     loc : array-like (lat, lon, alt) or EarthLocation instance
         The location of the topocentric coordinates. Must be able to initialize
-        an astropy.coordinates.EarthLocation object. 
+        an astropy.coordinates.EarthLocation object.
     grid : bool
         If True then phi and theta are assumed to be coordinate axes of a grid.
         This has no effect if phi and theta have size 1.
@@ -48,7 +48,7 @@ def topo2radec(theta, phi, time, loc, grid=True):
         loc = EarthLocation(
             lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
         )
-    
+
     time = Time(time, scale="utc", location=loc)
     azs = phi * units.rad
     alts = (np.pi / 2 - theta) * units.rad
@@ -89,7 +89,7 @@ def radec2topo(ra, dec, time, loc):
         loc = EarthLocation(
             lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
         )
-    
+
     time = Time(time, scale="utc", location=loc)
 
     icrs = ICRS(ra=ra * units.deg, dec=dec * units.deg)
@@ -98,6 +98,7 @@ def radec2topo(ra, dec, time, loc):
     theta = np.pi / 2 - altaz.alt.rad
     phi = altaz.az.rad
     return theta, phi
+
 
 def topo2mcmf(theta, phi, time, loc, grid=True):
     """
@@ -115,7 +116,7 @@ def topo2mcmf(theta, phi, time, loc, grid=True):
         an astropy.time.Time object.
     loc : array-like (lat, lon, alt) or EarthLocation instance
         The location of the topocentric coordinates. Must be able to initialize
-        an astropy.coordinates.EarthLocation object. 
+        an astropy.coordinates.EarthLocation object.
     grid : bool
         If True then phi and theta are assumed to be coordinate axes of a grid.
         This has no effect if phi and theta have size 1.
@@ -140,26 +141,27 @@ def topo2mcmf(theta, phi, time, loc, grid=True):
         loc = MoonLocation(
             lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
         )
-    
+
     time = Time(time, scale="utc", location=loc)
     azs = phi * units.rad
     alts = (np.pi / 2 - theta) * units.rad
     altaz = LunarTopo(alt=alts, az=azs, location=loc, obstime=time)
     mcmf = altaz.transform_to(MCMF())
-    lon = mcmf.ra.deg
-    lat = mcmf.dec.deg
+    lon = mcmf.spherical.lon.deg
+    lat = mcmf.spherical.lat.deg
     return lon, lat
 
-def mcmf2topo(ra, dec, time, loc):
+
+def mcmf2topo(lon, lat, time, loc):
     """
     Convert ra/dec-combination(s) to topocentric coordinates.
 
     Parameters
     ----------
-    ra : array-like
-        The right ascension(s) in degrees.
-    dec : array-like
-        The declination(s) in degrees.
+    lon : array-like
+        Longtitude in degrees.
+    lat : array-like
+        Latitude in degrees.
     time : array-like, str, or Time instance
         The time to compute the transformation at. Must be able to initialize
         an astropy.time.Time object.
@@ -176,14 +178,21 @@ def mcmf2topo(ra, dec, time, loc):
 
     """
     if not isinstance(loc, MoonLocation):
-        lat, lon, alt = loc
+        obs_lat, obs_lon, alt = loc
         loc = MoonLocation(
-            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
+            lat=obs_lat * units.deg,
+            lon=obs_lon * units.deg,
+            height=alt * units.m,
         )
-    
+
     time = Time(time, scale="utc", location=loc)
 
-    mcmf = MCMF(ra=ra * units.deg, dec=dec * units.deg)
+    mcmf = MCMF(
+        lon=lon * units.deg,
+        lat=lat * units.deg,
+        representation_type="spherical",
+    )
+
     # transform to altaz
     altaz = mcmf.transform_to(LunarTopo(location=loc, obstime=time))
     theta = np.pi / 2 - altaz.alt.rad
@@ -195,7 +204,7 @@ def rot_coords(
     axis1, axis2, from_coords, to_coords, time=None, loc=None, lonlat=False
 ):
     """
-    Wrapper for the other coordinate transform functions. Rotates coordinates 
+    Wrapper for the other coordinate transform functions. Rotates coordinates
     from one coordinate system to another.
     Supported coordinate system conversions are
         topocentric <-> mcmf (asssumed topocentric at a MoonLocation)
@@ -206,27 +215,27 @@ def rot_coords(
     axis1 : 1d-array
         Colatitudes in radians (if lonlat = False) or longtitudes in degrees
         (if lonlat = True).
-    
+
     axis2 : 1d-array
         Azimuth angles in radians (if lonlat = False) or latitudes in degrees
         (if lonlat = True).
-    
+
     from_coords : str
         Coordinate system to transform from.
-    
+
     to_coords : str
         Coordinate system to transform to.
-    
+
     time : str or astropy.time.Time instance or lunarsky.time.Time instance
         The time of the coordinate transform. Must be able to initialize a Time
         object. Required if transforming to or from topocentric coordinates.
-    
+
     loc: array-like (lat, lon, alt) or astropy.coordinates.EarthLocation
          instance or lunarsky.moon.MoonLocation instance
         The location of the coordinate transform. Required if transforming
         to or from topocentric coordinates. If array-like it must have the
         form (latitude, longtitude, altitude).
-    
+
     lonlat : bool
         If True, input and out are longtitudes and latitudes in degrees.
         Otherwise, they are colatitudes (polar angle) and azimuths in radians.
@@ -236,11 +245,11 @@ def rot_coords(
     rot_axis1 : np.1darray
         Colatitudes in radians in new coordinate system (if lonlat = False) or
         longtitudes in degrees (in lonlat = True).
-    
+
     rot_axis2: np.1darray
-        Azimuths in radians in new coordinate system (if lonlat = False) or 
+        Azimuths in radians in new coordinate system (if lonlat = False) or
         latitudes in degrees (if lonlat = True).
-        
+
     """
     from_coords = from_coords.lower()
     to_coords = to_coords.lower()
@@ -269,7 +278,7 @@ def rot_coords(
         if lonlat:
             return ra, dec
         else:
-            rot_axis1 = np.pi/2 - np.deg2rad(dec)
+            rot_axis1 = np.pi / 2 - np.deg2rad(dec)
             rot_axis2 = np.deg2rad(ra)
             return rot_axis1, rot_axis2
 
@@ -297,7 +306,6 @@ def rot_coords(
             return rot_axis1, rot_axis2
         else:
             return theta, phi
-
 
 
 def hp_rotate(from_coords, to_coords):
@@ -332,7 +340,7 @@ def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
     return rotated_map
 
 
-#XXX ADD MCMF support
+# XXX ADD MCMF support
 def rotate_alm(alm, from_coords="galactic", to_coords="equatorial"):
     rot = hp_rotate(from_coords, to_coords)
     alm = np.array(alm, copy=True, dtype=np.complex128)
