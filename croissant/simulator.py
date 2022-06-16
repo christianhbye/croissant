@@ -7,7 +7,7 @@ import numpy as np
 import warnings
 
 from . import dpss
-from .rotations import radec2topo
+from .rotations import rot_coords
 from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
 
@@ -48,10 +48,10 @@ class Simulator:
             lat, lon, alt = obs_loc
             self.loc = loc_object(
                 lat=lat * units.deg,
-                lon = lon * units.deg,
+                lon=lon * units.deg,
                 height=alt * units.m,
             )
-        
+
         self.t_start = Time(t_start, location=self.loc, scale="utc")
         if delta_t is not None:
             try:
@@ -94,11 +94,11 @@ class Simulator:
         lon, lat = healpix2lonlat(nside)
 
         # get corresponding theta/phi
-        colat = np.pi / 2 - np.deg2rad(dec)
-        lon_rad = np.deg2rad(lon)
-        theta, phi = rotations.rot_coords(
-            colat,
-            lon_rad,
+        za = np.pi / 2 - np.deg2rad(lat)
+        az = np.deg2rad(lon)
+        theta, phi = rot_coords(
+            za,
+            az,
             self.beam.coords.lower(),
             self.sim_coords,
             time=self.t_start,
