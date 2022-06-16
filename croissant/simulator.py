@@ -1,6 +1,7 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
-from astropy.time import Time
+from lunarsky.time import Time
+from lunarsky.moon import MoonLocation
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -17,6 +18,7 @@ class Simulator:
         sky,
         obs_loc,
         t_start,
+        moon=True,
         t_end=None,
         N_times=None,
         delta_t=None,
@@ -28,16 +30,28 @@ class Simulator:
         Simulator class. Prepares and runs simulations.
         """
         self.lmax = lmax
+        self.moon = moon
         # set up frequencies to run the simulation at
         if frequencies is None:
             frequencies = sky.frequencies
         self.frequencies = frequencies
-        # set up the location of the telescope as astropy.EarthLocation object
-        lat, lon, alt = obs_loc
-        self.loc = EarthLocation(
-            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
-        )
-        # set up observing time as astropy.Time object
+        if moon:
+            loc_object = MoonLocation
+            self.sim_coords = "mcmf"  # simulation coordinate system
+        else:
+            loc_object = EarthLocation
+            self.sim_coords = "equatorial"
+
+        if isinstance(obs_loc, loc_object):
+            self.loc = obs_loc
+        else:
+            lat, lon, alt = obs_loc
+            self.loc = loc_object(
+                lat=lat * units.deg,
+                lon = lon * units.deg,
+                height=alt * units.m,
+            )
+        
         self.t_start = Time(t_start, location=self.loc, scale="utc")
         if delta_t is not None:
             try:
@@ -69,26 +83,28 @@ class Simulator:
             self.beam = beam
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
-        if self.sky.coords != "equatorial":
-            self.sky.switch_coords("equatorial")
+        if self.sky.coords.lower() != self.sim_coords:
+            self.sky.switch_coords(self.sim_coords)
 
     def beam_alm(self, nside=128):
         """
         Get the alm's of the beam in the equitorial coordinate system.
         """
-        # get ra/dec at healpix centers
-        ra, dec = healpix2lonlat(nside)
+        # get lon/lat in sim coordinates at healpix centers
+        lon, lat = healpix2lonlat(nside)
 
         # get corresponding theta/phi
-        if self.beam.coords.lower() == "topocentric":
-            theta, phi = radec2topo(ra, dec, self.t_start, self.loc)
-        elif self.beam.coords.lower() == "equatorial":
-            theta = np.pi / 2 - np.deg2rad(dec)
-            phi = np.deg2rad(ra)
-        else:
-            raise ValueError(
-                f"Cannot convert from {self.beam.coordinates} to ra/dec."
-            )
+        colat = np.pi / 2 - np.deg2rad(dec)
+        lon_rad = np.deg2rad(lon)
+        theta, phi = rotations.rot_coords(
+            colat,
+            lon_rad,
+            self.beam.coords.lower(),
+            self.sim_coords,
+            time=self.t_start,
+            loc=self.loc,
+            lonlat=False,
+        )
 
         pixel_centers = np.array([theta, phi]).T
         # get healpix map
