@@ -61,10 +61,25 @@ def test_simulator_init():
     beam.horizon_cut()
     assert np.allclose(sim.beam.data, beam.data)
 
-    # check sky is in the ra/dec coords
-    assert sim.sky.coords == "equatorial"
+    # check that the simulation coords are set properly
+    assert sim.sim_coords == "mcmf"
+    # check sky is in the desired simulation coords
+    assert sim.sky.coords == sim.sim_coords
     sky_alm = rotate_alm(sky.alm(lmax=lmax))
     assert np.allclose(sim.sky.alm, sky_alm)
+
+    # check that init works correcttly on earth
+    sim = Simulator(
+        beam,
+        sky,
+        loc,
+        t_start,
+        moon=False,
+        N_times=N_times,
+        delta_t=step,
+        lmax=lmax,
+    )
+    assert sim.sim_coords == "equatorial"
 
 
 def test_beam_alm():
