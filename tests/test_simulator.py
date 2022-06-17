@@ -1,11 +1,12 @@
-from astropy.time import Time
 from astropy import units
+from copy import deepcopy
 import healpy
+from lunarsky import Time
 import numpy as np
 
 from croissant.beam import Beam
 from croissant import dpss
-from croissant.constants import sidereal_day
+from croissant.constants import sidereal_day_earth
 from croissant.rotations import radec2topo, rotate_alm
 from croissant.healpix import Alm, alm2map, grid_interp, HealpixMap
 from croissant.simulator import Simulator
@@ -14,15 +15,13 @@ from croissant.sky import Sky
 
 # define default params for simulator
 
-theta = np.linspace(0, np.pi, 181)
-phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
-frequencies = np.linspace(1, 50, 50)
-theta, frequencies, phi = np.meshgrid(theta, frequencies, phi, sparse=True)
+frequencies = np.linspace(1, 50, 50).reshape(-1, 1, 1)
+theta = np.linspace(0, np.pi, 181).reshape(1, -1, 1)
+phi = np.linspace(0, 2 * np.pi, 360, endpoint=False).reshape(1, 1, -1)
 power = frequencies**2 * np.cos(theta) ** 2  # dipole
 power = np.repeat(power, phi.size, axis=2)
 beam = Beam(power, theta=theta, phi=phi, frequencies=frequencies)
-sky = Sky.gsm(25)
-sky.power_law_map(frequencies)
+sky = Sky.gsm(frequencies, power_law=True, gen_freq=25, spectral_index=-2.5)
 loc = (40.0, 137.0, 0.0)
 t_start = "2022-06-10 12:59:00"
 N_times = 250
@@ -33,7 +32,7 @@ lmax = 32
 def test_simulator_init():
     # check that the times are set conisstently regardless of
     # which parameters that specify it
-    delta_t, step = np.linspace(0, sidereal_day, N_times, retstep=True)
+    delta_t, step = np.linspace(0, sidereal_day_earth, N_times, retstep=True)
     step = step * units.s
     t_end = Time(t_start) + delta_t[-1] * units.s
     # specify end, ntimes:
@@ -58,8 +57,9 @@ def test_simulator_init():
     # check that power is computed correctly before horizon cut
     assert np.allclose(sim.beam.total_power, beam.total_power)
     # check that the init does the horizon cut
-    beam.horizon_cut()
-    assert np.allclose(sim.beam.data, beam.data)
+    beam_copy = deepcopy(beam)
+    beam_copy.horizon_cut()
+    assert np.allclose(sim.beam.data, beam_copy.data)
 
     # check that the simulation coords are set properly
     assert sim.sim_coords == "mcmf"
@@ -84,11 +84,22 @@ def test_simulator_init():
 
 def test_beam_alm():
     sim = Simulator(
-        beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
+        beam,
+        sky,
+        loc,
+        t_start,
+        moon=False,
+        N_times=N_times,
+        delta_t=delta_t,
+        lmax=lmax,
     )
 
+    # check that input args are set correctly
+    assert sim.beam.coords.lower() == "topocentric"
+    assert sim.sim_coords == "equatorial"
+
     # test beam alm by inverting it
-    nside = 64
+    nside = 128
     beam_map = alm2map(sim.beam.alm, nside=nside)  # in healpix ra/dec
     pix = np.arange(healpy.nside2npix(nside))
     ra, dec = healpy.pix2ang(nside, pix, nest=False, lonlat=True)
@@ -152,7 +163,7 @@ def test_run():
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
 
     # test with nonzero m-modes
-    sky_alm = Alm(lmax=lmax, coords="equatorial")
+    sky_alm = Alm(lmax=lmax, coords="mcmf")
     sky_alm[0, 0] = 1e7
     sky_alm[2, 0] = 1e4
     sky_alm[3, 1] = -20.2 + 20.4j
@@ -170,7 +181,7 @@ def test_run():
     beam_alm[0, ix31] = beam31
     ix66 = healpy.Alm.getidx(lmax, 6, 6)
     beam_alm[0, ix66] = beam66
-    beam = Beam(beam_alm, alm=True, coords="equatorial")
+    beam = Beam(beam_alm, alm=True, coords="mcmf")
 
     sim = Simulator(
         beam,
