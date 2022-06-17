@@ -4,6 +4,7 @@ import healpy as hp
 from lunarsky import LunarTopo, MCMF, MoonLocation, Time
 import numpy as np
 
+from croissant.healpix import healpix2lonlat
 from croissant import rotations
 
 
@@ -209,6 +210,17 @@ def test_rot_coords():
     )
     assert np.allclose(theta, exp_theta)
     assert np.allclose(phi, exp_phi)
+
+    # radec to topo (not on grid)
+    ra, dec = healpix2lonlat(128)
+    theta, phi = rotations.radec2topo(ra, dec, time, loc)  # expected output
+    za = np.pi / 2 - np.deg2rad(dec)
+    az = np.deg2rad(ra)
+    th, ph = rotations.rot_coords(
+        za, az, "equatorial", "topocentric", time=time, loc=loc, lonlat=False
+    )
+    assert np.allclose(theta, th)
+    assert np.allclose(phi, ph)
 
     # topo -> mcmf
     theta = np.linspace(0, np.pi, 181)
