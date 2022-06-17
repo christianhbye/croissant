@@ -481,12 +481,17 @@ class Alm(hp.Alm):
         phase.shape = (phi.size, 1, self.size)
         return phase
 
-    def rotate_alm_time(self, times, world="earth"):
+    def rotate_alm_time(self, times, world="moon"):
         """
         Rotate alms in time counterclockwise around the z-axis.
         """
-        if not world == "earth":
-            raise NotImplementedError("Moon will be added shortly.")
-        dphi = 2 * np.pi * times / constants.sidereal_day
+        world = world.lower()
+        if world == "moon":
+            sidereal_day = constants.sidereal_day_moon
+        elif world == "earth":
+            sidereal_day = constants.sidereal_day_earth
+        else:
+            raise ValueError(f"World must be 'moon' or 'earth', not {world}.")
+        dphi = 2 * np.pi * times / sidereal_day
         phase = self.rotate_alm_angle(dphi)
         return phase

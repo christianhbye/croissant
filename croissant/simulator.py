@@ -150,7 +150,12 @@ class Simulator:
         """
         Compute the convolution for a range of times.
         """
-        phases = self.sky.rotate_alm_time(self.dt)  # the rotation phases
+        if self.moon:
+            world = "moon"
+        else:
+            world = "earth"
+        # the rotation phases
+        phases = self.sky.rotate_alm_time(self.dt, world=world)
         if dpss:
             self.nterms = dpss_nterms
             self.compute_dpss()
