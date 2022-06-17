@@ -1,5 +1,6 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
+from copy import deepcopy
 from lunarsky.time import Time
 from lunarsky.moon import MoonLocation
 import matplotlib.pyplot as plt
@@ -68,12 +69,13 @@ class Simulator:
             t_end = Time(t_end, location=self.loc)
             total_time = (t_end - self.t_start).to_value(units.s)
             if delta_t is not None:
-                dt = np.arange(0, total_time, delta_t)
+                dt = np.arange(0, total_time + delta_t, delta_t)
                 N_times = len(dt)
             else:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
+        beam = deepcopy(beam)
         if beam.alm is None:
             # apply horizon mask and initialize beam
             beam.horizon_cut(horizon=horizon)
@@ -93,14 +95,14 @@ class Simulator:
         # get lon/lat in sim coordinates at healpix centers
         lon, lat = healpix2lonlat(nside)
 
-        # get corresponding theta/phi
+        # get corresponding theta/phi in topocentric coords
         za = np.pi / 2 - np.deg2rad(lat)
         az = np.deg2rad(lon)
         theta, phi = rot_coords(
             za,
             az,
-            self.beam.coords.lower(),
             self.sim_coords,
+            self.beam.coords.lower(),
             time=self.t_start,
             loc=self.loc,
             lonlat=False,
