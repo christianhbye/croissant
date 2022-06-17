@@ -118,7 +118,8 @@ def test_compute_dpss():
     sim = Simulator(
         beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
     )
-    sim.compute_dpss(nterms=10)
+    sim.nterms = 10
+    sim.compute_dpss()
     design_matrix = dpss.dpss_op(frequencies, nterms=10)
     assert np.allclose(design_matrix, sim.design_matrix)
     sky_alm = rotate_alm(sky.alm(lmax=lmax))

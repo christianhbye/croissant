@@ -1,8 +1,7 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
 from copy import deepcopy
-from lunarsky.time import Time
-from lunarsky.moon import MoonLocation
+from lunarsky import MoonLocation, Time
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -119,9 +118,7 @@ class Simulator:
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
 
-    def compute_dpss(self, nterms=None):
-        if nterms is None:
-            nterms = self.nterms
+    def compute_dpss(self):
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
@@ -134,7 +131,7 @@ class Simulator:
             )
         )
 
-        self.design_matrix = dpss.dpss_op(x, nterms=nterms)
+        self.design_matrix = dpss.dpss_op(x, nterms=self.nterms)
         self.sky.coeffs = dpss.freq2dpss(
             self.sky.alm,
             self.sky.frequencies,
