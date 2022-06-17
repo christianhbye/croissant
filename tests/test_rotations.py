@@ -1,4 +1,4 @@
-from astropy.coordinates import AltAz, EarthLocation, ICRS
+from astropy.coordinates import AltAz, Galactic, EarthLocation, ICRS
 from astropy import units
 import healpy as hp
 from lunarsky import LunarTopo, MCMF, MoonLocation, Time
@@ -243,15 +243,22 @@ def test_rot_coords():
 
 
 def test_hp_rotate():
-    # verify that this method yields the same as the healpy example in the docs
-    rot = rotations.hp_rotate("galactic", "ecliptic")
-    theta_gal, phi_gal = np.pi / 2, 0
-    theta_ecl, phi_ecl = rot(theta_gal, phi_gal)
-    assert np.isclose(theta_ecl, 1.66742347999)  # from healpy docs
-    assert np.isclose(phi_ecl, -1.6259571125)
-    vec_gal = np.array([1, 0, 0])
-    vec_ecl = rot(vec_gal)
-    assert np.allclose(vec_ecl, [-0.05487563, -0.99382135, -0.09647686])
+    # test that this method agrees with astropy
+    rot = rotations.hp_rotate("galactic", "equatorial")
+    l, b = 0, 0
+    ra, dec = rot(l, b, lonlat=True)
+    icrs = Galactic(l=l * units.deg, b=b * units.deg).transform_to(ICRS())
+    assert np.isclose(ra, icrs.ra.deg)
+    assert np.isclose(dec, icrs.dec.deg)
+
+    # galactic -> mcmf
+    time = Time("2022-06-16 17:00:00")
+    rot = rotations.hp_rotate("galactic", "mcmf", time=time)
+    l, b = 0, 0
+    lon, lat = rot(l, b, lonlat=True)
+    mcmf = Galactic(l=l * units.deg, b=b * units.deg).transform_to(MCMF())
+    assert np.isclose(lon, mcmf.spherical.lon)
+    assert np.isclose(dec, mcmf.spherical.lat)
 
 
 def test_rotate_map():
@@ -271,9 +278,9 @@ def test_rotate_map():
     npix = hp.nside2npix(nside)
     m = np.arange(npix)
     rm = rotations.rotate_map(
-        m, from_coords="equatorial", to_coords="ecliptic"
+        m, from_coords="equatorial", to_coords="galactic"
     )
-    hp_rot = hp.Rotator(coord=["C", "E"])
+    hp_rot = hp.Rotator(coord=["C", "G"])
     hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=True)
     assert np.allclose(rm, hprm)
     # without pixel weights it should be different

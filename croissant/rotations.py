@@ -1,8 +1,9 @@
 from astropy.coordinates import AltAz, EarthLocation, ICRS
 from astropy import units
-from healpy import Alm, npix2nside, Rotator
+import healpy as hp
 from lunarsky import LunarTopo, MCMF, MoonLocation, Time
 import numpy as np
+from spiceypy import pxform
 
 from .constants import PIX_WEIGHTS_NSIDE
 
@@ -308,23 +309,81 @@ def rot_coords(
             return theta, phi
 
 
-def hp_rotate(from_coords, to_coords):
-    coords = {"galactic": "G", "ecliptic": "E", "equatorial": "C"}
+def mcmf_euler(time, from_coords="galactic", to_coords="mcmf"):
+    """
+    Compute the (ZYZ) Euler angles needed to describe a rotation between MCMF
+    and galactic or equatorial coordinates.
+
+    Parameters
+    ----------
+    time : str or astropy.timing.Time instance
+        The time of the coordinate transform.
+
+    from_coords : str (optional)
+        Coordinate system to convert from.
+
+    to_coords : str (optional)
+        Coordinate system to convert to.
+
+    Returns
+    -------
+    euler_angles : tup
+        The Euler angles (as defined by Healpix) that descirbes the coordinate
+        conversion.
+
+    """
     fc = from_coords.lower()
     tc = to_coords.lower()
+    coords = {"galactic": "GALACTIC", "equatorial": "J2000", "mcmf": "MOON_ME"}
     if fc not in coords or tc not in coords:
         raise ValueError(
             f"Invalid coordinate system name, must be in {list(coords.keys())}"
         )
-    rot = Rotator(coord=[coords[fc], coords[tc]])
+    et = Time(time) - Time("J2000", scale="tt")  # epoch time
+    # rotation matrix
+    rot_mat = pxform(coords[fc], coords[tc], et.sec)
+    # convert basis vectors
+    xin, yin, zin = np.eye(3)
+    xout, yout, zout = rot_mat
+    # normalize
+    xout /= np.sqrt(np.sum(xout**2))
+    yout /= np.sqrt(np.sum(yout**2))
+    zout /= np.sqrt(np.sum(zout**2))
+    # get euler angles
+    psi = np.arctan2(yout[2], -xout[2])
+    theta = np.arccos(zin.dot(zout))
+    phi = np.arctan2(zout[1], zout[0])
+    euler_angles = (psi, theta, phi)
+    return euler_angles
+
+
+def hp_rotate(from_coords, to_coords, time=None):
+    """
+    Parameters
+    ----------
+    time : str or astropy.timing.Time instance
+        The time of the coordinate transform.
+    """
+    hp_coords = {"galactic": "G", "equatorial": "C"}
+    fc = from_coords.lower()
+    tc = to_coords.lower()
+    if "mcmf" in [fc, tc]:
+        euler_angles = mcmf_euler(time, from_coords=fc, to_coords=tc)
+        rot = hp.Rotator(rot=euler_angles, eulertype="ZYZ")
+    elif fc in hp_coords and tc in hp_coords:
+        rot = hp.Rotator(coord=[hp_coords[fc], hp_coords[tc]])
+    else:
+        raise ValueError(
+            f"Invalid coordinate system, must be in {list(hp_coords.keys())}"
+        )
     return rot
 
 
-def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
+def rotate_map(sky_map, from_coords="galactic", to_coords="mcmf"):
     rot = hp_rotate(from_coords, to_coords)
     sky_map = np.array(sky_map, copy=True, dtype=np.float64)
     npix = sky_map.shape[-1]
-    nside = npix2nside(npix)
+    nside = hp.npix2nside(npix)
     use_pix_weights = nside in PIX_WEIGHTS_NSIDE
     if sky_map.ndim == 1:
         rotated_map = rot.rotate_map_alms(
@@ -340,8 +399,7 @@ def rotate_map(sky_map, from_coords="galactic", to_coords="equitorial"):
     return rotated_map
 
 
-# XXX ADD MCMF support
-def rotate_alm(alm, from_coords="galactic", to_coords="equatorial"):
+def rotate_alm(alm, from_coords="galactic", to_coords="mcmf"):
     rot = hp_rotate(from_coords, to_coords)
     alm = np.array(alm, copy=True, dtype=np.complex128)
     if alm.ndim == 1:
@@ -379,6 +437,6 @@ def rot_alm_z(phi, lmax):
     """
 
     phi = np.reshape(phi, (-1, 1))
-    emms = Alm.getlm(lmax)[1].reshape(1, -1)
+    emms = hp.Alm.getlm(lmax)[1].reshape(1, -1)
     phase = np.exp(1j * emms * phi)
     return np.squeeze(phase)
