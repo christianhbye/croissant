@@ -3,7 +3,7 @@ import healpy
 import numpy as np
 import pytest
 from croissant import rotations, healpix as hp
-from croissant.constants import sidereal_day, Y00
+from croissant.constants import sidereal_day_earth, sidereal_day_moon, Y00
 
 
 def test_healpix2lonlat():
@@ -458,6 +458,14 @@ def test_rotate_alm_time():
     alm = hp.Alm(lmax=20, frequencies=np.linspace(1, 50, 50))
     div = [1, 2, 4, 8]
     for d in div:
-        dt = sidereal_day / d
         dphi = 2 * np.pi / d
-        assert np.allclose(alm.rotate_alm_time(dt), alm.rotate_alm_angle(dphi))
+        # earth
+        dt = sidereal_day_earth / d
+        assert np.allclose(
+            alm.rotate_alm_time(dt, world="earth"), alm.rotate_alm_angle(dphi)
+        )
+        # moon
+        dt = sidereal_day_moon / d
+        assert np.allclose(
+            alm.rotate_alm_time(dt, world="moon"), alm.rotate_alm_angle(dphi)
+        )

@@ -1,9 +1,10 @@
-from astropy.coordinates import AltAz, EarthLocation, ICRS
-from astropy.time import Time
+from astropy.coordinates import AltAz, Galactic, EarthLocation, ICRS
 from astropy import units
 import healpy as hp
+from lunarsky import LunarTopo, MCMF, MoonLocation, Time
 import numpy as np
 
+from croissant.healpix import healpix2lonlat
 from croissant import rotations
 
 
@@ -21,32 +22,30 @@ def test_topo2radec():
     alt = (np.pi / 2 - theta.reshape(-1, 1)) * units.rad
     aa = AltAz(alt=alt, az=az, location=loc, obstime=time)
     icrs = aa.transform_to(ICRS())
-    assert np.allclose(ra, icrs.ra.rad.ravel())
-    assert np.allclose(dec, icrs.dec.rad.ravel())
+    assert np.allclose(ra, icrs.ra.deg.ravel())
+    assert np.allclose(dec, icrs.dec.deg.ravel())
 
     # change phi/theta from coord axes to datapoints
     phi, theta = [ang.ravel() for ang in np.meshgrid(phi, theta)]
     ra, dec = rotations.topo2radec(theta, phi, time, loc, grid=False)
     assert -90 <= dec.all() < 90
     assert 0 <= ra.all() < 360
-    assert np.allclose(ra, icrs.ra.rad.ravel())
-    assert np.allclose(dec, icrs.dec.rad.ravel())
+    assert np.allclose(ra, icrs.ra.deg.ravel())
+    assert np.allclose(dec, icrs.dec.deg.ravel())
 
-    # pass astropy time to top2radec:
+    # pass time instance to topo2radec
     time = Time(time)
     ra, dec = rotations.topo2radec(theta, phi, time, loc, grid=False)
     assert -90 <= dec.all() < 90
     assert 0 <= ra.all() < 360
-    assert np.allclose(ra, icrs.ra.rad.ravel())
-    assert np.allclose(dec, icrs.dec.rad.ravel())
+    assert np.allclose(ra, icrs.ra.deg.ravel())
+    assert np.allclose(dec, icrs.dec.deg.ravel())
 
     # invert radec2topo
     phi = np.linspace(0, 2 * np.pi, num=360, endpoint=False)
     theta = np.linspace(0, np.pi, num=181)[1:-1]  # remove poles
     phi, theta = [ang.ravel() for ang in np.meshgrid(phi, theta)]
-    ra, dec = np.rad2deg(
-        rotations.topo2radec(theta, phi, time, loc, grid=False)
-    )
+    ra, dec = rotations.topo2radec(theta, phi, time, loc, grid=False)
     theta_, phi_ = rotations.radec2topo(ra, dec, time, loc)
     # handle precision issue
     phi_ = np.where(phi_ >= 2 * np.pi - 1e-10, phi_ - 2 * np.pi, phi_)
@@ -70,7 +69,7 @@ def test_radec2topo():
     assert np.allclose(theta, np.pi / 2 - aa.alt.rad)
     assert np.allclose(phi, aa.az.rad)
 
-    # use astropy time
+    # use Time instance
     time = Time(time)
     theta, phi = rotations.radec2topo(ra, dec, time, loc)
     assert 0 <= theta.all() < np.pi / 2
@@ -84,25 +83,214 @@ def test_radec2topo():
     dec = dec[1:-1]  # remove poles since it will mess with ra
     ra, dec = [ang.ravel() for ang in np.meshgrid(ra, dec)]
     theta, phi = rotations.radec2topo(ra, dec, time, loc)
-    ra_, dec_ = np.rad2deg(
-        rotations.topo2radec(theta, phi, time, loc, grid=False)
-    )
+    ra_, dec_ = rotations.topo2radec(theta, phi, time, loc, grid=False)
     # handle precision issue
     ra_ = np.where(ra_ >= 360 - 1e-10, ra_ - 360, ra_)
     assert np.allclose(dec, dec_)
     assert np.allclose(ra, ra_)
 
 
+def test_topo2mcmf():
+    phi = np.linspace(0, 2 * np.pi, num=360, endpoint=False)
+    theta = np.linspace(0, np.pi, num=181)
+    loc = MoonLocation(
+        lat=40.5 * units.deg, lon=130.2 * units.deg, height=10.3 * units.m
+    )
+    time = "2022-06-09 16:12:00"
+    lon, lat = rotations.topo2mcmf(theta, phi, time, loc, grid=True)
+    assert -90 <= lat.all() < 90
+    assert 0 <= lon.all() < 360
+    az = phi.reshape(1, -1) * units.rad
+    alt = (np.pi / 2 - theta.reshape(-1, 1)) * units.rad
+    aa = LunarTopo(alt=alt, az=az, location=loc, obstime=time)
+    mcmf = aa.transform_to(MCMF())
+    assert np.allclose(lon, mcmf.spherical.lon.deg.ravel())
+    assert np.allclose(lat, mcmf.spherical.lat.deg.ravel())
+
+    # change phi/theta from coord axes to datapoints
+    phi, theta = [ang.ravel() for ang in np.meshgrid(phi, theta)]
+    lon, lat = rotations.topo2mcmf(theta, phi, time, loc, grid=False)
+    assert -90 <= lat.all() < 90
+    assert 0 <= lon.all() < 360
+    assert np.allclose(lon, mcmf.spherical.lon.deg.ravel())
+    assert np.allclose(lat, mcmf.spherical.lat.deg.ravel())
+
+    # pass time instance to topo2mcmf
+    time = Time(time)
+    lon, lat = rotations.topo2mcmf(theta, phi, time, loc, grid=False)
+    assert -90 <= lat.all() < 90
+    assert 0 <= lon.all() < 360
+    assert np.allclose(lon, mcmf.spherical.lon.deg.ravel())
+    assert np.allclose(lat, mcmf.spherical.lat.deg.ravel())
+
+    # invert mcmf2topo
+    phi = np.linspace(0, 2 * np.pi, num=360, endpoint=False)
+    theta = np.linspace(0, np.pi, num=181)[1:-1]  # remove poles
+    phi, theta = [ang.ravel() for ang in np.meshgrid(phi, theta)]
+    lon, lat = rotations.topo2mcmf(theta, phi, time, loc, grid=False)
+    theta_, phi_ = rotations.mcmf2topo(lon, lat, time, loc)
+    # handle precision issue
+    phi_ = np.where(phi_ >= 2 * np.pi - 1e-10, phi_ - 2 * np.pi, phi_)
+    assert np.allclose(theta, theta_)
+    assert np.allclose(phi, phi_)
+
+
+def test_mcmf2topo():
+    lon = np.linspace(0, 360, num=360, endpoint=False)
+    lat = np.linspace(90, -90, num=181)
+    lon, lat = [ang.ravel() for ang in np.meshgrid(lon, lat)]
+    loc = MoonLocation(
+        lat=40.5 * units.deg, lon=130.2 * units.deg, height=10.3 * units.m
+    )
+    time = "2022-06-09 16:12:00"
+    theta, phi = rotations.mcmf2topo(lon, lat, time, loc)
+    assert 0 <= theta.all() < np.pi / 2
+    assert 0 <= phi.all() < 2 * np.pi
+    mcmf = MCMF(
+        lon=lon * units.deg,
+        lat=lat * units.deg,
+        representation_type="spherical",
+    )
+    aa = mcmf.transform_to(LunarTopo(location=loc, obstime=time))
+    assert np.allclose(theta, np.pi / 2 - aa.alt.rad)
+    assert np.allclose(phi, aa.az.rad)
+
+    # use Time instance
+    time = Time(time)
+    theta, phi = rotations.mcmf2topo(lon, lat, time, loc)
+    assert 0 <= theta.all() < np.pi / 2
+    assert 0 <= phi.all() < 2 * np.pi
+    assert np.allclose(theta, np.pi / 2 - aa.alt.rad)
+    assert np.allclose(phi, aa.az.rad)
+
+    # invert topo2radec
+    lon = np.linspace(0, 360, num=360, endpoint=False)
+    lat = np.linspace(90, -90, num=181)
+    lat = lat[1:-1]  # remove poles since it will mess with ra
+    lon, lat = [ang.ravel() for ang in np.meshgrid(lon, lat)]
+    theta, phi = rotations.mcmf2topo(lon, lat, time, loc)
+    lon_, lat_ = rotations.topo2mcmf(theta, phi, time, loc, grid=False)
+    # handle precision issue
+    lon_ = np.where(lon_ >= 360 - 1e-10, lon_ - 360, lon_)
+    assert np.allclose(lat, lat_)
+    assert np.allclose(lon, lon_)
+
+
+def test_rot_coords():
+    # check that we get expected output in all cases
+
+    # topo -> radec
+    theta = np.linspace(0, np.pi, 181)
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    phi, theta = [c.ravel() for c in np.meshgrid(phi, theta)]
+    time = Time("2022-06-09 16:12:00")
+    loc = EarthLocation(
+        lat=40 * units.deg, lon=137 * units.deg, height=0 * units.m
+    )
+    # expected output (deg)
+    exp_ra, exp_dec = rotations.topo2radec(theta, phi, time, loc, grid=False)
+    el = 90 - np.rad2deg(theta)
+    az = np.rad2deg(phi)
+    ra, dec = rotations.rot_coords(
+        az, el, "topocentric", "equatorial", time=time, loc=loc, lonlat=True
+    )
+    assert np.allclose(ra, exp_ra)
+    assert np.allclose(dec, exp_dec)
+
+    # radec -> topo
+    ra = np.linspace(0, 360, 360, endpoint=False)
+    dec = np.linspace(90, -90, 181)
+    ra, dec = [c.ravel() for c in np.meshgrid(ra, dec)]
+    # expected output (rad)
+    exp_theta, exp_phi = rotations.radec2topo(ra, dec, time, loc)
+    colat = np.pi / 2 - np.deg2rad(dec)
+    lon_rad = np.deg2rad(ra)
+    theta, phi = rotations.rot_coords(
+        colat, lon_rad, "equatorial", "topocentric", time=time, loc=loc
+    )
+    assert np.allclose(theta, exp_theta)
+    assert np.allclose(phi, exp_phi)
+
+    # radec to topo (not on grid)
+    ra, dec = healpix2lonlat(128)
+    theta, phi = rotations.radec2topo(ra, dec, time, loc)  # expected output
+    za = np.pi / 2 - np.deg2rad(dec)
+    az = np.deg2rad(ra)
+    th, ph = rotations.rot_coords(
+        za, az, "equatorial", "topocentric", time=time, loc=loc, lonlat=False
+    )
+    assert np.allclose(theta, th)
+    assert np.allclose(phi, ph)
+
+    # topo -> mcmf
+    theta = np.linspace(0, np.pi, 181)
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    phi, theta = [c.ravel() for c in np.meshgrid(phi, theta)]
+    loc = MoonLocation(
+        lat=40 * units.deg, lon=137 * units.deg, height=0 * units.m
+    )
+    # expected output (deg)
+    exp_lon, exp_lat = rotations.topo2mcmf(theta, phi, time, loc, grid=False)
+    el = 90 - np.rad2deg(theta)
+    az = np.rad2deg(phi)
+    lon, lat = rotations.rot_coords(
+        az, el, "topocentric", "mcmf", time=time, loc=loc, lonlat=True
+    )
+    assert np.allclose(lon, exp_lon)
+    assert np.allclose(lat, exp_lat)
+
+    # mcmf -> topo
+    lon = np.linspace(0, 360, 360, endpoint=False)
+    lat = np.linspace(90, -90, 181)
+    lon, lat = [c.ravel() for c in np.meshgrid(lon, lat)]
+    # expected output (rad)
+    exp_theta, exp_phi = rotations.mcmf2topo(lon, lat, time, loc)
+    colat = np.pi / 2 - np.deg2rad(lat)
+    lon_rad = np.deg2rad(lon)
+    theta, phi = rotations.rot_coords(
+        colat, lon_rad, "mcmf", "topocentric", time=time, loc=loc
+    )
+    assert np.allclose(theta, exp_theta)
+    assert np.allclose(phi, exp_phi)
+
+
+def test_get_euler():
+    # check that we agree with healpy for galactic -> equatorial
+    euler = rotations.get_euler(from_coords="galactic", to_coords="equatorial")
+    euler_rot_mat = hp.rotator.get_rotation_matrix(
+        euler, deg=False, eulertype="ZYX"
+    )[0]
+    rot = hp.Rotator(coord=["G", "C"])
+    assert np.allclose(euler_rot_mat, rot.mat)
+
+    # equatorial -> galactic
+    euler = rotations.get_euler(from_coords="equatorial", to_coords="galactic")
+    euler_rot_mat = hp.rotator.get_rotation_matrix(
+        euler, deg=False, eulertype="ZYX"
+    )[0]
+    rot = hp.Rotator(coord=["C", "G"])
+    assert np.allclose(euler_rot_mat, rot.mat)
+
+
 def test_hp_rotate():
-    # verify that this method yields the same as the healpy example in the docs
-    rot = rotations.hp_rotate("galactic", "ecliptic")
-    theta_gal, phi_gal = np.pi / 2, 0
-    theta_ecl, phi_ecl = rot(theta_gal, phi_gal)
-    assert np.isclose(theta_ecl, 1.66742347999)  # from healpy docs
-    assert np.isclose(phi_ecl, -1.6259571125)
-    vec_gal = np.array([1, 0, 0])
-    vec_ecl = rot(vec_gal)
-    assert np.allclose(vec_ecl, [-0.05487563, -0.99382135, -0.09647686])
+    # test that this method agrees with astropy
+    rot = rotations.hp_rotate("galactic", "equatorial")
+    l, b = 30, 60
+    ra, dec = rot(l, b, lonlat=True)
+    icrs = Galactic(l=l * units.deg, b=b * units.deg).transform_to(ICRS())
+    assert np.isclose(ra % 360, icrs.ra.deg)
+    assert np.isclose(dec, icrs.dec.deg)
+
+    # galactic -> mcmf
+    time = Time("2022-06-16 17:00:00")
+    rot = rotations.hp_rotate("galactic", "mcmf", time=time)
+    l, b = 0, 0
+    lon, lat = rot(l, b, lonlat=True)
+    mcmf = Galactic(l=l * units.deg, b=b * units.deg).transform_to(
+        MCMF(obstime=time)
+    )
+    assert np.isclose(lon % 360, mcmf.spherical.lon.deg)
+    assert np.isclose(lat, mcmf.spherical.lat.deg)
 
 
 def test_rotate_map():
@@ -122,9 +310,9 @@ def test_rotate_map():
     npix = hp.nside2npix(nside)
     m = np.arange(npix)
     rm = rotations.rotate_map(
-        m, from_coords="equatorial", to_coords="ecliptic"
+        m, from_coords="equatorial", to_coords="galactic"
     )
-    hp_rot = hp.Rotator(coord=["C", "E"])
+    hp_rot = hp.Rotator(coord=["C", "G"])
     hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=True)
     assert np.allclose(rm, hprm)
     # without pixel weights it should be different

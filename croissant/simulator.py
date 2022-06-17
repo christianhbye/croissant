@@ -1,13 +1,13 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
-from astropy.time import Time
 from copy import deepcopy
+from lunarsky import MoonLocation, Time
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
 
 from . import dpss
-from .rotations import radec2topo
+from .rotations import rot_coords
 from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
 
@@ -18,6 +18,7 @@ class Simulator:
         sky,
         obs_loc,
         t_start,
+        moon=True,
         t_end=None,
         N_times=None,
         delta_t=None,
@@ -29,16 +30,28 @@ class Simulator:
         Simulator class. Prepares and runs simulations.
         """
         self.lmax = lmax
+        self.moon = moon
         # set up frequencies to run the simulation at
         if frequencies is None:
             frequencies = sky.frequencies
         self.frequencies = frequencies
-        # set up the location of the telescope as astropy.EarthLocation object
-        lat, lon, alt = obs_loc
-        self.loc = EarthLocation(
-            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
-        )
-        # set up observing time as astropy.Time object
+        if moon:
+            loc_object = MoonLocation
+            self.sim_coords = "mcmf"  # simulation coordinate system
+        else:
+            loc_object = EarthLocation
+            self.sim_coords = "equatorial"
+
+        if isinstance(obs_loc, loc_object):
+            self.loc = obs_loc
+        else:
+            lat, lon, alt = obs_loc
+            self.loc = loc_object(
+                lat=lat * units.deg,
+                lon=lon * units.deg,
+                height=alt * units.m,
+            )
+
         self.t_start = Time(t_start, location=self.loc, scale="utc")
         if delta_t is not None:
             try:
@@ -55,42 +68,44 @@ class Simulator:
             t_end = Time(t_end, location=self.loc)
             total_time = (t_end - self.t_start).to_value(units.s)
             if delta_t is not None:
-                dt = np.arange(0, total_time, delta_t)
+                dt = np.arange(0, total_time + delta_t, delta_t)
                 N_times = len(dt)
             else:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        sim_beam = deepcopy(beam)
-        if sim_beam.alm is None:
+        beam = deepcopy(beam)
+        if beam.alm is None:
             # apply horizon mask and initialize beam
-            sim_beam.horizon_cut(horizon=horizon)
-            self.beam = sim_beam
+            beam.horizon_cut(horizon=horizon)
+            self.beam = beam
             self.beam_alm()  # compute alms in ra/dec
         else:
-            self.beam = sim_beam
+            self.beam = beam
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
-        if self.sky.coords != "equatorial":
-            self.sky.switch_coords("equatorial")
+        if self.sky.coords.lower() != self.sim_coords:
+            self.sky.switch_coords(self.sim_coords)
 
     def beam_alm(self, nside=128):
         """
         Get the alm's of the beam in the equitorial coordinate system.
         """
-        # get ra/dec at healpix centers
-        ra, dec = healpix2lonlat(nside)
+        # get lon/lat in sim coordinates at healpix centers
+        lon, lat = healpix2lonlat(nside)
 
-        # get corresponding theta/phi
-        if self.beam.coords.lower() == "topocentric":
-            theta, phi = radec2topo(ra, dec, self.t_start, self.loc)
-        elif self.beam.coords.lower() == "equatorial":
-            theta = np.pi / 2 - np.deg2rad(dec)
-            phi = np.deg2rad(ra)
-        else:
-            raise ValueError(
-                f"Cannot convert from {self.beam.coordinates} to ra/dec."
-            )
+        # get corresponding theta/phi in topocentric coords
+        za = np.pi / 2 - np.deg2rad(lat)
+        az = np.deg2rad(lon)
+        theta, phi = rot_coords(
+            za,
+            az,
+            self.sim_coords,
+            self.beam.coords.lower(),
+            time=self.t_start,
+            loc=self.loc,
+            lonlat=False,
+        )
 
         pixel_centers = np.array([theta, phi]).T
         # get healpix map
@@ -134,7 +149,12 @@ class Simulator:
         """
         Compute the convolution for a range of times.
         """
-        phases = self.sky.rotate_alm_time(self.dt)  # the rotation phases
+        if self.moon:
+            world = "moon"
+        else:
+            world = "earth"
+        # the rotation phases
+        phases = self.sky.rotate_alm_time(self.dt, world=world)
         if dpss:
             self.nterms = dpss_nterms
             self.compute_dpss()
