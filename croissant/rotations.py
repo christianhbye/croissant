@@ -309,10 +309,10 @@ def rot_coords(
             return theta, phi
 
 
-def mcmf_euler(time, from_coords="galactic", to_coords="mcmf"):
+def get_euler(from_coords="galactic", to_coords="mcmf", time=None):
     """
-    Compute the (ZYZ) Euler angles needed to describe a rotation between MCMF
-    and galactic or equatorial coordinates.
+    Compute the (ZYX) Euler angles needed to describe a rotation between MCMF,
+    galactic and equatorial coordinates.
 
     Parameters
     ----------
@@ -328,8 +328,8 @@ def mcmf_euler(time, from_coords="galactic", to_coords="mcmf"):
     Returns
     -------
     euler_angles : tup
-        The Euler angles (as defined by Healpix) that descirbes the coordinate
-        conversion.
+        The ZYX Euler angles in radians that describe the coordinate
+        transformation.
 
     """
     fc = from_coords.lower()
@@ -339,21 +339,22 @@ def mcmf_euler(time, from_coords="galactic", to_coords="mcmf"):
         raise ValueError(
             f"Invalid coordinate system name, must be in {list(coords.keys())}"
         )
-    et = Time(time) - Time("J2000", scale="tt")  # epoch time
+    if time is None:
+        et = 0
+    else:  # get epoch time
+        et = Time(time) - Time("J2000", scale="tt")
+        et = et.sec
     # rotation matrix
-    rot_mat = pxform(coords[fc], coords[tc], et.sec)
-    # convert basis vectors
-    xin, yin, zin = np.eye(3)
-    xout, yout, zout = rot_mat
-    # normalize
-    xout /= np.sqrt(np.sum(xout**2))
-    yout /= np.sqrt(np.sum(yout**2))
-    zout /= np.sqrt(np.sum(zout**2))
+    rot_mat = pxform(coords[fc], coords[tc], et)
     # get euler angles
-    psi = np.arctan2(yout[2], -xout[2])
-    theta = np.arccos(zin.dot(zout))
-    phi = np.arctan2(zout[1], zout[0])
-    euler_angles = (psi, theta, phi)
+    beta = -np.arcsin(rot_mat[0, 2])
+    alpha = np.arctan2(
+        rot_mat[1, 2] / np.cos(beta), rot_mat[2, 2] / np.cos(beta)
+    )
+    gamma = np.arctan2(
+        rot_mat[0, 1] / np.cos(beta), rot_mat[0, 0] / np.cos(beta)
+    )
+    euler_angles = (gamma, -beta, alpha)
     return euler_angles
 
 
@@ -368,8 +369,8 @@ def hp_rotate(from_coords, to_coords, time=None):
     fc = from_coords.lower()
     tc = to_coords.lower()
     if "mcmf" in [fc, tc]:
-        euler_angles = mcmf_euler(time, from_coords=fc, to_coords=tc)
-        rot = hp.Rotator(rot=euler_angles, eulertype="ZYZ")
+        euler_angles = get_euler(from_coords=fc, to_coords=tc, time=time)
+        rot = hp.Rotator(rot=euler_angles, deg=False, eulertype="ZYX")
     elif fc in hp_coords and tc in hp_coords:
         rot = hp.Rotator(coord=[hp_coords[fc], hp_coords[tc]])
     else:

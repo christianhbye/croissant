@@ -242,13 +242,31 @@ def test_rot_coords():
     assert np.allclose(phi, exp_phi)
 
 
+def test_get_euler():
+    # check that we agree with healpy for galactic -> equatorial
+    euler = rotations.get_euler(from_coords="galactic", to_coords="equatorial")
+    euler_rot_mat = hp.rotator.get_rotation_matrix(
+        euler, deg=False, eulertype="ZYX"
+    )[0]
+    rot = hp.Rotator(coord=["G", "C"])
+    assert np.allclose(euler_rot_mat, rot.mat)
+
+    # equatorial -> galactic
+    euler = rotations.get_euler(from_coords="equatorial", to_coords="galactic")
+    euler_rot_mat = hp.rotator.get_rotation_matrix(
+        euler, deg=False, eulertype="ZYX"
+    )[0]
+    rot = hp.Rotator(coord=["C", "G"])
+    assert np.allclose(euler_rot_mat, rot.mat)
+
+
 def test_hp_rotate():
     # test that this method agrees with astropy
     rot = rotations.hp_rotate("galactic", "equatorial")
-    l, b = 0, 0
+    l, b = 30, 60
     ra, dec = rot(l, b, lonlat=True)
     icrs = Galactic(l=l * units.deg, b=b * units.deg).transform_to(ICRS())
-    assert np.isclose(ra, icrs.ra.deg)
+    assert np.isclose(ra % 360, icrs.ra.deg)
     assert np.isclose(dec, icrs.dec.deg)
 
     # galactic -> mcmf
@@ -256,9 +274,11 @@ def test_hp_rotate():
     rot = rotations.hp_rotate("galactic", "mcmf", time=time)
     l, b = 0, 0
     lon, lat = rot(l, b, lonlat=True)
-    mcmf = Galactic(l=l * units.deg, b=b * units.deg).transform_to(MCMF())
-    assert np.isclose(lon, mcmf.spherical.lon)
-    assert np.isclose(dec, mcmf.spherical.lat)
+    mcmf = Galactic(l=l * units.deg, b=b * units.deg).transform_to(
+        MCMF(obstime=time)
+    )
+    assert np.isclose(lon % 360, mcmf.spherical.lon.deg)
+    assert np.isclose(lat, mcmf.spherical.lat.deg)
 
 
 def test_rotate_map():
