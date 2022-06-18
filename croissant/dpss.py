@@ -4,7 +4,6 @@ import numpy as np
 
 def dpss_op(
     freq_out,
-    filter_center=0,
     filter_half_width=20e-9,
     eigenval_cutoff=None,
     edge_suppression=None,
@@ -31,8 +30,6 @@ def dpss_op(
     freq_out : array-like, optional
         The frequencies in MHz to map the inverse transform to. The DPSS modes
         will be used to interpolate to freq_out if necessary. Default: freq_in.
-    filter_center : float (optional)
-        The center of the delay filter window in seconds.
     filter_half_width : float, optional
         The half-width of the the delay filter window in seconds.
     eigenval_cutoff : float (optional)
@@ -48,9 +45,9 @@ def dpss_op(
 
     Returns
     -------
-    B : np.ndarray
+    A : np.ndarray
         The design matrix specifying the inverse transform. That is,
-        B @ dpss_coeffs will return the data in frequency domain (interpolated
+        A @ dpss_coeffs will return the data in frequency domain (interpolated
         to freq_out).
 
     Raises
@@ -72,15 +69,14 @@ def dpss_op(
     if not len(kwarg) == 1:
         raise ValueError(f"Specify one and only of {list(kwargs.keys())}.")
 
-    B = dpss_operator(
+    A = dpss_operator(
         x,
-        filter_centers=[filter_center],
+        filter_centers=[0],
         filter_half_widths=[filter_half_width],
         cache=None,
         **kwarg,
     )[0]
-    assert np.allclose(B.imag, 0), "design matrix isn't real!!"  # FIXME
-    return B.real
+    return A.real
 
 
 def freq2dpss(data, freq_in, freq_out, design_matrix):
