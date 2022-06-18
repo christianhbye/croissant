@@ -7,6 +7,7 @@ import numpy as np
 import warnings
 
 from . import dpss
+from .constants import sidereal_day_earth, sidereal_day_moon
 from .rotations import rot_coords
 from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
@@ -118,7 +119,7 @@ class Simulator:
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
 
-    def compute_dpss(self):
+    def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
@@ -131,7 +132,7 @@ class Simulator:
             )
         )
 
-        self.design_matrix = dpss.dpss_op(x, nterms=self.nterms)
+        self.design_matrix = dpss.dpss_op(x, **kwargs)
         self.sky.coeffs = dpss.freq2dpss(
             self.sky.alm,
             self.sky.frequencies,
@@ -145,7 +146,7 @@ class Simulator:
             self.design_matrix,
         )
 
-    def run(self, dpss=True, dpss_nterms=30):
+    def run(self, dpss=True, **dpss_kwargs):
         """
         Compute the convolution for a range of times.
         """
@@ -156,8 +157,7 @@ class Simulator:
         # the rotation phases
         phases = self.sky.rotate_alm_time(self.dt, world=world)
         if dpss:
-            self.nterms = dpss_nterms
-            self.compute_dpss()
+            self.compute_dpss(**dpss_kwargs)
             # get the sky coefficients at each time
             rot_sky_coeffs = np.expand_dims(self.sky.coeffs, axis=0) * phases
             # m = 0 modes
@@ -203,6 +203,13 @@ class Simulator:
         """
         Plot the result of the simulation.
         """
+        #XXX compute lst
+        if self.moon:
+            day = sidereal_day_moon
+        else:
+            day = sidereal_day_earth
+        
+
         figsize = kwargs.pop("figsize", None)
         plt.figure(figsize=figsize)
         _extent = [
