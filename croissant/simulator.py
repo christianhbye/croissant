@@ -7,7 +7,6 @@ import numpy as np
 import warnings
 
 from . import dpss
-from .constants import sidereal_day_earth, sidereal_day_moon
 from .rotations import rot_coords
 from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
@@ -203,20 +202,13 @@ class Simulator:
         """
         Plot the result of the simulation.
         """
-        #XXX compute lst
-        if self.moon:
-            day = sidereal_day_moon
-        else:
-            day = sidereal_day_earth
-        
-
         figsize = kwargs.pop("figsize", None)
         plt.figure(figsize=figsize)
         _extent = [
             self.frequencies.min(),
             self.frequencies.max(),
-            self.dt[-1],
-            self.dt[0],
+            self.dt[-1] / 3600,
+            0,
         ]
         extent = kwargs.pop("extent", _extent)
         interpolation = kwargs.pop("interpolation", "none")
@@ -231,4 +223,4 @@ class Simulator:
         )
         plt.colorbar(label="Temperature [K]")
         plt.xlabel("Frequency [MHz]")
-        plt.ylabel("Time [s]")
+        plt.ylabel("Time [h]")
