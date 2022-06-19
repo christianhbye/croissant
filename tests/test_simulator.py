@@ -118,8 +118,7 @@ def test_compute_dpss():
     sim = Simulator(
         beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
     )
-    sim.nterms = 10
-    sim.compute_dpss()
+    sim.compute_dpss(nterms=10)
     design_matrix = dpss.dpss_op(frequencies, nterms=10)
     assert np.allclose(design_matrix, sim.design_matrix)
     sky_alm = rotate_alm(sky.alm(lmax=lmax))
@@ -160,7 +159,7 @@ def test_run():
     expected_vis.shape = (1, -1)  # add time axis
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
     # with dpss
-    sim.run(dpss=True, dpss_nterms=50)
+    sim.run(dpss=True, nterms=50)
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
 
     # test with nonzero m-modes
