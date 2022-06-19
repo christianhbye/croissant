@@ -8,7 +8,7 @@ from croissant.beam import Beam
 from croissant import dpss
 from croissant.constants import sidereal_day_earth
 from croissant.rotations import radec2topo, rotate_alm
-from croissant.healpix import Alm, alm2map, grid_interp, HealpixMap
+from croissant.healpix import Alm, alm2map, grid_interp
 from croissant.simulator import Simulator
 from croissant.sky import Sky
 
@@ -168,7 +168,7 @@ def test_run():
     sky_alm[2, 0] = 1e4
     sky_alm[3, 1] = -20.2 + 20.4j
     sky_alm[6, 6] = 1.0 - 3.0j
-    sky = HealpixMap.from_alm(sky_alm, nside=128)
+    sky = Sky.from_alm(sky_alm, nside=128)
 
     beam00 = 10  # a00
     beam20 = 5  # a20
@@ -202,3 +202,33 @@ def test_run():
     )
     expected_vis /= sim.beam.total_power
     assert np.isclose(sim.waterfall, expected_vis)
+
+    # test the einsum computation in dpss mode
+    frequencies = np.linspace(1, 50, 50).reshape(-1, 1)
+    beam_alm = beam_alm.reshape(1, -1) * frequencies**2
+    beam = Beam(beam_alm, frequencies=frequencies, alm=True, coords="mcmf")
+    sky = Sky.from_alm(sky_alm, nside=128)
+    sky.power_law_map(beam.frequencies, ref_freq=25)
+    sim = Simulator(
+        beam,
+        sky,
+        loc,
+        t_start,
+        N_times=1,
+        delta_t=delta_t,
+        lmax=lmax,
+    )
+    sim.run(dpss=True, nterms=10)
+    # expected output is dot product of alms in frequency space:
+    sky_alm = sim.design_matrix @ sim.sky.coeffs
+    beam_alm = sim.design_matrix @ sim.beam.coeffs
+    temp_vector = np.empty(frequencies.size)
+    for i in range(frequencies.size):
+        t = sky_alm[i, : lmax + 1].real.dot(beam_alm[i, : lmax + 1].real)
+        t += 2 * np.real(
+            sky_alm[i, lmax + 1 :].dot(beam_alm[i, lmax + 1 :].conj())
+        )
+        temp_vector[i] = t
+    # output of simulator
+    wfall = sim.waterfall * sim.beam.total_power.reshape(1, -1)
+    assert np.allclose(temp_vector, wfall)
