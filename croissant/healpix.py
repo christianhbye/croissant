@@ -492,6 +492,7 @@ class Alm(hp.Alm):
             sidereal_day = constants.sidereal_day_earth
         else:
             raise ValueError(f"World must be 'moon' or 'earth', not {world}.")
-        dphi = 2 * np.pi * times / sidereal_day
+        # the sky rotates clockwise in earth and moon frames, hence the -
+        dphi = - 2 * np.pi * times / sidereal_day
         phase = self.rotate_alm_angle(dphi)
         return phase
