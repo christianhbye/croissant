@@ -1,7 +1,8 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
+from astropy.time import Time as EarthTime
 from copy import deepcopy
-from lunarsky import MoonLocation, Time
+from lunarsky import MoonLocation, Time as LunarTime
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -38,9 +39,11 @@ class Simulator:
         if moon:
             loc_object = MoonLocation
             self.sim_coords = "mcmf"  # simulation coordinate system
+            Time = LunarTime  # define default time class
         else:
             loc_object = EarthLocation
             self.sim_coords = "equatorial"
+            Time = EarthTime
 
         if isinstance(obs_loc, loc_object):
             self.loc = obs_loc
@@ -198,22 +201,25 @@ class Simulator:
         norm = self.beam.total_power.reshape(1, -1)
         self.waterfall = waterfall / norm
 
-    def plot(self, **kwargs):
+    def plot(
+        self,
+        figsize=None,
+        extent=None,
+        interpolation="none",
+        aspect="auto",
+        power=0,
+    ):
         """
         Plot the result of the simulation.
         """
-        figsize = kwargs.pop("figsize", None)
         plt.figure(figsize=figsize)
-        _extent = [
-            self.frequencies.min(),
-            self.frequencies.max(),
-            self.dt[-1] / 3600,
-            0,
-        ]
-        extent = kwargs.pop("extent", _extent)
-        interpolation = kwargs.pop("interpolation", "none")
-        aspect = kwargs.pop("aspect", "auto")
-        power = kwargs.pop("power", 0)
+        if extent is None:
+            extent = [
+                self.frequencies.min(),
+                self.frequencies.max(),
+                self.dt[-1] / 3600,
+                0,
+            ]
         weight = self.frequencies**power
         plt.imshow(
             self.waterfall * weight.reshape(1, -1),
@@ -223,4 +229,7 @@ class Simulator:
         )
         plt.colorbar(label="Temperature [K]")
         plt.xlabel("Frequency [MHz]")
-        plt.ylabel("Time [h]")
+        plt.ylabel(
+            f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
+        )
+        plt.show()
