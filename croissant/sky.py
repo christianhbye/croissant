@@ -38,7 +38,6 @@ class Sky(HealpixMap):
         )
         return obj
 
-
     @classmethod
     def gsm(cls, freq, power_law=False, gen_freq=None, spectral_index=None):
         """
