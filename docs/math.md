@@ -12,8 +12,6 @@ $$V = \sum_\ell a_l^0 b_l^0 + \sum_{\ell, m>0} \left(a_\ell^m \left(b_\ell^m\rig
 
 $$V = \sum_\ell a_l^0 b_l^0 + 2\sum_{\ell, m>0}\Re \left(a_\ell^m \left(b_\ell^m\right)^*\right)$$
 
-$$V = \sum_\ell a_l^0 b_l^0 + 2\sum_{\ell, m>0}\left(\Re(a_\ell^m) \Re(b_\ell^m) + \Im(a_\ell^m) \Im(b_\ell^m)\right)$$
-
 
 ### DPSS
 CROISSANT decomposes the spectral axis of the sky model and antenna beams to Discrete Prolate Shperoidal Sequences (see [Slepian 1978](https://ui.adsabs.harvard.edu/abs/1978ATTTJ..57.1371S/abstract) and [Ewall-Wice et al. 2021](https://ui.adsabs.harvard.edu/abs/2021MNRAS.500.5195E/abstract)), using the [hera_filters package](https://github.com/HERA-Team/hera_filters). The transformation from DPSS space to frequency space is described a design matrix $\mathbf{B}$ 
