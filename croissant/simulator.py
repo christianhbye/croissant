@@ -1,7 +1,8 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
+from astropy.time import Time as EarthTime
 from copy import deepcopy
-from lunarsky import MoonLocation, Time
+from lunarsky import MoonLocation, Time as LunarTime
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -38,9 +39,11 @@ class Simulator:
         if moon:
             loc_object = MoonLocation
             self.sim_coords = "mcmf"  # simulation coordinate system
+            Time = LunarTime  # define default time class
         else:
             loc_object = EarthLocation
             self.sim_coords = "equatorial"
+            Time = EarthTime
 
         if isinstance(obs_loc, loc_object):
             self.loc = obs_loc
@@ -118,7 +121,7 @@ class Simulator:
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
 
-    def compute_dpss(self):
+    def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
         x = np.unique(
             np.concatenate(
@@ -131,7 +134,7 @@ class Simulator:
             )
         )
 
-        self.design_matrix = dpss.dpss_op(x, nterms=self.nterms)
+        self.design_matrix = dpss.dpss_op(x, **kwargs)
         self.sky.coeffs = dpss.freq2dpss(
             self.sky.alm,
             self.sky.frequencies,
@@ -145,7 +148,7 @@ class Simulator:
             self.design_matrix,
         )
 
-    def run(self, dpss=True, dpss_nterms=30):
+    def run(self, dpss=True, **dpss_kwargs):
         """
         Compute the convolution for a range of times.
         """
@@ -156,8 +159,7 @@ class Simulator:
         # the rotation phases
         phases = self.sky.rotate_alm_time(self.dt, world=world)
         if dpss:
-            self.nterms = dpss_nterms
-            self.compute_dpss()
+            self.compute_dpss(**dpss_kwargs)
             # get the sky coefficients at each time
             rot_sky_coeffs = np.expand_dims(self.sky.coeffs, axis=0) * phases
             # m = 0 modes
@@ -199,22 +201,25 @@ class Simulator:
         norm = self.beam.total_power.reshape(1, -1)
         self.waterfall = waterfall / norm
 
-    def plot(self, **kwargs):
+    def plot(
+        self,
+        figsize=None,
+        extent=None,
+        interpolation="none",
+        aspect="auto",
+        power=0,
+    ):
         """
         Plot the result of the simulation.
         """
-        figsize = kwargs.pop("figsize", None)
         plt.figure(figsize=figsize)
-        _extent = [
-            self.frequencies.min(),
-            self.frequencies.max(),
-            self.dt[-1],
-            self.dt[0],
-        ]
-        extent = kwargs.pop("extent", _extent)
-        interpolation = kwargs.pop("interpolation", "none")
-        aspect = kwargs.pop("aspect", "auto")
-        power = kwargs.pop("power", 0)
+        if extent is None:
+            extent = [
+                self.frequencies.min(),
+                self.frequencies.max(),
+                self.dt[-1] / 3600,
+                0,
+            ]
         weight = self.frequencies**power
         plt.imshow(
             self.waterfall * weight.reshape(1, -1),
@@ -224,4 +229,7 @@ class Simulator:
         )
         plt.colorbar(label="Temperature [K]")
         plt.xlabel("Frequency [MHz]")
-        plt.ylabel("Time [s]")
+        plt.ylabel(
+            f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
+        )
+        plt.show()
