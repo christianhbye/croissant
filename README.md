@@ -17,3 +17,6 @@ For the latest release, do `pip install croissant-sim` (see https://pypi.org/pro
 
 ## Demo
 Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb
+
+## Contributing
+Contributions are welcome - please see the [contribution guidelines](https://github.com/christianhbye/croissant/blob/add_contributing/CONTRIBUTING.md).
