@@ -1,7 +1,55 @@
 import numpy as np
+import pytest
 
 from croissant.beam import Beam
 
+def test_beam_init():
+    # initialize from grid
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    theta = np.linspace(0, np.pi, 181)
+    phi, theta = np.meshgrid(phi, theta, sparse=True)
+    # mock data
+    data = np.sin(theta)**2 * np.cos(phi)**2
+    beam = Beam(data, theta=theta, phi=phi)
+    assert np.allclose(beam.data, data)
+    assert beam.alm is None
+    assert beam.data.shape == (1, theta.size, phi.size)
+    
+    # with phi outside range
+    phi -= 2 * np.pi
+    data = np.sin(theta)**2 * np.cos(phi)**2
+    with pytest.raises(ValueError):
+        Beam(data, theta=theta, phi=phi)
+
+    # with irregular grid
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    theta = np.linspace(0, np.pi, 181)
+    phi, theta = np.meshgrid(phi, theta, sparse=True)
+    # remove a point from theta to make it irregular
+    theta = np.delete(theta, theta.size//2, axis=0)
+    data = np.sin(theta)**2 * np.cos(phi)**2
+    with pytest.raises(ValueError):
+        Beam(data, theta=theta, phi=phi)
+
+    # initialize from alm
+    size = 10
+    alm = np.arange(size) + 1j * np.arange(size)**2
+    beam = Beam(alm, alm=True)
+    assert beam.data is None
+    assert np.allclose(beam.alm, alm)
+    assert beam.alm.shape == (1, size)
+
+    # initialize at a range of frequencies
+    freqs = np.linspace(1, 50, 50)
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    theta = np.linspace(0, np.pi, 181)
+    theta, freqs, phi = np.meshgrid(theta, freqs, phi, sparse=True)
+    beam = Beam(data, theta=theta, phi=phi, frequencies=freqs)
+    assert np.allclose(beam.data, data)
+    assert beam.alm is None
+    assert beam.data.shape == (freqs.size, theta.size, phi.size)
+    assert np.allclose(beam.frequencies, freqs)
+    
 
 def test_compute_total_power():
     phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
