@@ -29,6 +29,6 @@ jobs:
             #mypy ./croissant/
       - name: Test with pytest
         run: |
-          pytest --cov .
+          pytest --cov-report xml .
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
