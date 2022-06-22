@@ -50,7 +50,7 @@ def test_beam_init():
     assert np.allclose(beam.data, data)
     assert beam.alm is None
     assert beam.data.shape == (freqs.size, theta.size, phi.size)
-    assert np.allclose(beam.frequencies, freqs)
+    assert np.allclose(beam.frequencies, np.squeeze(freqs))
 
 
 def test_compute_total_power():
