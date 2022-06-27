@@ -166,7 +166,7 @@ class Simulator:
                 @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
             )
 
-            waterfall = np.einsum("ij, ij -> i", res, self.design_matrix)
+            waterfall = np.einsum("ijk, jk -> ij", res, self.design_matrix)
 
         else:
             # add time dimensions and rotate the sky alms
