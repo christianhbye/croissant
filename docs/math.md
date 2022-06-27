@@ -20,11 +20,11 @@ the sky by S, the antenna beam by A, and DPSS modes by $\eta$). Here, S and A ar
 
 $$V_i = \sum_j S_{ij} (\nu, \ell, m) A_{ij} (\nu, \ell, m) = (\mathbf{S} (\nu, \ell, m) \mathbf{A}^T (\nu, \ell, m))_{ii}$$
 
-$$V = diag(\mathbf{B}\mathbf{S} (\eta, \ell, m) \left(\mathbf{B} \mathbf{A} (\eta, \ell, m) \right)^T)$$
+$$V = diag(\mathbf{S} (\nu, \ell, m) \left(\mathbf{B} \mathbf{A} (\eta, \ell, m) \right)^T)$$
 
-$$V = diag(\mathbf{B}\mathbf{S} (\eta, \ell, m) \mathbf{A} (\eta, \ell, m)^T \mathbf{B}^T)$$
+$$V = diag(\mathbf{S} (\nu, \ell, m) \mathbf{A} (\eta, \ell, m)^T \mathbf{B}^T)$$
 
-Denote the product $\mathbf{S} (\eta, \ell, m) \mathbf{A} (\eta, \ell, m)^T \mathbf{B}^T$
+Denote the product $\mathbf{S} (\nu, \ell, m) \mathbf{A} (\eta, \ell, m)^T $
 by $R$.
 
-$$V_{i} = ( \mathbf{B} \mathbf{R} ) \_{ii} = \sum_j B_{ij} R_{ji} $$
+$$V_{i} = (\mathbf{R} \mathbf{B}^T) \_{ii} = \sum_j R_{ij} B_{ij} $$

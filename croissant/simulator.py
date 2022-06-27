@@ -126,7 +126,6 @@ class Simulator:
         x = np.unique(
             np.concatenate(
                 (
-                    self.sky.frequencies,
                     self.beam.frequencies,
                     self.frequencies,
                 ),
@@ -135,12 +134,6 @@ class Simulator:
         )
 
         self.design_matrix = dpss.dpss_op(x, **kwargs)
-        self.sky.coeffs = dpss.freq2dpss(
-            self.sky.alm,
-            self.sky.frequencies,
-            self.frequencies,
-            self.design_matrix,
-        )
         self.beam.coeffs = dpss.freq2dpss(
             self.beam.alm,
             self.beam.frequencies,
@@ -161,7 +154,7 @@ class Simulator:
         if dpss:
             self.compute_dpss(**dpss_kwargs)
             # get the sky coefficients at each time
-            rot_sky_coeffs = np.expand_dims(self.sky.coeffs, axis=0) * phases
+            rot_sky_coeffs = np.expand_dims(self.sky.alm, axis=0) * phases
             # m = 0 modes
             res = (
                 rot_sky_coeffs[:, :, : self.lmax + 1].real
@@ -173,11 +166,7 @@ class Simulator:
                 @ self.beam.coeffs[:, self.lmax + 1 :].T.conj()
             )
 
-            waterfall = np.einsum(
-                "jk, ikj -> ij",
-                self.design_matrix,
-                res @ self.design_matrix.T,
-            )
+            waterfall = np.einsum("ij, ij -> i", res, self.design_matrix)
 
         else:
             # add time dimensions and rotate the sky alms
