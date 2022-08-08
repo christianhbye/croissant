@@ -220,7 +220,7 @@ def test_run():
     )
     sim.run(dpss=True, nterms=10)
     # expected output is dot product of alms in frequency space:
-    sky_alm = sim.design_matrix @ sim.sky.coeffs
+    sky_alm = sim.sky.alm
     beam_alm = sim.design_matrix @ sim.beam.coeffs
     temp_vector = np.empty(frequencies.size)
     for i in range(frequencies.size):
