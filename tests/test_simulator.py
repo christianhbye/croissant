@@ -121,11 +121,10 @@ def test_compute_dpss():
     sim.compute_dpss(nterms=10)
     design_matrix = dpss.dpss_op(frequencies, nterms=10)
     assert np.allclose(design_matrix, sim.design_matrix)
-    sky_alm = rotate_alm(sky.alm(lmax=lmax))
-    sky_coeff = dpss.freq2dpss(
-        sky_alm, frequencies, frequencies, design_matrix
+    beam_coeff = dpss.freq2dpss(
+        sim.beam.alm, frequencies, frequencies, design_matrix
     )
-    assert np.allclose(sky_coeff, sim.sky.coeffs)
+    assert np.allclose(beam_coeff, sim.beam.coeffs)
 
 
 def test_run():
