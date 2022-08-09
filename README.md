@@ -13,7 +13,9 @@ Moreover, the time evolution of the simulation is very natural in this represent
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
 ## Installation
-For the latest release, do `pip install croissant-sim` (see https://pypi.org/project/croissant-sim/1.0.0/). Git clone this repository for the newest changes (this is under activate development, do so at your own risk!).
+For the latest release, do `pip install croissant-sim` (see https://pypi.org/project/croissant-sim/2.0.0/). Git clone this repository for the newest changes (this is under activate development, do so at your own risk!).
+
+CROISSANT depends on the packages hera_filters and pygdsm which are not uploaded to PyPI. They will therefore not automatically be installed with CROISSANT, but are available on GitHub at https://github.com/HERA-Team/hera_filters and https://github.com/telegraphic/pygdsm.
 
 ## Demo
 Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb
