@@ -45,7 +45,7 @@ def test_beam_init():
     phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
     theta = np.linspace(0, np.pi, 181)
     theta, freqs, phi = np.meshgrid(theta, freqs, phi, sparse=True)
-    data = freqs ** 2 * np.sin(theta) ** 2 * np.cos(phi) ** 2
+    data = freqs**2 * np.sin(theta) ** 2 * np.cos(phi) ** 2
     beam = Beam(data, theta=theta, phi=phi, frequencies=freqs)
     assert np.allclose(beam.data, data)
     assert beam.alm is None
