@@ -21,13 +21,12 @@ def test_dpss_op():
 
 
 def test_freq2dpss2freq():
-    # generate 3 sets of frequencies that should share dpss modes
-    # croissant does this with beam, sky, and simulation frequencies
+    # generate 2 sets of frequencies that should share dpss modes
+    # croissant does this with beam and simulation frequencies
     f1 = np.linspace(10, 60, 50)
-    f2 = np.linspace(3, 70, 100)
-    f3 = np.linspace(1, 50, 50)
+    f2 = np.linspace(1, 50, 50)
 
-    x = np.unique(np.concatenate((f1, f2, f3)))
+    x = np.unique(np.concatenate((f1, f2)))
     nterms = 10
     A = dpss.dpss_op(x, nterms=nterms)  # design matrix
 
@@ -37,13 +36,10 @@ def test_freq2dpss2freq():
     # compute dpss coeffs
     d1 = dpss.freq2dpss(data[0].T, f1, x, A)
     d2 = dpss.freq2dpss(data[1].T, f2, x, A)
-    d3 = dpss.freq2dpss(data[2].T, f3, x, A)
 
-    assert d1.shape == d2.shape == d3.shape == (nterms, 2)
+    assert d1.shape == d2.shape == (nterms, 2)
 
     d1_ = dpss.dpss2freq(d1, A)
     assert data[0].T.shape == d1_[np.isin(x, f1)].shape
     d2_ = dpss.dpss2freq(d2, A)
     assert data[1].T.shape == d2_[np.isin(x, f2)].shape
-    d3_ = dpss.dpss2freq(d3, A)
-    assert data[2].T.shape == d3_[np.isin(x, f3)].shape
