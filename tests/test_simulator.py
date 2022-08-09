@@ -4,7 +4,6 @@ import healpy
 from lunarsky import Time
 import numpy as np
 import pytest
-import warnings
 
 from croissant.beam import Beam
 from croissant import dpss
