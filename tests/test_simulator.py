@@ -3,6 +3,7 @@ from copy import deepcopy
 import healpy
 from lunarsky import Time
 import numpy as np
+import pytest
 
 from croissant.beam import Beam
 from croissant import dpss
@@ -81,6 +82,13 @@ def test_simulator_init():
     )
     assert sim.sim_coords == "equatorial"
 
+    # check that we get a UserWarning if delta t does not have units
+    delta_t = 2
+    with pytest.warns(UserWarning):
+        Simulator(
+            beam, sky, loc, t_start, N_times=2, delta_t=delta_t, lmax=lmax
+        )
+
 
 def test_beam_alm():
     sim = Simulator(
@@ -121,11 +129,10 @@ def test_compute_dpss():
     sim.compute_dpss(nterms=10)
     design_matrix = dpss.dpss_op(frequencies, nterms=10)
     assert np.allclose(design_matrix, sim.design_matrix)
-    sky_alm = rotate_alm(sky.alm(lmax=lmax))
-    sky_coeff = dpss.freq2dpss(
-        sky_alm, frequencies, frequencies, design_matrix
+    beam_coeff = dpss.freq2dpss(
+        sim.beam.alm, frequencies, frequencies, design_matrix
     )
-    assert np.allclose(sky_coeff, sim.sky.coeffs)
+    assert np.allclose(beam_coeff, sim.beam.coeffs)
 
 
 def test_run():
@@ -220,7 +227,7 @@ def test_run():
     )
     sim.run(dpss=True, nterms=10)
     # expected output is dot product of alms in frequency space:
-    sky_alm = sim.design_matrix @ sim.sky.coeffs
+    sky_alm = sim.sky.alm
     beam_alm = sim.design_matrix @ sim.beam.coeffs
     temp_vector = np.empty(frequencies.size)
     for i in range(frequencies.size):

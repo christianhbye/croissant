@@ -4,7 +4,7 @@ import numpy as np
 
 def dpss_op(
     freq_out,
-    filter_half_width=20e-9,
+    filter_half_width=50e-9,
     eigenval_cutoff=None,
     edge_suppression=None,
     nterms=None,
