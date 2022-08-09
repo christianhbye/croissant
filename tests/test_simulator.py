@@ -3,6 +3,8 @@ from copy import deepcopy
 import healpy
 from lunarsky import Time
 import numpy as np
+import pytest
+import warnings
 
 from croissant.beam import Beam
 from croissant import dpss
@@ -80,6 +82,13 @@ def test_simulator_init():
         lmax=lmax,
     )
     assert sim.sim_coords == "equatorial"
+
+    # check that we get a UserWarning if delta t does not have units
+    delta_t = 2
+    with pytest.warns(UserWarning):
+        Simulator(
+            beam, sky, loc, t_start, N_times=2, delta_t=delta_t, lmax=lmax
+        )
 
 
 def test_beam_alm():
