@@ -31,7 +31,7 @@ def test_freq2dpss2freq():
     A = dpss.dpss_op(x, nterms=nterms)  # design matrix
 
     # mock data
-    data = [np.array([f**2, np.sin(f)]) for f in [f1, f2, f3]]
+    data = [np.array([f**2, np.sin(f)]) for f in [f1, f2]]
 
     # compute dpss coeffs
     d1 = dpss.freq2dpss(data[0].T, f1, x, A)
