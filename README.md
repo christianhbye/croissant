@@ -15,7 +15,7 @@ Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can th
 ## Installation
 For the latest release, do `pip install croissant-sim` (see https://pypi.org/project/croissant-sim/2.0.0/). Git clone this repository for the newest changes (this is under activate development, do so at your own risk!).
 
-CROISSANT depends on the packages hera_filters and pygdsm which are not uploaded to PyPI. They will therefore not automatically be installed with CROISSANT, but are available on GitHub at https://github.com/HERA-Team/hera_filters and https://github.com/telegraphic/pygdsm.
+CROISSANT depends on the package pygdsm which is not uploaded to PyPI. This package will therefore not automatically be installed with CROISSANT, but is available on GitHub at https://github.com/telegraphic/pygdsm.
 
 ## Demo
 Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb

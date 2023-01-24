@@ -1,3 +1,4 @@
+import healpy as hp
 import numpy as np
 from pygdsm import GlobalSkyModel2016 as GSM
 from .healpix import HealpixMap
@@ -39,9 +40,35 @@ class Sky(HealpixMap):
         return obj
 
     @classmethod
-    def gsm(cls, freq, power_law=False, gen_freq=None, spectral_index=None):
+    def gsm(
+        cls,
+        freq,
+        power_law=False,
+        gen_freq=None,
+        spectral_index=None,
+        nside=None,
+    ):
         """
-        Construct a sky object with pygdsm
+        Construct a sky object with pygdsm.
+
+        Parameters
+        ----------
+        freq : array-like
+            Frequencies to make map at.
+        power_law : bool
+            Make maps at many frequencies assuming the frequency dependence is
+            a power law.
+        gen_freq : float
+            Which frequency to create the sky map at with GSM. Only matters if
+            ``power_law''=True, in which case this map will be extrapolated to
+            ``freq''.
+        spectral_index : float
+            Spectral index of power law. Only applies if ``power_law''=True.
+        nside : int
+            Set the nside parameter of the resulting sky map, i.e., increasing
+            or decreasing the number of pixels in the map. Note that this does
+            not increase the information content in the map, just splits pixels
+            to smaller pixels or average them to fewer pixels.
         """
         freq = np.ravel(freq)
         # frequencies to generate maps at
@@ -64,6 +91,9 @@ class Sky(HealpixMap):
             if spectral_index is not None:
                 kwargs["spectral_index"] = spectral_index
             sky_map = Sky().power_law_map(freq, **kwargs)
+
+        if nside:
+            sky_map = hp.ud_grade(sky_map, nside)
 
         obj = cls(
             sky_map,
