@@ -1,3 +1,4 @@
+import healpy as hp
 import numpy as np
 from pygdsm import GlobalSkyModel2016 as GSM
 from .healpix import HealpixMap
