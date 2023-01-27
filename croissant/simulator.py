@@ -120,6 +120,7 @@ class Simulator:
             pixel_centers=pixel_centers,
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
+        self.beam.coords = self.sim.coords
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
