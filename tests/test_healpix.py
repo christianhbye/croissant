@@ -31,7 +31,13 @@ def test_grid_interp():
     interp_data = hp.grid_interp(data, theta, phi, to_theta, to_phi)
     # interp data has a frequency axis as the 0th axis
     assert interp_data.shape == (1, to_theta.size)
-    # assert np.allclose(data.ravel(), interp_data[0])
+    assert np.allclose(data.ravel(), interp_data[0])
+
+    # test with data that depends on phi
+    data = np.repeat(phi.reshape(1, -1), theta.size, axis=0)
+    interp_data = hp.grid_interp(data, theta, phi, to_theta, to_phi)
+    assert interp_data.shape == (1, to_theta.size)
+    assert np.allclose(data.ravel(), interp_data[0])
 
 
 def test_grid2healpix():
@@ -53,6 +59,17 @@ def test_grid2healpix():
     lat = hp.healpix2lonlat(nside)[1]
     hp_theta = np.pi / 2 - np.deg2rad(lat)
     expected_map = np.cos(hp_theta) ** 2
+    expected_map.shape = (1, -1)  # add frequency axis
+    assert np.allclose(hp_map, expected_map)
+
+    # map that depends on phi
+    phi_grid, theta_grid = np.meshgrid(phi, theta)
+    data = phi_grid.copy()
+    hp_map = hp.grid2healpix(data, nside, theta=theta, phi=phi)
+    # angles of healpix map:
+    lon = hp.healpix2lonlat(nside)[0]
+    hp_phi = np.deg2rad(lon)
+    expected_map = hp_phi.copy()
     expected_map.shape = (1, -1)  # add frequency axis
     assert np.allclose(hp_map, expected_map)
 
