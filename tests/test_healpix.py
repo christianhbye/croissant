@@ -37,7 +37,9 @@ def test_grid_interp():
     data = np.repeat(phi.reshape(1, -1), theta.size, axis=0)
     interp_data = hp.grid_interp(data, theta, phi, to_theta, to_phi)
     assert interp_data.shape == (1, to_theta.size)
-    assert np.allclose(data.ravel(), interp_data[0])
+    # we need to disregard the poles here
+    no_poles = (0 < to_theta) & (to_theta < np.pi)
+    assert np.allclose(data.ravel()[no_poles], interp_data[0, no_poles])
 
 
 def test_grid2healpix():
@@ -53,35 +55,36 @@ def test_grid2healpix():
 
     # map that depends on theta
     phi_grid, theta_grid = np.meshgrid(phi, theta)
-    data = np.cos(theta_grid) ** 2
+    data = np.sin(theta_grid)
     hp_map = hp.grid2healpix(data, nside, theta=theta, phi=phi)
     # angles of healpix map:
     lat = hp.healpix2lonlat(nside)[1]
     hp_theta = np.pi / 2 - np.deg2rad(lat)
-    expected_map = np.cos(hp_theta) ** 2
-    expected_map.shape = (1, -1)  # add frequency axis
+    expected_map = np.sin(hp_theta)
     assert np.allclose(hp_map, expected_map)
 
     # map that depends on phi
     phi_grid, theta_grid = np.meshgrid(phi, theta)
-    data = phi_grid.copy()
+    data = np.sin(phi_grid)
     hp_map = hp.grid2healpix(data, nside, theta=theta, phi=phi)
     # angles of healpix map:
     lon = hp.healpix2lonlat(nside)[0]
     hp_phi = np.deg2rad(lon)
-    expected_map = hp_phi.copy()
-    expected_map.shape = (1, -1)  # add frequency axis
-    assert np.allclose(hp_map, expected_map)
+    expected_map = np.sin(hp_phi)
+    # for map that depends on phi we expect errors at the pole
+    pole_th = 0.15  # radians, where we allow errors (theta)
+    pix = healpy.ang2pix(nside, pole_th, 0)
+    assert np.allclose(hp_map[0, pix:-pix], expected_map[pix:-pix])
 
     # set pixel centers to be the first npix values of theta/phi
+    data = np.sin(theta_grid)
     pc_theta = theta_grid.ravel()[:npix]
     pc_phi = phi_grid.ravel()[:npix]
     pix_centers = np.transpose([pc_theta, pc_phi])
     hp_map = hp.grid2healpix(
         data, nside, theta=theta, phi=phi, pixel_centers=pix_centers
     )
-    expected_map = np.cos(pc_theta) ** 2
-    expected_map.shape = (1, -1)  # add frequency axis
+    expected_map = np.sin(pc_theta)
     assert np.allclose(hp_map, expected_map)
 
 
