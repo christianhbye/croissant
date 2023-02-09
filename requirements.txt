@@ -107,7 +107,7 @@ rich==12.5.1
 scipy==1.9.0
 SecretStorage==3.3.2
 Send2Trash==1.8.0
-setuptools==59.6.0
+setuptools==65.5.1
 six==1.16.0
 soupsieve==2.3.2.post1
 spiceypy==5.1.1
