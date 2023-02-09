@@ -92,7 +92,7 @@ class Simulator:
 
     def beam_alm(self, nside=128):
         """
-        Get the alm's of the beam in the equitorial coordinate system.
+        Get the alm's of the beam in the equatorial/MCMF coordinate system.
         """
         # get lon/lat in sim coordinates at healpix centers
         lon, lat = healpix2lonlat(nside)
@@ -120,6 +120,7 @@ class Simulator:
             pixel_centers=pixel_centers,
         )
         self.beam.alm = map2alm(hp_maps, self.lmax)
+        self.beam.coords = self.sim_coords
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)

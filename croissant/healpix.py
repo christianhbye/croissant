@@ -200,7 +200,10 @@ class HealpixMap:
         It ensures that all maps have the right shapes and provdes an
         interpolation method.
         """
-        self.frequencies = np.atleast_1d(frequencies).copy()
+        if frequencies is not None:
+            self.frequencies = np.atleast_1d(frequencies).copy()
+        else:
+            self.frequencies = None
         self.coords = coords
 
         if data is None:
@@ -208,7 +211,7 @@ class HealpixMap:
             self.nside = nside
         else:
             data = np.array(data, copy=True, dtype=np.float64)
-            data.shape = (self.frequencies.size, -1)
+            data.shape = (np.size(self.frequencies), -1)
             npix = data.shape[-1]
             self.nside = hp.npix2nside(npix)
 
