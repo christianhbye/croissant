@@ -19,41 +19,37 @@ class Simulator:
         sky,
         obs_loc,
         t_start,
-        moon=True,
+        world="moon",
         t_end=None,
         N_times=None,
         delta_t=None,
         frequencies=None,
-        horizon=None,
         lmax=16,
     ):
         """
         Simulator class. Prepares and runs simulations.
         """
         self.lmax = lmax
-        self.moon = moon
+        self.world = world.lower()
         # set up frequencies to run the simulation at
         if frequencies is None:
             frequencies = sky.frequencies
         self.frequencies = frequencies
-        if moon:
-            loc_object = MoonLocation
+        if self.world == "moon":
+            Location = MoonLocation
             self.sim_coords = "mcmf"  # simulation coordinate system
             Time = LunarTime  # define default time class
-        else:
-            loc_object = EarthLocation
+        elif self.world == "earth":
+            Location = EarthLocation
             self.sim_coords = "equatorial"
             Time = EarthTime
+        else:
+            raise KeyError("Keyword ``world'' must be \"earth\" or \"moon\".")
 
-        if isinstance(obs_loc, loc_object):
+        if isinstance(obs_loc, Location):
             self.loc = obs_loc
         else:
-            lat, lon, alt = obs_loc
-            self.loc = loc_object(
-                lat=lat * units.deg,
-                lon=lon * units.deg,
-                height=alt * units.m,
-            )
+            self.loc = Location(*obs_loc)
 
         self.t_start = Time(t_start, location=self.loc, scale="utc")
         if delta_t is not None:
@@ -77,50 +73,16 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        beam = deepcopy(beam)
-        if beam.alm is None:
-            # apply horizon mask and initialize beam
-            beam.horizon_cut(horizon=horizon)
-            self.beam = beam
-            self.beam_alm()  # compute alms in ra/dec
-        else:
-            self.beam = beam
+        
+        # initialize beam
+        self.beam = Alm(...)  #XXX from beam alms probably
+        if beam.coords != self.sim_coords:
+            beam.switch_coords(self.sim_coords)
+
         # initialize sky
         self.sky = Alm.from_healpix(sky, lmax=self.lmax)
         if self.sky.coords.lower() != self.sim_coords:
             self.sky.switch_coords(self.sim_coords)
-
-    def beam_alm(self, nside=128):
-        """
-        Get the alm's of the beam in the equatorial/MCMF coordinate system.
-        """
-        # get lon/lat in sim coordinates at healpix centers
-        lon, lat = healpix2lonlat(nside)
-
-        # get corresponding theta/phi in topocentric coords
-        za = np.pi / 2 - np.deg2rad(lat)
-        az = np.deg2rad(lon)
-        theta, phi = rot_coords(
-            za,
-            az,
-            self.sim_coords,
-            self.beam.coords.lower(),
-            time=self.t_start,
-            loc=self.loc,
-            lonlat=False,
-        )
-
-        pixel_centers = np.array([theta, phi]).T
-        # get healpix map
-        hp_maps = grid2healpix(
-            self.beam.data,
-            nside,
-            self.beam.theta,
-            self.beam.phi,
-            pixel_centers=pixel_centers,
-        )
-        self.beam.alm = map2alm(hp_maps, self.lmax)
-        self.beam.coords = self.sim.coords
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
