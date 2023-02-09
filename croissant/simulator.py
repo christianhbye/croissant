@@ -92,7 +92,7 @@ class Simulator:
 
     def beam_alm(self, nside=128):
         """
-        Get the alm's of the beam in the equitorial coordinate system.
+        Get the alm's of the beam in the equatorial/MCMF coordinate system.
         """
         # get lon/lat in sim coordinates at healpix centers
         lon, lat = healpix2lonlat(nside)
