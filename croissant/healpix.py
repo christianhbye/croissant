@@ -75,7 +75,6 @@ def grid_interp(data, theta, phi, to_theta, to_phi):
         theta = theta[:-1]
         pole_values[:, 1] = data[:, -1, 0]
         data = data[:, :-1]
-    phi -= np.pi  # different conventions
 
     interp_data = np.empty((len(data), to_theta.size))
     for i in range(len(data)):
