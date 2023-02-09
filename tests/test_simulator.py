@@ -103,8 +103,7 @@ def test_beam_alm():
     )
 
     # check that input args are set correctly
-    assert sim.beam.coords.lower() == "topocentric"
-    assert sim.sim_coords == "equatorial"
+    assert sim.beam.coords == sim.sim_coords == "equatorial"
 
     # test beam alm by inverting it
     nside = 128
