@@ -257,6 +257,41 @@ class HealpixMap:
         )
         return obj
 
+    @classmethod
+    def from_grid(
+        cls, data, nside, theta, phi, frequencies=None, coords="topocentric"
+    ):
+        """
+        Construct a HealpixMap instance from data defined on a grid of points.
+        Parameters
+        ----------
+        data : array_like
+            The data defined on the grid.
+        nside : int
+            The nside of the healpix map.
+        theta : array_like
+            The theta coordinates of the grid.
+        phi : array_like
+            The phi coordinates of the grid.
+        frequencies : array_like
+            The frequencies of the grid.
+        coords : str
+            The coordinate system of the grid. Must be either "topocentric", 
+            "equatorial" or "galactic".
+        """
+        theta = np.array(theta, copy=True)
+        phi = np.array(phi, copy=True)
+        npix = hp.nside2npix(nside)
+        hp_map = grid2healpix(data, nside, theta=theta, phi=phi)
+        obj = cls(
+            data=hp_map,
+            nside=nside,
+            nested_input=False,
+            frequencies=frequencies,
+            coords=coords,
+        )
+        return obj
+
     def ud_grade(self, nside_out, **kwargs):
         """
         Change the resolution of the healpy map to nside_out.
@@ -404,8 +439,9 @@ class Alm(hp.Alm):
         )
         return obj
 
+    #XXX
     @classmethod
-    def from_angles(
+    def from_grid(
         cls,
         data,
         theta,
@@ -415,6 +451,7 @@ class Alm(hp.Alm):
         coords="topographic",
     ):
         """
+        Mimic the healpix version ..
         Construct an Alm from a grid in theta and phi.
         """
         raise NotImplementedError
