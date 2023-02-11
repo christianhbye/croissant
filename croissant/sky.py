@@ -24,22 +24,6 @@ class Sky(HealpixMap):
         )
 
     @classmethod
-    def from_alm(cls, alm_obj, nside=None):
-        """
-        Construct a Sky instance from an Alm object (defined below).
-        """
-        if nside is None:
-            nside = (alm_obj.lmax + 1) // 3
-        hp_map = alm_obj.hp_map(nside=nside)
-        obj = cls(
-            sky_map=hp_map,
-            frequencies=alm_obj.frequencies,
-            nested_input=False,
-            coords=alm_obj.coords,
-        )
-        return obj
-
-    @classmethod
     def gsm(
         cls,
         freq,

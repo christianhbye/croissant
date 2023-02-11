@@ -3,62 +3,9 @@ import numpy as np
 import warnings
 
 from .constants import Y00
-from .healpix import grid2healpix
+from .healpix import HealpixMap, grid2healpix
 
 
-class Beam:
-    def __init__(
-        self,
-        data,
-        theta=None,
-        phi=None,
-        frequencies=None,
-        alm=False,
-        coords="topocentric",
-    ):
-        """
-        Initialize beam object. The beam must be specified at a rectangular
-        grid, that is, theta and phi must be coordinate axis of a grid.
-
-        Parameters
-        ----------
-        data : array-like
-            The power beam. Must have shape ([freqs,] theta, phi).
-        theta : array-like
-            Zenith angle(s) in radians. Must be in [0, pi].
-        phi : array-like
-            Azimuth angle(s) in radians. Must be in [0, 2*pi).
-        frequencies : array-like (optional)
-            The frequencies in MHz of the beam. Necessary if the beam is
-            specified at more than one frequency.
-
-        """
-        data = np.array(data, copy=True)
-        self.frequencies = np.ravel(frequencies).copy()
-        self.nfreqs = self.frequencies.size
-        if not alm:
-            self.theta = np.ravel(theta).copy()
-            self.phi = np.ravel(phi).copy()
-            if self.theta.min() < 0 or self.theta.max() > np.pi:
-                raise ValueError("Theta must be in the range [0, pi].")
-            if self.phi.min() < 0 or self.phi.max() >= 2 * np.pi:
-                raise ValueError("Phi must be in the range [0, 2pi).")
-            if not (
-                np.allclose(np.diff(self.theta), self.theta[1] - self.theta[0])
-                and np.allclose(np.diff(self.phi), self.phi[1] - self.phi[0])
-            ):
-                raise ValueError(
-                    "The data must be sampled on a rectangular grid."
-                )
-            data.shape = (self.nfreqs, theta.size, phi.size)
-            self.data = data
-            self.alm = None
-        else:
-            data.shape = (self.nfreqs, -1)
-            self.data = None
-            self.alm = data
-        self.total_power = self.compute_total_power()  # before horizon cut
-        self.coords = coords
 
     def compute_total_power(self, nside=128):
         """
@@ -87,13 +34,7 @@ class Beam:
             horizon and 1 is interpreted as above it. The elements must be in
             the range [0, 1].
         """
-        # has no effect on alm beam
         if self.data is None:
-            warnings.warn(
-                "Horizon cut is not implemented for alm beams.",
-                UserWarning,
-            )
-            return
 
         if horizon is None:
             horizon = np.ones_like(self.data)
@@ -105,9 +46,3 @@ class Beam:
                 raise ValueError("Horizon elements must be in [0, 1].")
         self.data = self.data * horizon
 
-    @classmethod
-    def from_file(path):
-        raise NotImplementedError
-
-    def to_file(fname):
-        raise NotImplementedError
