@@ -192,7 +192,7 @@ class HealpixMap:
         nside=None,
         nested_input=False,
         frequencies=None,
-        coords="galactic",
+        coords=None,
     ):
         """
         The base class for healpix maps. This is a wrapper that does a lot of
@@ -345,14 +345,14 @@ class HealpixMap:
 
 class Alm(hp.Alm):
     def __init__(
-        self, alm=None, lmax=None, frequencies=None, coords="galactic"
+        self, alm=None, lmax=None, frequencies=None, coords=None
     ):
         """
         Base class for spherical harmonics coefficients.
 
         Alm can be indexed with [freq_index, ell, emm] to get the
         coeffiecient corresponding to the given frequency index, and values of
-        ell and emm. The frequencies can be index in the usual numpy way and
+        ell and emm. The frequencies can be indexed in the usual numpy way and
         may be 0 if the alms are specified for only one frequency.
 
         """
@@ -394,8 +394,8 @@ class Alm(hp.Alm):
         self.alm[freq_idx, ix] = value
 
     def __getitem__(self, key):
-        # if alm only has one frequency, it doesn't matter if the freq_idx is
-        # not specified:
+        # it doesn't matter if the freq_idx is not specified if alm only has
+        # one frequency:
         if self.shape[0] == 1 and len(key) == 2:
             ell, emm = key
             key = [0, ell, emm]
@@ -439,22 +439,48 @@ class Alm(hp.Alm):
         )
         return obj
 
-    #XXX
     @classmethod
     def from_grid(
         cls,
         data,
         theta,
         phi,
+        lmax,
+        nside=128,
         frequencies=None,
-        lmax=None,
-        coords="topographic",
+        coords=None,
     ):
         """
-        Mimic the healpix version ..
-        Construct an Alm from a grid in theta and phi.
+        Construct an Alm from a grid in theta and phi. This function first 
+        interpolates the data onto a Healpix grid, then converts the data to
+        spherical harmonics using healpy.
+
+        Parameters
+        ----------
+        data : array_like
+            The data to be converted to spherical harmonics. Must have shape
+            (Nfreq, Ntheta, Nphi) or (Ntheta, Nphi).
+        theta : array_like
+            The theta values of the data. Must have shape (Ntheta,).
+        phi : array_like
+            The phi values of the data. Must have shape (Nphi,).
+        lmax : int
+            The maximum value of ell to use in the spherical harmonics.
+        nside : int
+            The nside of the Healpix grid to use for the interpolation.
+        frequencies : array_like
+            The frequencies corresponding to the data. Must have shape
+            (Nfreq,).
+        coords : str
+            The coordinate system of the data.
+
         """
-        raise NotImplementedError
+        theta = np.array(theta, copy=True)
+        phi = np.array(phi, copy=True)
+        hp_map = grid2healpix(data, nside, theta=theta, phi=phi)
+        alm = map2alm(hp_map, lmax=lmax)
+        obj = cls(alm=alm, lmax=lmax, frequencies=frequencies, coords=coords)
+        return obj
 
     def switch_coords(self, to_coords):
         rotated_alm = rotations.rotate_alm(
