@@ -3,46 +3,38 @@ import numpy as np
 import warnings
 
 from .constants import Y00
-from .healpix import HealpixMap, grid2healpix
+from .healpix import Alm, grid2healpix
 
 
+class Beam(Alm):
 
-    def compute_total_power(self, nside=128):
+    def compute_total_power(self):
         """
         Compute the total integrated power in the beam at each frequency. This
         is a necessary normalization constant for computing the visibilities.
         It should be computed before applying the horizon cut in order to
         account for ground loss.
         """
-        if self.data is not None:  # from grid
-            healpix_beam = grid2healpix(
-                self.data, nside, theta=self.theta, phi=self.phi
-            )
-            npix = nside2npix(nside)
-            power = healpix_beam.sum(axis=-1) * 4 * np.pi / npix
-        else:  # from alm
-            power = self.alm[0, 0] * Y00 * 4 * np.pi
+        power = self[0, 0, 0] * Y00 * 4 * np.pi
         return power
 
-    def horizon_cut(self, horizon=None):
+    def horizon_cut(self, horizon=None, nside=128):
         """
-        horizon : array-like (optional)
-            An array indicating if a given (frequency/)theta/phi combination is
-            above the horizon or not. Must have shape (theta, phi) or
-            (freqs, theta, phi) if frequency dependent. The array will be
-            multiplied by the antenna beam, hence 0 is intepreted as below the
-            horizon and 1 is interpreted as above it. The elements must be in
-            the range [0, 1].
+        horizon : array-like
+        nside : int
+            The resolution of the healpix map for the intermediate step.
         """
-        if self.data is None:
-
-        if horizon is None:
-            horizon = np.ones_like(self.data)
-            horizon[:, self.theta > np.pi / 2] = 0
-        else:
-            horizon = np.array(horizon, copy=True)
-            horizon.shape = (-1, self.theta.size, self.phi.size)
+        if horizon is not None:
             if horizon.min() < 0 or horizon.max() > 1:
                 raise ValueError("Horizon elements must be in [0, 1].")
-        self.data = self.data * horizon
+            npix = horizon.shape[-1]
+            nside = hp.npix2nside(npix)
 
+        hp_beam = self.hp_map(nside=nside)
+        if horizon is None:
+            horizon = np.ones_like(hp_beam)
+            npix = horizon.shape[-1]
+            horizon[:, npix//2:] = 0
+
+        hp_beam *= horizon
+        self.alm = map2alm(hp_beam, lmax=self.lmax)
