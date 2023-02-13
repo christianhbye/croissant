@@ -12,6 +12,12 @@ from .constants import PIX_WEIGHTS_NSIDE
 # here we just provide some rotation matrices / euler angles and provide
 # a thin wrapper for healpy.Rotator
 
+class Rotator(hp.Rotator):
+
+    def __init__
+
+
+
 def get_euler(from_coords="galactic", to_coords="mcmf", time=None):
     """
     Compute the (ZYX) Euler angles needed to describe a rotation between MCMF,
@@ -83,23 +89,23 @@ def hp_rotate(from_coords, to_coords, time=None):
     return rot
 
 
-def rotate_map(sky_map, from_coords="galactic", to_coords="mcmf"):
+def rotate_map(hp_map, from_coords="galactic", to_coords="mcmf"):
     rot = hp_rotate(from_coords, to_coords)
-    sky_map = np.array(sky_map, copy=True, dtype=np.float64)
-    npix = sky_map.shape[-1]
+    hp_map = np.array(hp_map, copy=True, dtype=np.float64)
+    npix = hp_map.shape[-1]
     nside = hp.npix2nside(npix)
     use_pix_weights = nside in PIX_WEIGHTS_NSIDE
-    if sky_map.ndim == 1:
+    if hp_map.ndim == 1:
         rotated_map = rot.rotate_map_alms(
-            sky_map, use_pixel_weights=use_pix_weights
+            hp_map, use_pixel_weights=use_pix_weights
         )
-    elif sky_map.ndim == 2:
-        rotated_map = np.empty_like(sky_map)
-        for i, m in enumerate(sky_map):  # each frequency
+    elif hp_map.ndim == 2:
+        rotated_map = np.empty_like(hp_map)
+        for i, m in enumerate(hp_map):  # iterate over frequency axis
             rm = rotate_map(m, from_coords=from_coords, to_coords=to_coords)
             rotated_map[i] = rm
     else:
-        raise ValueError("sky_map must be a 1d map or a (2d) list of maps.")
+        raise ValueError("hp_map must be a 1d map or a (2d) list of maps.")
     return rotated_map
 
 
