@@ -2,8 +2,15 @@ from copy import deepcopy
 import healpy
 import numpy as np
 import pytest
-from croissant import rotations, healpix as hp
+from croissant import healpix as hp, sphtransform as spht
 from croissant.constants import sidereal_day_earth, sidereal_day_moon, Y00
+
+
+def test_coord_rep():
+    coords = ["galactic", "equatorial", "ecliptic", "mcmf", "topocentric"]
+    short = ["G", "C", "E", "M", "T"]
+    for i in range(len(coords)):
+        assert hp.coord_rep(coords[i]) == short[i]
 
 
 def test_healpix2lonlat():
@@ -88,92 +95,6 @@ def test_grid2healpix():
     assert np.allclose(hp_map, expected_map)
 
 
-def test_map2alm():
-    nside = 32
-    npix = healpy.nside2npix(nside)
-    data = np.ones(npix)
-    lmax = 5
-    alm = hp.map2alm(data, lmax)
-    assert np.isclose(alm[0], Y00 * 4 * np.pi)  # a00 = Y00 * 4pi
-    assert np.allclose(alm[1:], 0)  # rest of alms should be 0
-
-    # multiple maps at once
-    c = 10  # constant extra value
-    d0 = np.arange(npix)
-    d1 = d0 + c
-    alm0 = hp.map2alm(d0, lmax)
-    alm1 = hp.map2alm(d1, lmax)
-    data = np.array([d0, d1])
-    alm = hp.map2alm(data, lmax)
-    # check that computing jointly is the same as individually
-    assert np.allclose(alm[0], alm0)
-    assert np.allclose(alm[1], alm1)
-    # d1 is d0 + constant value so they should only differ at a00
-    assert np.allclose(alm0[1:], alm1[1:])
-    assert np.isclose(alm0[0] + c * Y00 * 4 * np.pi, alm1[0])
-
-
-def test_alm2map():
-    # make constant map with mmax = lmax
-    lmax = 10
-    mmax = lmax
-    a00 = 3
-    size = healpy.Alm.getsize(lmax, mmax=mmax)
-    alm = np.zeros(size, dtype=np.complex128)
-    alm[0] = a00
-    nside = 32
-    hp_map = hp.alm2map(alm, nside=nside, mmax=mmax)
-    npix = hp_map.shape[-1]
-    assert nside == healpy.npix2nside(npix)
-    expected_map = np.full(npix, a00 * Y00)
-    assert np.allclose(hp_map, expected_map)
-
-    # constant map with mmax < lmax
-    mmax = 5
-    size = healpy.Alm.getsize(lmax, mmax=mmax)
-    alm = np.zeros(size, dtype=np.complex128)
-    alm[0] = a00
-    hp_map = hp.alm2map(alm, nside=nside, mmax=mmax)
-    npix = hp_map.shape[-1]
-    assert nside == healpy.npix2nside(npix)
-    expected_map = np.full(npix, a00 * Y00)
-    assert np.allclose(hp_map, expected_map)
-
-    # make many maps
-    frequencies = np.linspace(1, 50, 50)
-    mmax = lmax
-    size = healpy.Alm.getsize(lmax, mmax=mmax)
-    alm = np.zeros((frequencies.size, size), dtype=np.complex128)
-    alm[:, 0] = a00 * frequencies**2.5
-    hp_map = hp.alm2map(alm, nside=nside, mmax=mmax)
-    expected_maps = np.full((frequencies.size, npix), a00 * Y00)
-    expected_maps *= frequencies.reshape(-1, 1) ** 2.5
-    assert np.allclose(hp_map, expected_maps)
-
-    # inverting map2alm
-    lmax = 10
-    mmax = lmax
-    size = healpy.Alm.getsize(lmax, mmax=mmax)
-    alm = np.zeros(size, dtype=np.complex128)
-    lm_dict = {
-        (0, 0): 5.1,
-        (2, 0): 7.4,
-        (3, 2): 3 + 5j,
-        (4, 1): -4.3 + 1.3j,
-        (7, 7): 11,
-    }
-    for ell, emm in lm_dict:
-        ix = healpy.Alm.getidx(lmax, ell, emm)
-        alm[ix] = lm_dict[(ell, emm)]
-
-    nside = 64
-    m = hp.alm2map(alm, nside=nside)
-    alm_ = hp.map2alm(m, lmax)
-    assert np.allclose(alm, alm_)
-    m_ = hp.alm2map(alm_, nside=nside)
-    assert np.allclose(m, m_)
-
-
 def test_nested_input():
     freqs = np.linspace(1, 50, 50)
     nside = 10  # this is invalid for NESTED but OK for RING
@@ -181,13 +102,12 @@ def test_nested_input():
     data = 10 * np.ones((freqs.size, npix))
     kwargs = {
         "data": data,
-        "nside": nside,
-        "nested_input": False,
+        "nest": False,
         "frequencies": freqs,
     }
     hp.HealpixMap(**kwargs)  # should work
     # should raise an error if nested is True
-    kwargs["nested_input"] = True
+    kwargs["nest"] = True
     with pytest.raises(ValueError):
         hp.HealpixMap(**kwargs)
 
@@ -197,8 +117,7 @@ def test_nested_input():
     data = np.arange(npix) ** 2
     kwargs = {
         "data": data,
-        "nside": nside,
-        "nested_input": True,
+        "nest": True,
         "frequencies": None,
     }
     hp_map = hp.HealpixMap(**kwargs)
@@ -211,7 +130,8 @@ def test_nested_input():
 def test_from_alm():
     nside = 10
     lmax = 3 * nside - 1
-    alm = hp.Alm(lmax=lmax)
+    alm_arr = np.zeros((healpy.Alm.getsize(lmax)), dtype=np.complex128)
+    alm = hp.Alm(alm_arr, lmax=lmax)
     a00 = 10
     alm[0, 0] = a00
     hp_map = hp.HealpixMap.from_alm(alm, nside=None)
@@ -223,6 +143,10 @@ def test_from_alm():
     assert np.allclose(hp_map.data, expected_map)
 
 
+def test_from_grid():
+    assert False
+
+
 def test_ud_grade():
     freqs = np.linspace(1, 50, 50)
     nside = 8
@@ -230,8 +154,7 @@ def test_ud_grade():
     data = np.repeat(np.arange(npix).reshape(1, -1), freqs.size, axis=0)
     kwargs = {
         "data": data,
-        "nside": nside,
-        "nested_input": False,
+        "nest": False,
         "frequencies": freqs,
     }
     hpm = hp.HealpixMap(**kwargs)
@@ -248,29 +171,26 @@ def test_switch_coords():
     npix = healpy.nside2npix(nside)
     data = np.arange(npix)
     # switch from galactic to equatorial
-    coords = "galactic"
-    new_coords = "equatorial"
-    hp_map = hp.HealpixMap(data=data, nside=nside, coords=coords)
-    assert hp_map.coords == coords
-    hp_map.switch_coords(new_coords)
-    assert hp_map.coords == new_coords
-    expected_data = rotations.rotate_map(
-        data, from_coords=coords, to_coords=new_coords
-    )
+    coord = "G"
+    new_coord = "C"
+    hp_map = hp.HealpixMap(data, coord=coord)
+    assert hp_map.coord == coord
+    hp_map.switch_coords(new_coord)
+    assert hp_map.coord == new_coord
+    rot = healpy.Rotator(coord="gc")
+    expected_data = rot.rotate_map_alms(data)
     assert np.allclose(hp_map.data, expected_data)
 
     # several maps at once
     freqs = np.arange(10).reshape(-1, 1)
     data = np.arange(npix).reshape(1, -1) * freqs
-    hp_map = hp.HealpixMap(
-        data=data, nside=nside, frequencies=freqs, coords=coords
-    )
-    assert hp_map.coords == coords
-    hp_map.switch_coords(new_coords)
-    assert hp_map.coords == new_coords
-    expected_data = rotations.rotate_map(
-        data, from_coords=coords, to_coords=new_coords
-    )
+    hp_map = hp.HealpixMap(data, nside=nside, coord=coord)
+    assert hp_map.coord == coord
+    hp_map.switch_coords(new_coord)
+    assert hp_map.coord == new_coord
+    expected_data = np.empty_like(data)
+    for i in range(freqs.size):
+        expected_data[i] = rot.rotate_map_alms(data[i])
     assert np.allclose(hp_map.data, expected_data)
 
 
@@ -278,42 +198,24 @@ def test_alm():
     nside = 32
     npix = healpy.nside2npix(nside)
     data = np.arange(npix)
-    hp_map = hp.HealpixMap(data=data, nside=nside)
+    hp_map = hp.HealpixMap(data)
     # test default lmax
     alm = hp_map.alm(lmax=None)
     expected_lmax = 3 * nside - 1  # should be default
     expected_size = healpy.Alm.getsize(expected_lmax, mmax=expected_lmax)
-    assert alm.shape == (1, expected_size)
+    assert alm.shape == (expected_size,)
     # specify lmax
     lmax = 10
     alm = hp_map.alm(lmax=lmax)
     expected_size = healpy.Alm.getsize(lmax, mmax=lmax)
-    assert alm.shape == (1, expected_size)
+    assert alm.shape == (expected_size,)
 
     # several maps at once
     freqs = np.arange(10).reshape(-1, 1)
     data = np.arange(npix).reshape(1, -1) * freqs
-    hp_map = hp.HealpixMap(data=data, nside=nside, frequencies=freqs)
+    hp_map = hp.HealpixMap(data, frequencies=freqs)
     alm = hp_map.alm(lmax=lmax)
     assert alm.shape == (freqs.size, expected_size)
-
-
-def test_Alm_init():
-    lmax = 5
-    size = healpy.Alm.getsize(lmax, mmax=lmax)
-    freqs = np.linspace(1, 50, 50)
-    # alm = None
-    alm = hp.Alm(alm=None, lmax=lmax, frequencies=freqs)
-    expected_alm = np.zeros((freqs.size, size), dtype=np.complex128)
-    assert np.allclose(alm.alm, expected_alm)
-    # lmax = None
-    alms = np.arange(size).reshape(1, -1) * freqs.reshape(-1, 1)
-    alm = hp.Alm(alm=alms, lmax=None, frequencies=freqs)
-    assert alm.lmax == lmax  # init should infer lmax from alm size
-    # both alm and lmax are specfied but inconsistent
-    wrong_lmax = 10
-    with pytest.raises(ValueError):
-        hp.Alm(alm=alms, lmax=wrong_lmax, frequencies=freqs)
 
 
 def test_alm_indexing():
@@ -321,7 +223,11 @@ def test_alm_indexing():
     freqs = np.linspace(1, 50, 50)
     nfreqs = freqs.size
     # initialize all alms to 0
-    alm = hp.Alm(alm=None, lmax=lmax, frequencies=freqs)
+    alm_arr = np.zeros(
+        (nfreqs, healpy.Alm.getsize(lmax, mmax=lmax)),
+        dtype=np.complex128,
+    )
+    alm = hp.Alm(alm=alm_arr, lmax=lmax, frequencies=freqs)
     # set a00 = 1 for first half of frequencies
     alm[: nfreqs // 2, 0, 0] = 1.0
     # check __setitem__ acted correctly on alm.alm
@@ -337,7 +243,7 @@ def test_alm_indexing():
             assert np.allclose(alm[:, ell, emm], 0)
 
     # set everything back to 0
-    alm.all_zero()
+    alm.alm = np.zeros_like(alm.alm)
     # negative indexing
     val = 3.0 + 2.3j
     alm[-1, 10, 7] = val
@@ -346,7 +252,7 @@ def test_alm_indexing():
     assert alm[-1, 10, 7] == alm.alm[-1, ix]
 
     # negative emm
-    alm.all_zero()
+    alm.alm = np.zeros_like(alm.alm)
     alm[0, 3, 2] = val
     assert np.isclose(alm[0, 3, -2], (-1) ** 2 * np.conj(val))
 
@@ -356,11 +262,9 @@ def test_alm_indexing():
         alm[7, -1]
 
     # no frequencies
-    alm = hp.Alm(alm=None, lmax=lmax, frequencies=None)
+    alm = hp.Alm(alm=alm_arr[0], lmax=lmax, frequencies=None)
     alm[5, 2] = 3.0
     assert alm[5, 2] == 3.0
-    assert alm[0, 5, 2] == 3.0  # can optionally have freq idx = 0
-    assert alm[-1, 5, 2] == 3.0  # ... or -1
 
 
 def test_from_healpix():
@@ -368,16 +272,18 @@ def test_from_healpix():
     npix = healpy.nside2npix(nside)
     freqs = np.linspace(1, 50, 50)
     data = np.arange(npix).reshape(1, -1) * freqs.reshape(-1, 1) ** 2
-    coords = "equatorial"
-    hp_map = hp.HealpixMap(
-        data=data, nside=nside, frequencies=freqs, coords=coords
-    )
+    coord = "equatorial"
+    hp_map = hp.HealpixMap(data, frequencies=freqs, coord=coord)
     lmax = 10
-    alm = hp.Alm.from_healpix(hp_map, lmax=lmax)
+    alm = hp.Alm.from_healpix(hp_map, lmax=lmax, mmax=lmax)
     assert alm.lmax == lmax
     assert np.allclose(alm.frequencies, freqs)
-    assert alm.coords == coords
-    assert np.allclose(alm.alm, hp.map2alm(data, lmax))
+    assert alm.coord == hp.coord_rep(coord)
+    assert np.allclose(alm.alm, spht.map2alm(data, lmax=lmax))
+
+
+def test_alm_from_grid():
+    assert False
 
 
 def test_alm_switch_coords():
@@ -385,33 +291,33 @@ def test_alm_switch_coords():
     size = healpy.Alm.getsize(lmax, mmax=lmax)
     data = np.arange(size)
     # switch from galactic to equatorial
-    coords = "galactic"
-    new_coords = "equatorial"
-    alm = hp.Alm(alm=data, lmax=lmax, coords=coords)
-    assert alm.coords == coords
-    alm.switch_coords(new_coords)
-    assert alm.coords == new_coords
-    expected_data = rotations.rotate_alm(
-        data, from_coords=coords, to_coords=new_coords
-    )
+    coord = "G"
+    new_coord = "C"
+    alm = hp.Alm(alm=data, lmax=lmax, coord=coord)
+    assert alm.coord == coord
+    alm.switch_coords(new_coord)
+    assert alm.coord == new_coord
+    rot = healpy.Rotator(coord="gc")
+    expected_data = rot.rotate_alm(data)
     assert np.allclose(alm.alm, expected_data)
 
     # several alms at once
     freqs = np.arange(10).reshape(-1, 1)
     data = np.arange(size).reshape(1, -1) * freqs
-    alm = hp.Alm(alm=data, lmax=lmax, frequencies=freqs, coords=coords)
-    assert alm.coords == coords
-    alm.switch_coords(new_coords)
-    assert alm.coords == new_coords
-    expected_data = rotations.rotate_alm(
-        data, from_coords=coords, to_coords=new_coords
-    )
+    alm = hp.Alm(alm=data, lmax=lmax, frequencies=freqs, coord=coord)
+    assert alm.coord == coord
+    alm.switch_coords(new_coord)
+    assert alm.coord == new_coord
+    expected_data = np.empty_like(data)
+    for i in range(freqs.size):
+        expected_data[i] = rot.rotate_alm(data[i])
     assert np.allclose(alm.alm, expected_data)
 
 
 def test_getidx():
     lmax = 5
-    alm = hp.Alm(lmax=lmax)
+    alm_arr = np.zeros(healpy.Alm.getsize(lmax), dtype=np.complex128)
+    alm = hp.Alm(alm_arr, lmax=lmax)
     ell = 3
     emm = 2
     bad_ell = 2 * lmax  # bigger than lmax
@@ -433,18 +339,20 @@ def test_hp_map():
     # make constant map
     lmax = 10
     nside = 100
-    alm = hp.Alm(lmax=lmax)
+    alm_arr = np.zeros(healpy.Alm.getsize(lmax), dtype=np.complex128)
+    alm = hp.Alm(alm_arr, lmax=lmax)
     a00 = 5
     alm[0, 0] = a00
     hp_map = alm.hp_map(nside=nside)
     npix = hp_map.shape[-1]
     assert nside == healpy.npix2nside(npix)
-    expected_map = np.full((1, npix), a00 * Y00)
+    expected_map = np.full(npix, a00 * Y00)
     assert np.allclose(hp_map, expected_map)
 
     # make many maps
     frequencies = np.linspace(1, 50, 50)
-    alm = hp.Alm(lmax=lmax, frequencies=frequencies)
+    alm_arr = np.repeat(alm_arr.reshape(1, -1), frequencies.size, axis=0)
+    alm = hp.Alm(alm_arr, lmax=lmax, frequencies=frequencies)
     alm[:, 0, 0] = a00 * frequencies
     hp_map = alm.hp_map(nside=nside)
     expected_maps = np.full((frequencies.size, npix), a00 * Y00)
@@ -452,19 +360,22 @@ def test_hp_map():
     assert np.allclose(hp_map, expected_maps)
 
 
-def test_rotate_alm_angle():
+def test_rot_alm_z():
     lmax = 10
-    alm = hp.Alm(lmax=lmax)
+    alm_arr = np.zeros(healpy.Alm.getsize(lmax), dtype=np.complex128)
+    alm = hp.Alm(alm_arr, lmax=lmax)
+
+    # rotate a single angle
     phi = np.pi / 2
-    phase = alm.rotate_alm_angle(phi)
+    phase = alm.rot_alm_z(phi=phi)
     for ell in range(lmax + 1):
         for emm in range(ell + 1):
             ix = alm.getidx(ell, emm)
-            assert np.isclose(phase[0, 0, ix], np.exp(1j * emm * phi))
+            assert np.isclose(phase[0, ix], np.exp(1j * emm * phi))
 
     # rotate a set of angles
     phi = np.linspace(0, 2 * np.pi, num=361)  # 1 deg spacing
-    phase = alm.rotate_alm_angle(phi)
+    phase = alm.rotate_alm_z(phi=phi)
     for ell in range(lmax + 1):
         for emm in range(ell + 1):
             ix = alm.getidx(ell, emm)
@@ -473,19 +384,18 @@ def test_rotate_alm_angle():
     # check that phi = 0 and phi = 2pi give the same answer
     assert np.allclose(phase[0], phase[-1])
 
-
-def test_rotate_alm_time():
-    alm = hp.Alm(lmax=20, frequencies=np.linspace(1, 50, 50))
+    # rotate in time
+    alm = hp.Alm(alm_arr, lmax=20, frequencies=np.linspace(1, 50, 50))
     div = [1, 2, 4, 8]
     for d in div:
         dphi = 2 * np.pi / d
         # earth
         dt = sidereal_day_earth / d
         assert np.allclose(
-            alm.rotate_alm_time(dt, world="earth"), alm.rotate_alm_angle(dphi)
+            alm.rot_alm_z(times=dt, world="earth"), alm.rot_alm_z(phi=dphi)
         )
         # moon
         dt = sidereal_day_moon / d
         assert np.allclose(
-            alm.rotate_alm_time(dt, world="moon"), alm.rotate_alm_angle(dphi)
+            alm.rot_alm_z(times=dt, world="moon"), alm.rot_alm_z(phi=dphi)
         )
