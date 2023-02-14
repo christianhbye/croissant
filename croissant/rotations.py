@@ -1,130 +1,264 @@
-from astropy.coordinates import AltAz, EarthLocation, ICRS
+from astropy.coordinates import AltAz, EarthLocation
 from astropy import units
 import healpy as hp
-from lunarsky import LunarTopo, MCMF, MoonLocation, Time
+from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord, Time
 import numpy as np
-from spiceypy import pxform
 
 from .constants import PIX_WEIGHTS_NSIDE
+from .healpix import map2alm, alm2map
 
 
-#XXX
-# here we just provide some rotation matrices / euler angles and provide
-# a thin wrapper for healpy.Rotator
-
-class Rotator(hp.Rotator):
-
-    def __init__
-
-
-
-def get_euler(from_coords="galactic", to_coords="mcmf", time=None):
+def get_rot_mat(from_frame, to_frame):
     """
-    Compute the (ZYX) Euler angles needed to describe a rotation between MCMF,
-    galactic and equatorial coordinates.
+    Get the rotation matrix that transforms from one frame to another.
 
     Parameters
     ----------
-    time : str or astropy.timing.Time instance
-        The time of the coordinate transform.
-
-    from_coords : str (optional)
-        Coordinate system to convert from.
-
-    to_coords : str (optional)
-        Coordinate system to convert to.
+    from_frame : str or astropy frame
+        The coordinate frame to transform from.
+    to_frame : str or astropy frame
+        The coordinate frame to transform to.
 
     Returns
     -------
-    euler_angles : tup
-        The ZYX Euler angles in radians that describe the coordinate
-        transformation.
+    mat : np.ndarray
+        The rotation matrix.
 
     """
-    fc = from_coords.lower()
-    tc = to_coords.lower()
-    coords = {"galactic": "GALACTIC", "equatorial": "J2000", "mcmf": "MOON_ME"}
-    if fc not in coords or tc not in coords:
-        raise ValueError(
-            f"Invalid coordinate system name, must be in {list(coords.keys())}"
-        )
-    if time is None:
-        et = 0
-    else:  # get epoch time
-        et = Time(time) - Time("J2000", scale="tt")
-        et = et.sec
-    # rotation matrix
-    rot_mat = pxform(coords[fc], coords[tc], et)
-    # get euler angles
-    beta = -np.arcsin(rot_mat[0, 2])
-    alpha = np.arctan2(
-        rot_mat[1, 2] / np.cos(beta), rot_mat[2, 2] / np.cos(beta)
+    x, y, z = np.eye(3)  # unit vectors
+    sc = SkyCoord(
+        x=x, y=y, z=z, frame=from_frame, representation_type="cartesian"
     )
-    gamma = np.arctan2(
-        rot_mat[0, 1] / np.cos(beta), rot_mat[0, 0] / np.cos(beta)
-    )
-    euler_angles = (gamma, -beta, alpha)
-    return euler_angles
+    return sc.transform_to(to_frame).cartesian.xyz.value
 
 
-def hp_rotate(from_coords, to_coords, time=None):
+def rotmat_to_euler(mat):
     """
+    Convert a rotation matrix to Euler angles in the ZYX convention.
+
     Parameters
     ----------
-    time : str or astropy.timing.Time instance
-        The time of the coordinate transform.
-    """
-    hp_coords = {"galactic": "G", "equatorial": "C"}
-    fc = from_coords.lower()
-    tc = to_coords.lower()
-    if "mcmf" in [fc, tc]:
-        euler_angles = get_euler(from_coords=fc, to_coords=tc, time=time)
-        rot = hp.Rotator(rot=euler_angles, deg=False, eulertype="ZYX")
-    elif fc in hp_coords and tc in hp_coords:
-        rot = hp.Rotator(coord=[hp_coords[fc], hp_coords[tc]])
-    else:
-        raise ValueError(
-            f"Invalid coordinate system, must be in {list(hp_coords.keys())}"
+    mat : np.ndarray
+        The rotation matrix.
+
+    Returns
+    --------
+    eul : tup
+        The Euler angles.
+    """ 
+    beta = -np.arcsin(mat[0, 2])
+    alpha = np.arctan2(
+        mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta)
+    )
+    gamma = np.arctan2(
+        mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta)
+    )
+    eul = (gamma, -beta, alpha)
+    return eul
+    
+
+class Rotator(hp.Rotator):
+
+    def __init__(
+        self,
+        rot=None,
+        coord=None,
+        inv=None,
+        deg=True,
+        eulertype="ZYX",
+        loc=None,
+        time=None,
+    ):
+        """
+        Subclass of healpy Rotator that adds functionality to transform to 
+        topocentric and moon centric coordinate systems. In addition, it can 
+        rotate lists of maps or alms.
+
+        The allowed coordinate transforms are:
+        - ecliptic <--> equatorial <--> galactic <--> mcmf
+        - equatorial <--> topocentric (on earth)
+        - mcmf <--> topocentric (on moon)
+
+        Parameters
+        ----------
+        rot : sequence of floats
+            Euler angles in degrees (or radians if deg=False) describing the 
+            rotation. The order of the angles depends on the value of 
+            eulertype.
+        coord : sequence of strings
+            Coordinate systems to rotate between. Supported values are 
+            "G" (galactic), "C" (equatorial), "E" (ecliptic), "M" (MCMF), 
+            "T" (topocentric). The order of the strings determines the order
+            of the rotation. For example, coord=['G', 'C'] will rotate from 
+            galactic to equatorial coordinates.
+        inv : bool
+            If True, the inverse rotation is performed.
+        deg : bool
+            If True, the Euler angles are in degrees.
+        eulertype : str
+            The order of the Euler angles. Supported values are "ZYX" 
+            (default), "X", and "Y".
+        loc : tup, astropy.coordinates.EarthLocation, or lunarsky.MoonLocation
+            The location of the observer. If a tuple is provided, it must be 
+            able to instantiate an astropy.coordinates.EarthLocation object 
+            (on Earth) or a lunarsky.MoonLocation object (on the Moon).
+        time : str, astropy.time.Time, or lunarsky.Time
+            The time of the coordinate transform. If a string is provided, it
+            must be able to instantiate an astropy.time.Time object (on Earth) 
+            or a lunarsky.Time object (on the Moon).
+
+        """
+        EUL_TYPES = ["ZYX", "X", "Y"]  # types supported by healpy
+        # healpy does not warn about this but silently defaults to "ZYX"
+        if eulertype not in EUL_TYPES:
+            raise ValueError(f"eulertype must be in {EUL_TYPES}")
+        # astropy frames (consistent with healpy)
+        FRAMES = {
+            "G": "galactic",
+            "C": "fk5",
+            "E": "BarycentricMeanEcliptic",
+            "M": MCMF(),
+        }
+
+        if coord is not None:
+            coord = [c.upper() for c in coord]
+            if len(coord) != 2:
+                raise ValueError("coord must be a sequence of length 2")
+            if "T" in coord:  # topocentric
+                if loc is None or time is None:
+                    raise ValueError(
+                        "loc and time must be provided if coord contains 'T'"
+                    )
+                if "M" in coord:  # on moon
+                    if isinstance(loc, tup):
+                        loc = MoonLocation(*loc)
+                    from_frame = FRAMES["M"]
+                    to_frame = LunarTopo(location=loc, obstime=time)
+                elif "C" in coord:  # on earth
+                    if isinstance(loc, tup):
+                        loc = EarthLocation(*loc)
+                    from_frame = FRAMES["C"]
+                    to_frame = AltAz(location=loc, obstime=time)
+                else:
+                    raise ValueError(
+                        "Can only transform between topocentric and "
+                        "equatorial/mcmf"
+                    )
+
+                if coord[0] == "T":  # transforming from T
+                    inv = not inv
+            else:
+                from_frame = FRAMES[coord[0]]
+                to_frame = FRAMES[coord[1]]
+            rmat = get_rot_mat(from_frame, to_frame)
+            rot = rotmat_to_euler(rmat)
+            eulerype = "ZYX"
+            deg = False
+            coord = None
+
+        super().__init__(
+            rot=rot, coord=coord, inv=inv, deg=deg, eulertype=eulertype
         )
-    return rot
 
+    def rotate_alm(self, alm, lmax=None, mmax=None, inplace=False):
+        """
+        Rotate an alm or a list of alms.
 
-def rotate_map(hp_map, from_coords="galactic", to_coords="mcmf"):
-    rot = hp_rotate(from_coords, to_coords)
-    hp_map = np.array(hp_map, copy=True, dtype=np.float64)
-    npix = hp_map.shape[-1]
-    nside = hp.npix2nside(npix)
-    use_pix_weights = nside in PIX_WEIGHTS_NSIDE
-    if hp_map.ndim == 1:
-        rotated_map = rot.rotate_map_alms(
-            hp_map, use_pixel_weights=use_pix_weights
-        )
-    elif hp_map.ndim == 2:
-        rotated_map = np.empty_like(hp_map)
-        for i, m in enumerate(hp_map):  # iterate over frequency axis
-            rm = rotate_map(m, from_coords=from_coords, to_coords=to_coords)
-            rotated_map[i] = rm
-    else:
-        raise ValueError("hp_map must be a 1d map or a (2d) list of maps.")
-    return rotated_map
+        Parameters
+        ----------
+        alm : array_like
+            The alm or list of alms to rotate.
+        lmax : int
+            The maximum ell value to rotate.
+        mmax : int
+            The maximum m value to rotate.
+        inplace : bool
+            If True, the alm is rotated in place. Otherwise, a copy is 
+            rotated and returned.
 
+        Returns
+        -------
+        rotated_alm : array_like
+            The rotated alm or list of alms. This is only returned if 
+            inplace=False.
 
-def rotate_alm(alm, from_coords="galactic", to_coords="mcmf"):
-    rot = hp_rotate(from_coords, to_coords)
-    alm = np.array(alm, copy=True, dtype=np.complex128)
-    if alm.ndim == 1:
-        rotated_alm = rot.rotate_alm(alm)
-    elif alm.ndim == 2:
-        rotated_alm = np.empty_like(alm)
-        for i, a in enumerate(alm):  # for each frequency
-            rotated_alm[i] = rotate_alm(
-                a, from_coords=from_coords, to_coords=to_coords
+        """
+        if inplace:
+            rotated_alm = alm
+        else:
+            rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
+        
+        if rotated_alm.ndim == 1:
+            rotated_alm = self.rotate_alm(
+                rotated_alm, lmax=lmax, mmax=mmax, inplace=False
             )
-    else:
-        raise ValueError(f"alm must have 1 or 2 dimensions, not {alm.ndim}.")
-    return rotated_alm
+        elif rotated_alm.ndim == 2:
+            # iterate over the list of alms
+            for i in range(len(rotated_alm):
+                self.rotate_alm(
+                    rotated_alm[i], lmax=lmax, mmax=mmax, inplace=True
+                )
+        else:
+            raise ValueError(
+                f"alm must have 1 or 2 dimensions, not {alm.ndim}."
+            )
+
+        if not inplace:
+            return rotated_alm
+
+    def rotate_map_alms(self, m, lmax=None, mmax=None):
+        """
+        Rotate a map or a list of maps in spherical harmonics space.
+
+        Parameters
+        ----------
+        m : array-like
+            The map or list of maps to rotate.
+        lmax : int
+            The maximum ell value to rotate.
+        mmax : int
+            The maximum m value to rotate.
+        
+        Returns
+        -------
+        rotated_m : np.ndarray
+            The rotated map or list of maps.
+
+        """
+        npix = m.shape[-1]
+        nside = hp.npix2nside(npix)
+        alm = map2alm(m, lmax=lmax, mmax=mmax)
+        self.rotate_alm(alm, lmax=lmax, mmax=mmax, inplace=True)
+        rotated_m = alm2map(alm, nside, lmax=lmax, mmax=mmax)
+        return rotated_m
+
+    def rotate_map_pixel(self, m):
+        """
+        Rotate a map or a list of maps in pixel space.
+
+        Parameters
+        -----------
+        m : array-like
+            The map or list of maps to rotate.
+
+        Returns
+        -------
+        rotated_m : np.ndarray
+            The rotated map or list of maps.
+
+        """
+        if m.ndim == 1:
+            rotated_m = super().rotate_map_pixel(m)
+        elif m.ndim == 2:
+            rotated_m = np.empty_like(m)
+            for i in range(len(m)):
+                rotated_m[i] = super().rotate_map_pixel(m[i])
+        else:
+            raise ValueError(f"m must have 1 or 2 dimensions, not {m.ndim}.")
+        return rotated_m
 
 
+#XXX might remove
 def rot_alm_z(phi, lmax):
     """
     Get the coefficients that rotate alms around the z-axis by phi
