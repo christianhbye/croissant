@@ -16,7 +16,7 @@ class Sky(Alm):
         """
         freq = np.ravel(freq)
         gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution="lo")
-        sky_map = gsm16.generate(gen_freq)
+        sky_map = gsm16.generate(freq)
 
         obj = cls(
             sky_map,

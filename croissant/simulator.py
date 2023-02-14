@@ -7,8 +7,6 @@ import numpy as np
 import warnings
 
 from . import dpss
-from .rotations import rot_coords
-from .healpix import Alm, grid2healpix, healpix2lonlat, map2alm
 
 
 class Simulator:

@@ -1,10 +1,8 @@
 from astropy.coordinates import AltAz, EarthLocation
-from astropy import units
 import healpy as hp
-from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord, Time
+from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord
 import numpy as np
 
-from .constants import PIX_WEIGHTS_NSIDE
 from .healpix import map2alm, alm2map
 
 
@@ -129,12 +127,12 @@ class Rotator(hp.Rotator):
                         "loc and time must be provided if coord contains 'T'"
                     )
                 if "M" in coord:  # on moon
-                    if isinstance(loc, tup):
+                    if isinstance(loc, tuple):
                         loc = MoonLocation(*loc)
                     from_frame = FRAMES["M"]
                     to_frame = LunarTopo(location=loc, obstime=time)
                 elif "C" in coord:  # on earth
-                    if isinstance(loc, tup):
+                    if isinstance(loc, tuple):
                         loc = EarthLocation(*loc)
                     from_frame = FRAMES["C"]
                     to_frame = AltAz(location=loc, obstime=time)
@@ -157,7 +155,7 @@ class Rotator(hp.Rotator):
                     rot, deg=deg, eulertype=eulertype
                 )
                 rot = rotmat_to_euler(rotmat @ convmat)
-            eulerype = "ZYX"
+            eulertype = "ZYX"
             deg = False
             coord = None
 
@@ -211,7 +209,7 @@ class Rotator(hp.Rotator):
         if not inplace:
             return rotated_alm
 
-    def rotate_map_alms(self, m, lmax=None, mmax=None, inpplace=False):
+    def rotate_map_alms(self, m, lmax=None, mmax=None, inplace=False):
         """
         Rotate a map or a list of maps in spherical harmonics space.
 

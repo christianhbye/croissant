@@ -2,7 +2,7 @@ import healpy as hp
 import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 
-from . import rotations, constants
+from . import Rotator, constants
 
 
 def coord_rep(coord):
@@ -293,7 +293,6 @@ class HealpixMap:
         """
         theta = np.array(theta, copy=True)
         phi = np.array(phi, copy=True)
-        npix = hp.nside2npix(nside)
         hp_map = grid2healpix(data, nside, theta=theta, phi=phi)
         obj = cls(
             data=hp_map,

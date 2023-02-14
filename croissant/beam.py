@@ -1,9 +1,8 @@
-from healpy import nside2npix
+from healpy import npix2nside
 import numpy as np
-import warnings
 
 from .constants import Y00
-from .healpix import Alm, grid2healpix
+from .healpix import Alm, map2alm
 
 
 class Beam(Alm):
@@ -14,7 +13,11 @@ class Beam(Alm):
         It should be computed before applying the horizon cut in order to
         account for ground loss.
         """
-        power = self[0, 0, 0] * Y00 * 4 * np.pi
+        if self.alm.ndim == 2:
+            a00 = self[:, 0, 0]
+        else:
+            a00 = self[0, 0]
+        power = a00 * Y00 * 4 * np.pi
         return power
 
     def horizon_cut(self, horizon=None, nside=128):
@@ -27,7 +30,7 @@ class Beam(Alm):
             if horizon.min() < 0 or horizon.max() > 1:
                 raise ValueError("Horizon elements must be in [0, 1].")
             npix = horizon.shape[-1]
-            nside = hp.npix2nside(npix)
+            nside = npix2nside(npix)
 
         hp_beam = self.hp_map(nside=nside)
         if horizon is None:
