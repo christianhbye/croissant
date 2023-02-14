@@ -377,6 +377,8 @@ class Alm(hp.Alm):
         Set the value of the alm given the frequency index and the values of
         ell and emm.
         """
+        if not len(key) == self.alm.ndim + 1:
+            raise IndexError("Number of indices must be alm.ndim + 1.")
         ell, emm = key[-2:]
         ix = self.getidx(ell, emm)
         if self.alm.ndim == 1:
@@ -386,6 +388,8 @@ class Alm(hp.Alm):
             self.alm[freq_idx, ix] = value
 
     def __getitem__(self, key):
+        if not len(key) == self.alm.ndim + 1:
+            raise IndexError("Number of indices must be alm.ndim + 1.")
         ell, emm = key[-2:]
         ix = self.getidx(ell, np.abs(emm))
         if self.alm.ndim == 1:
