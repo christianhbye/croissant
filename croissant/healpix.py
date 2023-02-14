@@ -142,7 +142,7 @@ def grid2healpix(data, nside, theta=None, phi=None, pixel_centers=None):
     return hp_map
 
 
-def map2alm(data, lmax):
+def map2alm(data, lmax=None, mmax=None):
     """
     Compute the spherical harmonics coefficents of a healpix map.
     """
@@ -154,29 +154,29 @@ def map2alm(data, lmax):
     use_ring_weights = not use_pix_weights
     kwargs = {
         "lmax": lmax,
-        "mmax": lmax,
+        "mmax": mmax,
+        "pol": False,
         "use_weights": use_ring_weights,
         "use_pixel_weights": use_pix_weights,
     }
     if data.ndim == 1:
         alm = hp.map2alm(data, **kwargs)
-    else:
+    elif data.ndim == 2:
         alm = np.empty(
             (len(data), hp.Alm.getsize(lmax, mmax=lmax)), dtype=np.complex128
         )
         for i in range(len(data)):
             alm[i] = hp.map2alm(data[i], **kwargs)
+    else:
+        raise ValueError("Input data must be a map or list of maps.")
     return alm
 
 
-def alm2map(alm, nside=128, mmax=None):
+def alm2map(alm, nside, lmax=None, mmax=None):
     alm = np.array(alm, copy=True)
     if alm.ndim == 1:
         alm.shape = (1, -1)
     nfreqs = alm.shape[0]
-    lmax = hp.Alm.getlmax(alm.shape[1], mmax=mmax)
-    if mmax is None:
-        mmax = lmax
     npix = hp.nside2npix(nside)
     hp_map = np.empty((nfreqs, npix))
     for i in range(nfreqs):
