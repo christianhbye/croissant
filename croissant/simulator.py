@@ -1,8 +1,7 @@
 from astropy import units
 from astropy.coordinates import EarthLocation
-from astropy.time import Time as EarthTime
 from copy import deepcopy
-from lunarsky import MoonLocation, Time as LunarTime
+from lunarsky import MoonLocation, Time
 import matplotlib.pyplot as plt
 import numpy as np
 import warnings
@@ -38,11 +37,9 @@ class Simulator:
         if self.world == "moon":
             Location = MoonLocation
             self.sim_coords = "mcmf"  # simulation coordinate system
-            Time = LunarTime  # define default time class
         elif self.world == "earth":
             Location = EarthLocation
             self.sim_coords = "equatorial"
-            Time = EarthTime
         else:
             raise KeyError("Keyword ``world'' must be \"earth\" or \"moon\".")
 
@@ -75,13 +72,13 @@ class Simulator:
         self.N_times = N_times
         
         # initialize beam
-        self.beam = Alm(...)  #XXX from beam alms probably
-        if beam.coords != self.sim_coords:
-            beam.switch_coords(self.sim_coords)
+        self.beam = deepcopy(beam)
+        if self.beam.coords != self.sim_coords:
+            self.beam.switch_coords(self.sim_coords)
 
         # initialize sky
-        self.sky = Alm.from_healpix(sky, lmax=self.lmax)
-        if self.sky.coords.lower() != self.sim_coords:
+        self.sky = deepcopy(sky)
+        if self.sky.coords != self.sim_coords:
             self.sky.switch_coords(self.sim_coords)
 
     def compute_dpss(self, **kwargs):
