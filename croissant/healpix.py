@@ -4,6 +4,7 @@ from scipy.interpolate import RectSphereBivariateSpline
 
 from . import rotations, constants
 
+
 def coord_rep(coord):
     """
     Shorthand notation for coordinate systems.
@@ -17,7 +18,7 @@ def coord_rep(coord):
     -------
     rep : str
         The one-letter shorthand notation for the coordinate system.
-    
+
     """
     coord = coord.upper()
     if coord[0] == "E" and coord[1] == "Q":
@@ -25,6 +26,7 @@ def coord_rep(coord):
     else:
         rep = coord[0]
     return rep
+
 
 def healpix2lonlat(nside, pix=None):
     """
@@ -318,7 +320,7 @@ class HealpixMap:
     def switch_coords(
         self,
         to_coord,
-        lmax=None, 
+        lmax=None,
         mmax=None,
         rot_pixel=False,
         loc=None,
@@ -436,7 +438,6 @@ class Alm(hp.Alm):
             coeff = (-1) ** emm * coeff.conj()
         return coeff
 
-
     @classmethod
     def from_healpix(cls, hp_obj, lmax=None, mmax=None):
         """
@@ -467,7 +468,7 @@ class Alm(hp.Alm):
         coord=None,
     ):
         """
-        Construct an Alm from a grid in theta and phi. This function first 
+        Construct an Alm from a grid in theta and phi. This function first
         interpolates the data onto a Healpix grid, then converts the data to
         spherical harmonics using healpy.
 
@@ -509,9 +510,7 @@ class Alm(hp.Alm):
     def switch_coords(self, to_coord, loc=None, time=None):
         to_coord = coord_rep(to_coord)
         rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
-        rot.rotate_alm(
-            self.alm, lmax=self.lmax, mmax=self.mmax, inplace=True
-        )
+        rot.rotate_alm(self.alm, lmax=self.lmax, mmax=self.mmax, inplace=True)
         self.coord = to_coord
 
     def getlm(self, i=None):
@@ -560,7 +559,7 @@ class Alm(hp.Alm):
             The angle(s) to rotate the azimuth by in radians.
         times : array-like
             The times to rotate the azimuth by in seconds. If given, phi will
-            be ignored and the rotation angle will be calculated from the 
+            be ignored and the rotation angle will be calculated from the
             times and the sidereal day of the world.
         world : str
             The world to use for the sidereal day. Must be 'moon' or 'earth'.

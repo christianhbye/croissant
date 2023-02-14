@@ -34,7 +34,7 @@ def get_rot_mat(from_frame, to_frame):
 
 def rotmat_to_euler(mat):
     """
-    Convert a rotation matrix to Euler angles in the ZYX convention. This is 
+    Convert a rotation matrix to Euler angles in the ZYX convention. This is
     sometimes referred to as Tait-Bryan angles X1-Y2-Z3.
 
     Parameters
@@ -46,23 +46,18 @@ def rotmat_to_euler(mat):
     --------
     eul : tup
         The Euler angles. Note, this returns -beta instead of beta to match
-        the healpy convention (the sign is inverted in 
+        the healpy convention (the sign is inverted in
         healpy.Rotator.get_rotation_matrix).
 
-    """ 
+    """
     beta = np.arcsin(mat[0, 2])
-    alpha = np.arctan2(
-        -mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta)
-    )
-    gamma = np.arctan2(
-        -mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta)
-    )
+    alpha = np.arctan2(-mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta))
+    gamma = np.arctan2(-mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta))
     eul = (gamma, -beta, alpha)
     return eul
-    
+
 
 class Rotator(hp.Rotator):
-
     def __init__(
         self,
         rot=None,
@@ -74,8 +69,8 @@ class Rotator(hp.Rotator):
         time=None,
     ):
         """
-        Subclass of healpy Rotator that adds functionality to transform to 
-        topocentric and moon centric coordinate systems. In addition, it can 
+        Subclass of healpy Rotator that adds functionality to transform to
+        topocentric and moon centric coordinate systems. In addition, it can
         rotate lists of maps or alms.
 
         The allowed coordinate transforms are:
@@ -86,29 +81,29 @@ class Rotator(hp.Rotator):
         Parameters
         ----------
         rot : sequence of floats
-            Euler angles in degrees (or radians if deg=False) describing the 
-            rotation. The order of the angles depends on the value of 
+            Euler angles in degrees (or radians if deg=False) describing the
+            rotation. The order of the angles depends on the value of
             eulertype.
         coord : sequence of strings
-            Coordinate systems to rotate between. Supported values are 
-            "G" (galactic), "C" (equatorial), "E" (ecliptic), "M" (MCMF), 
+            Coordinate systems to rotate between. Supported values are
+            "G" (galactic), "C" (equatorial), "E" (ecliptic), "M" (MCMF),
             "T" (topocentric). The order of the strings determines the order
-            of the rotation. For example, coord=['G', 'C'] will rotate from 
+            of the rotation. For example, coord=['G', 'C'] will rotate from
             galactic to equatorial coordinates.
         inv : bool
             If True, the inverse rotation is performed.
         deg : bool
             If True, the Euler angles are in degrees.
         eulertype : str
-            The order of the Euler angles. Supported values are "ZYX" 
+            The order of the Euler angles. Supported values are "ZYX"
             (default), "X", and "Y".
         loc : tup, astropy.coordinates.EarthLocation, or lunarsky.MoonLocation
-            The location of the observer. If a tuple is provided, it must be 
-            able to instantiate an astropy.coordinates.EarthLocation object 
+            The location of the observer. If a tuple is provided, it must be
+            able to instantiate an astropy.coordinates.EarthLocation object
             (on Earth) or a lunarsky.MoonLocation object (on the Moon).
         time : str, astropy.time.Time, or lunarsky.Time
             The time of the coordinate transform. If a string is provided, it
-            must be able to instantiate an astropy.time.Time object (on Earth) 
+            must be able to instantiate an astropy.time.Time object (on Earth)
             or a lunarsky.Time object (on the Moon).
 
         """
@@ -183,13 +178,13 @@ class Rotator(hp.Rotator):
         mmax : int
             The maximum m value to rotate.
         inplace : bool
-            If True, the alm is rotated in place. Otherwise, a copy is 
+            If True, the alm is rotated in place. Otherwise, a copy is
             rotated and returned.
 
         Returns
         -------
         rotated_alm : array_like
-            The rotated alm or list of alms. This is only returned if 
+            The rotated alm or list of alms. This is only returned if
             inplace=False.
 
         """
@@ -197,14 +192,14 @@ class Rotator(hp.Rotator):
             rotated_alm = alm
         else:
             rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
-        
+
         if rotated_alm.ndim == 1:
             rotated_alm = self.rotate_alm(
                 rotated_alm, lmax=lmax, mmax=mmax, inplace=False
             )
         elif rotated_alm.ndim == 2:
             # iterate over the list of alms
-            for i in range(len(rotated_alm):
+            for i in range(len(rotated_alm)):
                 self.rotate_alm(
                     rotated_alm[i], lmax=lmax, mmax=mmax, inplace=True
                 )
@@ -231,7 +226,7 @@ class Rotator(hp.Rotator):
         inplace : bool
             If True, the map is rotated in place. Otherwise, a copy is
             rotated and returned.
-        
+
         Returns
         -------
         rotated_m : np.ndarray
@@ -258,13 +253,13 @@ class Rotator(hp.Rotator):
         m : array-like
             The map or list of maps to rotate.
         inplace : bool
-            If True, the map is rotated in place. Otherwise, a copy is 
+            If True, the map is rotated in place. Otherwise, a copy is
             rotated and returned.
 
         Returns
         -------
         rotated_m : np.ndarray
-            The rotated map or list of maps. This is only returned if 
+            The rotated map or list of maps. This is only returned if
             inplace=False.
 
         """

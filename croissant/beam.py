@@ -7,7 +7,6 @@ from .healpix import Alm, grid2healpix
 
 
 class Beam(Alm):
-
     def compute_total_power(self):
         """
         Compute the total integrated power in the beam at each frequency. This
@@ -34,7 +33,7 @@ class Beam(Alm):
         if horizon is None:
             horizon = np.ones_like(hp_beam)
             npix = horizon.shape[-1]
-            horizon[:, npix//2:] = 0
+            horizon[:, npix // 2 :] = 0
 
         hp_beam *= horizon
         self.alm = map2alm(hp_beam, lmax=self.lmax)

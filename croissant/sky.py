@@ -4,7 +4,6 @@ from .healpix import Alm
 
 
 class Sky(Alm):
-
     @classmethod
     def gsm(cls, freq):
         """

@@ -41,7 +41,7 @@ class Simulator:
             Location = EarthLocation
             self.sim_coords = "equatorial"
         else:
-            raise KeyError("Keyword ``world'' must be \"earth\" or \"moon\".")
+            raise KeyError('Keyword ``world\'\' must be "earth" or "moon".')
 
         if isinstance(obs_loc, Location):
             self.loc = obs_loc
@@ -70,7 +70,7 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        
+
         # initialize beam
         self.beam = deepcopy(beam)
         if self.beam.coords != self.sim_coords:
