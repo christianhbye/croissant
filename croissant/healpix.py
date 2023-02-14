@@ -363,9 +363,10 @@ class Alm(hp.Alm):
             self.alm = alm
         else:
             self.frequencies = np.array(frequencies)
-            alm.reshape(self.frequencies.shape, -1)
+            alm.reshape(self.frequencies.size, -1)
             self.alm = alm
-
+        self.lmax = lmax
+        self.mmax = mmax
         if coord is None:
             self.coord = None
         else:
