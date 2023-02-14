@@ -1,11 +1,12 @@
 import numpy as np
-from pygdsm import GlobalSkyModel2016 as GSM
+from pygdsm import GlobalSkyModel2016 as GSM16
 from .healpix import Alm
+from .sphtransform import map2alm
 
 
 class Sky(Alm):
     @classmethod
-    def gsm(cls, freq):
+    def gsm(cls, freq, lmax=None, mmax=None):
         """
         Construct a sky object with pygdsm.
 
@@ -14,15 +15,16 @@ class Sky(Alm):
         freq : array-like
             Frequencies to make map at in MHz.
         """
-        freq = np.ravel(freq)
-        gsm16 = GSM(freq_unit="MHz", data_unit="TRJ", resolution="lo")
-        sky_map = gsm16.generate(freq)
-
+        freq = np.array(freq)
+        gsm = GSM16(freq_unit="MHz", data_unit="TRJ", resolution="lo")
+        sky_map = gsm.generate(freq)
+        sky_alm = map2alm(sky_map, lmax=lmax, mmax=mmax)
         obj = cls(
-            sky_map,
+            sky_alm,
+            lmax=lmax,
+            mmax=mmax,
             frequencies=freq,
-            nested_input=False,
-            coords="galactic",
+            coord="G",
         )
 
         return obj
