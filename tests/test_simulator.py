@@ -1,14 +1,11 @@
 from astropy import units
-from copy import deepcopy
-import healpy
+import healpy as hp
 from lunarsky import Time
 import numpy as np
 import pytest
 
-from croissant import Alm, Beam, dpss, Sky
+from croissant import Beam, dpss, Rotator, Sky
 from croissant.constants import sidereal_day_earth
-from croissant.sphtransform import alm2map
-from croissant.healpix import grid_interp
 from croissant.simulator import Simulator
 
 
@@ -100,12 +97,12 @@ def test_run():
     # retrieve constant temperature sky
     freq = np.linspace(1, 50, 50)  # MHz
     lmax = 16
-    sky_alm = np.zeros((freq.size, hp.Alm.getsize(lmax), dtype=np.complex128))
+    sky_alm = np.zeros((freq.size, hp.Alm.getsize(lmax)), dtype=np.complex128)
     sky_alm[:, 0, 0] = 10 * freq ** (-2.5)
     # sky is constant in space, varies like power law spectrally
     sky = Sky(sky_alm, lmax=lmax, coord="G")
     beam_alm = np.zeros_like(sky_alm)
-    beam_alm[:, 0, 0] = 1. * freq ** 2
+    beam_alm[:, 0, 0] = 1.0 * freq**2
     # make a constant beam with spectral power law
     beam = Beam(beam_alm, lmax=lmax, coord="T")
     # beam is no longer constant after horizon cut
@@ -116,8 +113,8 @@ def test_run():
     sim.run(dpss=False)
     beam_a00 = sim.beam[0, 0, 0]  # a00 @ freq = 1 MHz
     sky_a00 = sim.sky[0, 0, 0]  # a00 @ freq = 1 MHz
-    # total spectrum should go like f ** (2 - 2.5) 
-    expected_vis = beam_a00 * sky_a00 * np.squeeze(frequencies) ** (-0.5)
+    # total spectrum should go like f ** (2 - 2.5)
+    expected_vis = beam_a00 * sky_a00 * np.squeeze(freq) ** (-0.5)
     expected_vis /= sim.beam.compute_total_power()
     expected_vis.shape = (1, -1)  # add time axis
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
@@ -158,7 +155,7 @@ def test_run():
     frequencies = np.linspace(1, 50, 50).reshape(-1, 1)
     beam_alm = beam.alm.reshape(1, -1) * frequencies**2
     beam = Beam(beam_alm, lmax=lmax, frequencies=frequencies, coords="M")
-    sky_alm = sky.alm.reshape(1, -1) * frequencies**(-2.5)
+    sky_alm = sky.alm.reshape(1, -1) * frequencies ** (-2.5)
     sky = Sky(sky_alm, lmax=None, frequencies=frequencies, coord="M")
     sim = Simulator(
         beam, sky, loc, t_start, N_times=1, delta_t=delta_t, lmax=lmax
