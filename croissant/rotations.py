@@ -34,7 +34,8 @@ def get_rot_mat(from_frame, to_frame):
 
 def rotmat_to_euler(mat):
     """
-    Convert a rotation matrix to Euler angles in the ZYX convention.
+    Convert a rotation matrix to Euler angles in the ZYX convention. This is 
+    sometimes referred to as Tait-Bryan angles X1-Y2-Z3.
 
     Parameters
     ----------
@@ -44,14 +45,17 @@ def rotmat_to_euler(mat):
     Returns
     --------
     eul : tup
-        The Euler angles.
+        The Euler angles. Note, this returns -beta instead of beta to match
+        the healpy convention (the sign is inverted in 
+        healpy.Rotator.get_rotation_matrix).
+
     """ 
-    beta = -np.arcsin(mat[0, 2])
+    beta = np.arcsin(mat[0, 2])
     alpha = np.arctan2(
-        mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta)
+        -mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta)
     )
     gamma = np.arctan2(
-        mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta)
+        -mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta)
     )
     eul = (gamma, -beta, alpha)
     return eul
@@ -150,8 +154,14 @@ class Rotator(hp.Rotator):
             else:
                 from_frame = FRAMES[coord[0]]
                 to_frame = FRAMES[coord[1]]
-            rmat = get_rot_mat(from_frame, to_frame)
-            rot = rotmat_to_euler(rmat)
+            convmat = get_rot_mat(from_frame, to_frame)
+            if rot is None:
+                rot = rotmat_to_euler(convmat)
+            else:  # combine the coordinate transform with rotation
+                rotmat = hp.get_rotation_matrix(
+                    rot, deg=deg, eulertype=eulertype
+                )
+                rot = rotmat_to_euler(rotmat @ convmat)
             eulerype = "ZYX"
             deg = False
             coord = None
@@ -206,7 +216,7 @@ class Rotator(hp.Rotator):
         if not inplace:
             return rotated_alm
 
-    def rotate_map_alms(self, m, lmax=None, mmax=None):
+    def rotate_map_alms(self, m, lmax=None, mmax=None, inpplace=False):
         """
         Rotate a map or a list of maps in spherical harmonics space.
 
@@ -218,11 +228,15 @@ class Rotator(hp.Rotator):
             The maximum ell value to rotate.
         mmax : int
             The maximum m value to rotate.
+        inplace : bool
+            If True, the map is rotated in place. Otherwise, a copy is
+            rotated and returned.
         
         Returns
         -------
         rotated_m : np.ndarray
-            The rotated map or list of maps.
+            The rotated map or list of maps. This is only returned if
+            inplace=False.
 
         """
         npix = m.shape[-1]
@@ -230,9 +244,12 @@ class Rotator(hp.Rotator):
         alm = map2alm(m, lmax=lmax, mmax=mmax)
         self.rotate_alm(alm, lmax=lmax, mmax=mmax, inplace=True)
         rotated_m = alm2map(alm, nside, lmax=lmax, mmax=mmax)
-        return rotated_m
+        if inplace:
+            m = rotated_m
+        else:
+            return rotated_m
 
-    def rotate_map_pixel(self, m):
+    def rotate_map_pixel(self, m, inplace=False):
         """
         Rotate a map or a list of maps in pixel space.
 
@@ -240,11 +257,15 @@ class Rotator(hp.Rotator):
         -----------
         m : array-like
             The map or list of maps to rotate.
+        inplace : bool
+            If True, the map is rotated in place. Otherwise, a copy is 
+            rotated and returned.
 
         Returns
         -------
         rotated_m : np.ndarray
-            The rotated map or list of maps.
+            The rotated map or list of maps. This is only returned if 
+            inplace=False.
 
         """
         if m.ndim == 1:
@@ -255,4 +276,7 @@ class Rotator(hp.Rotator):
                 rotated_m[i] = super().rotate_map_pixel(m[i])
         else:
             raise ValueError(f"m must have 1 or 2 dimensions, not {m.ndim}.")
-        return rotated_m
+        if inplace:
+            m = rotated_m
+        else:
+            return rotated_m
