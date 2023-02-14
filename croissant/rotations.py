@@ -256,31 +256,3 @@ class Rotator(hp.Rotator):
         else:
             raise ValueError(f"m must have 1 or 2 dimensions, not {m.ndim}.")
         return rotated_m
-
-
-#XXX might remove
-def rot_alm_z(phi, lmax):
-    """
-    Get the coefficients that rotate alms around the z-axis by phi
-    (measured counterclockwise).
-
-    Parameters
-    ----------
-    phi : array-like
-        The angle(s) to rotate the azimuth by in radians.
-    lmax : int
-        The maximum ell of the alm.
-
-    Returns
-    -------
-     phase : np.ndarray
-        The coefficients that rotate the alms by phi. Will have shape
-        (alm.size) if phi is a scalar or (phi.size, alm.size) if phi
-        is an array.
-
-    """
-
-    phi = np.reshape(phi, (-1, 1))
-    emms = hp.Alm.getlm(lmax)[1].reshape(1, -1)
-    phase = np.exp(1j * emms * phi)
-    return np.squeeze(phase)

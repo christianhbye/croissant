@@ -482,6 +482,7 @@ class Alm(hp.Alm):
         obj = cls(alm=alm, lmax=lmax, frequencies=frequencies, coords=coords)
         return obj
 
+    #XXX update
     def switch_coords(self, to_coords):
         rotated_alm = rotations.rotate_alm(
             self.alm, from_coords=self.coords, to_coords=to_coords
@@ -524,15 +525,21 @@ class Alm(hp.Alm):
         """
         return alm2map(self.alm, nside=nside, mmax=None)
 
-    def rotate_alm_angle(self, phi):
+    def rot_alm_z(self, phi=None, times=None, world="moon"):
         """
         Get the coefficients that rotate the alms around the z-axis by phi
-        (measured counterclockwise).
+        (measured counterclockwise) or in time.
 
         Parameters
         ----------
         phi : array-like
             The angle(s) to rotate the azimuth by in radians.
+        times : array-like
+            The times to rotate the azimuth by in seconds. If given, phi will
+            be ignored and the rotation angle will be calculated from the 
+            times and the sidereal day of the world.
+        world : str
+            The world to use for the sidereal day. Must be 'moon' or 'earth'.
 
         Returns
         -------
@@ -541,22 +548,19 @@ class Alm(hp.Alm):
             (phi.size, 1, alm.size) to be broadcastable with alm shapes.
 
         """
-        phi = np.ravel(phi)
-        phase = rotations.rot_alm_z(phi, self.lmax)
-        phase.shape = (phi.size, 1, self.size)
-        return phase
+        if times is not None:
+            if world.lower() == "moon":
+                sidereal_day = constants.sidereal_day_moon
+            elif world.lower() == "earth":
+                sidereal_day = constants.sidereal_day_earth
+            else:
+                raise ValueError(
+                    f"World must be 'moon' or 'earth', not {world}."
+                )
+            phi = 2 * np.pi * times / sidereal_day
+            return self.rot_alm_z(phi=phi, times=None)
 
-    def rotate_alm_time(self, times, world="moon"):
-        """
-        Rotate alms in time counterclockwise around the z-axis.
-        """
-        world = world.lower()
-        if world == "moon":
-            sidereal_day = constants.sidereal_day_moon
-        elif world == "earth":
-            sidereal_day = constants.sidereal_day_earth
-        else:
-            raise ValueError(f"World must be 'moon' or 'earth', not {world}.")
-        dphi = 2 * np.pi * times / sidereal_day
-        phase = self.rotate_alm_angle(dphi)
-        return phase
+        phi = np.ravel(phi).reshape(-1, 1)
+        emms = self.getlm()[:, 1].reshape(1, -1)
+        phase = np.exp(-1j * emms * phi)
+        return np.squeeze(phase)
