@@ -3,7 +3,7 @@ import healpy as hp
 from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord
 import numpy as np
 
-from .healpix import map2alm, alm2map
+from .sphtransform import map2alm, alm2map
 
 
 def get_rot_mat(from_frame, to_frame):
