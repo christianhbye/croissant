@@ -231,7 +231,7 @@ class HealpixMap:
 
     @classmethod
     def from_grid(
-        cls, data, nside, theta, phi, frequencies=None, coord="topocentric"
+        cls, data, nside, theta, phi, frequencies=None, coord=None
     ):
         """
         Construct a HealpixMap instance from data defined on a grid of points.
@@ -313,9 +313,9 @@ class HealpixMap:
         to_coord = coord_rep(to_coord)
         rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
         if rot_pixel:
-            rot.rotate_map_pixel(self.data, inplace=True)
+            self.data = rot.rotate_map_pixel(self.data)
         else:
-            rot.rotate_map_alms(self.data, lmax=lmax, mmax=mmax, inplace=True)
+            self.data = rot.rotate_map_alms(self.data, lmax=lmax, mmax=mmax)
         self.coord = to_coord
 
     def alm(self, lmax=None, mmax=None):
@@ -530,8 +530,8 @@ class Alm(hp.Alm):
         Returns
         -------
         phase : np.ndarray
-            The coefficients that rotate the alms by phi. Will have shape
-            (phi.size, 1, alm.size) to be broadcastable with alm shapes.
+            The coefficients (shape = (phi.size, alm.size) that rotate the
+            alms by phi.
 
         """
         if times is not None:
@@ -547,6 +547,6 @@ class Alm(hp.Alm):
             return self.rot_alm_z(phi=phi, times=None)
 
         phi = np.ravel(phi).reshape(-1, 1)
-        emms = self.getlm()[:, 1].reshape(1, -1)
+        emms = self.getlm()[1].reshape(1, -1)
         phase = np.exp(-1j * emms * phi)
         return np.squeeze(phase)
