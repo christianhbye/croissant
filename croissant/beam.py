@@ -2,7 +2,8 @@ from healpy import npix2nside, pix2ang
 import numpy as np
 
 from .constants import Y00
-from .healpix import Alm, map2alm
+from .healpix import Alm
+from .sphtransform import map2alm
 
 
 class Beam(Alm):
@@ -18,7 +19,7 @@ class Beam(Alm):
         else:
             a00 = self[0, 0]
         power = a00 * Y00 * 4 * np.pi
-        return power
+        self.total_power = power
 
     def horizon_cut(self, horizon=None, nside=128):
         """
