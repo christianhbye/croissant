@@ -359,9 +359,9 @@ class Alm(hp.Alm):
             alm.reshape(self.frequencies.size, -1)
             self.alm = alm
         try:
-            self.lmax = np.min([lmax, self.getlmax()])
+            self.lmax = np.min([lmax, self.getlmax])
         except TypeError:  # lmax is None
-            self.lmax = self.getlmax()
+            self.lmax = self.getlmax
         if coord is None:
             self.coord = None
         else:
@@ -505,8 +505,8 @@ class Alm(hp.Alm):
         """
         Get the maxmium ell of the Alm object.
         """
-        if self.lmax is None:
-            return super().getlmax(self.alm.size)
+        if not hasattr(self, "lmax") or self.lmax is None:
+            return super().getlmax(self.alm.shape[-1])
         else:
             return self.lmax
 
