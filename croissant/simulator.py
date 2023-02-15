@@ -73,6 +73,8 @@ class Simulator:
 
         # initialize beam
         self.beam = deepcopy(beam)
+        if not hasattr(self.beam, "total_power"):
+            self.beam.compute_total_power()
         if self.beam.coord != self.sim_coord:
             self.beam.switch_coords(
                 self.sim_coord, loc=self.loc, time=self.t_start
@@ -109,16 +111,18 @@ class Simulator:
         """
         Compute the convolution for a range of times.
         """
-        if self.moon:
-            world = "moon"
-        else:
-            world = "earth"
         # the rotation phases
-        phases = self.sky.rotate_alm_time(self.dt, world=world)
+        phases = self.sky.rot_alm_z(times=self.dt, world=self.world)
+        phases.shape = (self.N_times, 1, -1)  # add freq axis
+        if self.frequencies is None:
+            dpss = False  # no need to compute dpss if no frequencies
+            sky_alm = self.sky.alm.reshape(1, 1, -1)  # add time and freq axes
+        else:
+            sky_alm = np.expand_dims(self.sky.alm, axis=0)  # add time axis
+        rot_sky_coeffs = sky_alm * phases
+        
         if dpss:
             self.compute_dpss(**dpss_kwargs)
-            # get the sky coefficients at each time
-            rot_sky_coeffs = np.expand_dims(self.sky.alm, axis=0) * phases
             # m = 0 modes
             res = (
                 rot_sky_coeffs[:, :, : self.lmax + 1].real
@@ -133,9 +137,9 @@ class Simulator:
             waterfall = np.einsum("ijk, jk -> ij", res, self.design_matrix)
 
         else:
-            # add time dimensions and rotate the sky alms
-            rot_sky_coeffs = np.expand_dims(self.sky.alm, axis=0) * phases
             beam_coeffs = np.expand_dims(self.beam.alm, axis=0)
+            if self.beam.frequencies is None:  # add freq axis
+                beam_coeffs = beam_coeffs.reshape(1, 1, -1)
             # m = 0 modes (already real)
             waterfall = np.einsum(
                 "ijk, ijk -> ij",
@@ -151,8 +155,8 @@ class Simulator:
                 )
             )
 
-        norm = self.beam.compute_total_power().reshape(1, -1)
-        self.waterfall = waterfall / norm
+        #norm = self.beam.total_power.reshape(1, -1)
+        self.waterfall = np.squeeze(waterfall) / self.beam.total_power
 
     def plot(
         self,
