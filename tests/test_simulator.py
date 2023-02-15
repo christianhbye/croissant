@@ -52,9 +52,9 @@ def test_simulator_init():
     assert np.isclose(N_times, sim.N_times)
 
     # check that the simulation coords are set properly
-    assert sim.sim_coords == "M"  # mcmf
+    assert sim.sim_coord == "M"  # mcmf
     # check sky is in the desired simulation coords
-    assert sim.sky.coords == sim.sim_coords
+    assert sim.sky.coord == sim.sim_coord
     rot = Rotator(coord="gm")
     sky_alm = rot.rotate_alm(sky.alm, lmax=sky.lmax, mmax=sky.mmax)
     assert np.allclose(sim.sky.alm, sky_alm)
@@ -70,7 +70,7 @@ def test_simulator_init():
         delta_t=step,
         lmax=lmax,
     )
-    assert sim.sim_coords == "C"
+    assert sim.sim_coord == "C"
 
     # check that we get a UserWarning if delta t does not have units
     delta_t = 2
@@ -98,15 +98,15 @@ def test_run():
     freq = np.linspace(1, 50, 50)  # MHz
     lmax = 16
     sky_alm = np.zeros((freq.size, hp.Alm.getsize(lmax)), dtype=np.complex128)
-    sky_alm[:, 0, 0] = 10 * freq ** (-2.5)
+    sky_alm[:, 0] = 10 * freq ** (-2.5)
     # sky is constant in space, varies like power law spectrally
-    sky = Sky(sky_alm, lmax=lmax, coord="G")
+    sky = Sky(sky_alm, lmax=lmax, frequencies=freq, coord="G")
     beam_alm = np.zeros_like(sky_alm)
-    beam_alm[:, 0, 0] = 1.0 * freq**2
+    beam_alm[:, 0] = 1.0 * freq**2
     # make a constant beam with spectral power law
-    beam = Beam(beam_alm, lmax=lmax, coord="T")
+    beam = Beam(beam_alm, lmax=lmax, frequencies=freq ,coord="T")
     # beam is no longer constant after horizon cut
-    beam = beam.horizon_cut()
+    beam.horizon_cut()
     sim = Simulator(
         beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
     )
@@ -115,7 +115,7 @@ def test_run():
     sky_a00 = sim.sky[0, 0, 0]  # a00 @ freq = 1 MHz
     # total spectrum should go like f ** (2 - 2.5)
     expected_vis = beam_a00 * sky_a00 * np.squeeze(freq) ** (-0.5)
-    expected_vis /= sim.beam.compute_total_power()
+    expected_vis /= sim.beam.total_power
     expected_vis.shape = (1, -1)  # add time axis
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
     # with dpss
@@ -148,15 +148,15 @@ def test_run():
         + 2 * np.real(sky[3, 1] * np.conj(beam[3, 1]))
         + 2 * np.real(sky[6, 6] * np.conj(beam[6, 6]))
     )
-    expected_vis /= sim.beam.compute_total_power()
+    expected_vis /= sim.beam.total_power
     assert np.isclose(sim.waterfall, expected_vis)
 
     # test the einsum computation in dpss mode
     frequencies = np.linspace(1, 50, 50).reshape(-1, 1)
     beam_alm = beam.alm.reshape(1, -1) * frequencies**2
-    beam = Beam(beam_alm, lmax=lmax, frequencies=frequencies, coords="M")
+    beam = Beam(beam_alm, lmax=lmax, frequencies=frequencies, coord="M")
     sky_alm = sky.alm.reshape(1, -1) * frequencies ** (-2.5)
-    sky = Sky(sky_alm, lmax=None, frequencies=frequencies, coord="M")
+    sky = Sky(sky_alm, lmax=lmax, frequencies=frequencies, coord="M")
     sim = Simulator(
         beam, sky, loc, t_start, N_times=1, delta_t=delta_t, lmax=lmax
     )
@@ -172,5 +172,5 @@ def test_run():
         )
         temp_vector[i] = t
     # output of simulator
-    wfall = sim.waterfall * sim.beam.total_power.reshape(1, -1)
+    wfall = sim.waterfall * sim.beam.total_power
     assert np.allclose(temp_vector, wfall)
