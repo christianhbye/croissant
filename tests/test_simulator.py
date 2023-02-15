@@ -11,16 +11,16 @@ from croissant.simulator import Simulator
 
 # define default params for simulator
 lmax = 32
-frequencies = np.linspace(10, 50, 10).reshape(-1, 1, 1)
-theta = np.linspace(0, np.pi, 181).reshape(1, -1, 1)
-phi = np.linspace(0, 2 * np.pi, 360, endpoint=False).reshape(1, 1, -1)
-power = frequencies**2 * np.cos(theta) ** 2  # dipole
+frequencies = np.linspace(10, 50, 10)
+theta = np.linspace(0, np.pi, 181)
+phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+power = frequencies[:, None, None]**2 * np.cos(theta[None, :, None]) ** 2
 power = np.repeat(power, phi.size, axis=2)
 beam = Beam.from_grid(
     power, theta, phi, lmax, frequencies=frequencies, coord="T"
 )
 sky = Sky.gsm(frequencies, lmax=lmax)
-loc = (40.0, 137.0, 0.0)
+loc = (137., 40.)  # (lon, lat) in degrees
 t_start = "2022-06-10 12:59:00"
 N_times = 150
 delta_t = 3600 * units.s

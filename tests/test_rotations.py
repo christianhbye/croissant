@@ -7,14 +7,14 @@ import pytest
 from croissant import rotations
 
 
-def test_get_rotmat():
+def test_get_rot_mat():
     # check that we agree with healpy for galactic -> equatorial
-    rot_mat = rotations.get_rotmat("galactic", "fk5")
+    rot_mat = rotations.get_rot_mat("galactic", "fk5")
     rot = hp.Rotator(coord=["G", "C"])
     assert np.allclose(rot_mat, rot.mat)
 
     # equatorial -> galactic
-    rot_mat = rotations.get_rotmat("equatorial", "galactic")
+    rot_mat = rotations.get_rot_mat("equatorial", "galactic")
     rot = hp.Rotator(coord=["C", "G"])
     assert np.allclose(rot_mat, rot.mat)
 
@@ -22,7 +22,7 @@ def test_get_rotmat():
     time = Time("2022-06-16 17:00:00")
     loc = EarthLocation(lon=0, lat=40)
     to_frame = AltAz(obstime=time, location=loc)
-    rot_mat = rotations.get_rotmat("equatorial", to_frame)
+    rot_mat = rotations.get_rot_mat("equatorial", to_frame)
     x, y, z = np.eye(3)
     xp, yp, zp = (
         SkyCoord(x=x, y=y, z=z, frame="fk5")
@@ -34,7 +34,7 @@ def test_get_rotmat():
     # MCMF -> AltAz
     loc = MoonLocation(lon=0, lat=40)
     to_frame = LunarTopo(obstime=time, location=loc)
-    rot_mat = rotations.get_rotmat("mcmf", to_frame)
+    rot_mat = rotations.get_rot_mat("mcmf", to_frame)
     xp, yp, zp = (
         SkyCoord(x=x, y=y, z=z, frame=MCMF())
         .transform_to(to_frame)
@@ -43,7 +43,7 @@ def test_get_rotmat():
     assert np.allclose(rot_mat, np.array([xp, yp, zp]).T)
 
     # galactic -> MCMF
-    rot_mat = rotations.get_rotmat("galactic", MCMF())
+    rot_mat = rotations.get_rot_mat("galactic", MCMF())
     xp, yp, zp = (
         SkyCoord(x=x, y=y, z=z, frame="galactic")
         .transform_to(MCMF())
@@ -52,7 +52,7 @@ def test_get_rotmat():
     assert np.allclose(rot_mat, np.array([xp, yp, zp]).T)
 
 
-eul = np.repeat(np.linspace(0, 2 * np.pi, 10), 3).reshape(3, -1)
+eul = np.repeat(np.linspace(0, 2 * np.pi, 10), 3).reshape(-1, 3)
 
 
 @pytest.mark.parametrize("alpha, beta, gamma", eul)
