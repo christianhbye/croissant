@@ -34,10 +34,10 @@ class Simulator:
         self.frequencies = frequencies
         if self.world == "moon":
             Location = MoonLocation
-            self.sim_coords = "mcmf"  # simulation coordinate system
+            self.sim_coord = "M"  # mcmf
         elif self.world == "earth":
             Location = EarthLocation
-            self.sim_coords = "equatorial"
+            self.sim_coord = "C" # equatorial
         else:
             raise KeyError('Keyword ``world\'\' must be "earth" or "moon".')
 
@@ -68,16 +68,22 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
+        
+        #XXX need to set beam and sky to same lmax/mmax first
 
         # initialize beam
         self.beam = deepcopy(beam)
-        if self.beam.coords != self.sim_coords:
-            self.beam.switch_coords(self.sim_coords)
+        if self.beam.coord != self.sim_coord:
+            self.beam.switch_coords(
+                self.sim_coord, loc=self.loc, time=self.t_start
+            )
 
         # initialize sky
         self.sky = deepcopy(sky)
-        if self.sky.coords != self.sim_coords:
-            self.sky.switch_coords(self.sim_coords)
+        if self.sky.coord != self.sim_coord:
+            self.sky.switch_coords(
+                self.sim_coord, loc=self.loc, time=self.t_start
+            )
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
@@ -145,7 +151,7 @@ class Simulator:
                 )
             )
 
-        norm = self.beam.total_power.reshape(1, -1)
+        norm = self.beam.compute_total_power().reshape(1, -1)
         self.waterfall = waterfall / norm
 
     def plot(
