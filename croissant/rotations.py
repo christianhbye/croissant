@@ -192,13 +192,13 @@ class Rotator(hp.Rotator):
             rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
 
         if rotated_alm.ndim == 1:
-            rotated_alm = self.rotate_alm(
-                rotated_alm, lmax=lmax, mmax=mmax, inplace=False
+            super().rotate_alm(
+                rotated_alm, lmax=lmax, mmax=mmax, inplace=True
             )
         elif rotated_alm.ndim == 2:
             # iterate over the list of alms
             for i in range(len(rotated_alm)):
-                self.rotate_alm(
+                super().rotate_alm(
                     rotated_alm[i], lmax=lmax, mmax=mmax, inplace=True
                 )
         else:
