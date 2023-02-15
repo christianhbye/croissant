@@ -268,6 +268,10 @@ def test_alm_indexing():
     assert alm[5, 2] == 3.0
 
 
+@pytest.mark.skip()
+def test_reduce_lmax()
+    assert False
+
 def test_from_healpix():
     nside = 8
     npix = healpy.nside2npix(nside)
