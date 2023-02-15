@@ -269,8 +269,9 @@ def test_alm_indexing():
 
 
 @pytest.mark.skip()
-def test_reduce_lmax()
+def test_reduce_lmax():
     assert False
+
 
 def test_from_healpix():
     nside = 8

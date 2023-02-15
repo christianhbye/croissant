@@ -230,9 +230,7 @@ class HealpixMap:
         return obj
 
     @classmethod
-    def from_grid(
-        cls, data, nside, theta, phi, frequencies=None, coord=None
-    ):
+    def from_grid(cls, data, nside, theta, phi, frequencies=None, coord=None):
         """
         Construct a HealpixMap instance from data defined on a grid of points.
         Parameters
@@ -342,9 +340,7 @@ class HealpixMap:
 
 
 class Alm(hp.Alm):
-    def __init__(
-        self, alm, lmax=None, frequencies=None, coord=None
-    ):
+    def __init__(self, alm, lmax=None, frequencies=None, coord=None):
         """
         Base class for spherical harmonics coefficients.
 

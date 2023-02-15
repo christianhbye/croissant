@@ -14,13 +14,13 @@ lmax = 32
 frequencies = np.linspace(10, 50, 10)
 theta = np.linspace(0, np.pi, 181)
 phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
-power = frequencies[:, None, None]**2 * np.cos(theta[None, :, None]) ** 2
+power = frequencies[:, None, None] ** 2 * np.cos(theta[None, :, None]) ** 2
 power = np.repeat(power, phi.size, axis=2)
 beam = Beam.from_grid(
     power, theta, phi, lmax, frequencies=frequencies, coord="T"
 )
 sky = Sky.gsm(frequencies, lmax=lmax)
-loc = (137., 40.)  # (lon, lat) in degrees
+loc = (137.0, 40.0)  # (lon, lat) in degrees
 t_start = "2022-06-10 12:59:00"
 N_times = 150
 delta_t = 3600 * units.s
@@ -104,7 +104,7 @@ def test_run():
     beam_alm = np.zeros_like(sky_alm)
     beam_alm[:, 0] = 1.0 * freq**2
     # make a constant beam with spectral power law
-    beam = Beam(beam_alm, lmax=lmax, frequencies=freq ,coord="T")
+    beam = Beam(beam_alm, lmax=lmax, frequencies=freq, coord="T")
     # beam is no longer constant after horizon cut
     beam.horizon_cut()
     sim = Simulator(

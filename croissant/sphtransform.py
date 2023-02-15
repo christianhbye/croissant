@@ -3,6 +3,7 @@ import numpy as np
 
 from .constants import PIX_WEIGHTS_NSIDE
 
+
 def alm2map(alm, nside, lmax=None):
     alm = np.array(alm, copy=True)
     if alm.ndim == 1:
@@ -14,6 +15,7 @@ def alm2map(alm, nside, lmax=None):
         map_i = hp.alm2map(alm[i], nside, lmax=lmax)
         hp_map[i] = map_i
     return np.squeeze(hp_map)
+
 
 def map2alm(data, lmax=None):
     """
@@ -43,5 +45,3 @@ def map2alm(data, lmax=None):
     else:
         raise ValueError("Input data must be a map or list of maps.")
     return alm
-
-

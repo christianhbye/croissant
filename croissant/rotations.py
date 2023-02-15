@@ -1,6 +1,6 @@
 from astropy.coordinates import AltAz, EarthLocation
 import healpy as hp
-from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord
+from lunarsky import LunarTopo, MoonLocation, SkyCoord
 import numpy as np
 
 from .sphtransform import map2alm, alm2map
@@ -199,15 +199,11 @@ class Rotator(hp.Rotator):
             rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
 
         if rotated_alm.ndim == 1:
-            super().rotate_alm(
-                rotated_alm, lmax=lmax, inplace=True
-            )
+            super().rotate_alm(rotated_alm, lmax=lmax, inplace=True)
         elif rotated_alm.ndim == 2:
             # iterate over the list of alms
             for i in range(len(rotated_alm)):
-                super().rotate_alm(
-                    rotated_alm[i], lmax=lmax, inplace=True
-                )
+                super().rotate_alm(rotated_alm[i], lmax=lmax, inplace=True)
         else:
             raise ValueError(
                 f"alm must have 1 or 2 dimensions, not {alm.ndim}."

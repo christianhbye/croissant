@@ -36,7 +36,7 @@ class Simulator:
             self.sim_coord = "M"  # mcmf
         elif self.world == "earth":
             Location = EarthLocation
-            self.sim_coord = "C" # equatorial
+            self.sim_coord = "C"  # equatorial
         else:
             raise KeyError('Keyword ``world\'\' must be "earth" or "moon".')
 
@@ -67,7 +67,7 @@ class Simulator:
                 dt = np.linspace(0, total_time, N_times)
         self.dt = dt
         self.N_times = N_times
-        
+
         if lmax is None:
             lmax = np.min([beam.lmax, sky.lmax])
         else:
@@ -127,7 +127,7 @@ class Simulator:
         else:
             sky_alm = np.expand_dims(self.sky.alm, axis=0)  # add time axis
         rot_sky_coeffs = sky_alm * phases
-        
+
         if dpss:
             self.compute_dpss(**dpss_kwargs)
             # m = 0 modes
@@ -162,7 +162,7 @@ class Simulator:
                 )
             )
 
-        #norm = self.beam.total_power.reshape(1, -1)
+        # norm = self.beam.total_power.reshape(1, -1)
         self.waterfall = np.squeeze(waterfall) / self.beam.total_power
 
     def plot(

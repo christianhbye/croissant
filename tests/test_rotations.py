@@ -2,7 +2,6 @@ from astropy.coordinates import AltAz, EarthLocation
 import healpy as hp
 from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord, Time
 import numpy as np
-import pytest
 
 from croissant import rotations
 
@@ -70,6 +69,7 @@ def test_rotmat_to_euler():
     eul = rotations.rotmat_to_euler(rot_mat)
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
+
 
 def test_rotate_alm():
     lmax = 10
