@@ -6,7 +6,7 @@ from .sphtransform import map2alm
 
 class Sky(Alm):
     @classmethod
-    def gsm(cls, freq, lmax=None, mmax=None):
+    def gsm(cls, freq, lmax=None):
         """
         Construct a sky object with pygdsm.
 
@@ -18,11 +18,10 @@ class Sky(Alm):
         freq = np.array(freq)
         gsm = GSM16(freq_unit="MHz", data_unit="TRJ", resolution="lo")
         sky_map = gsm.generate(freq)
-        sky_alm = map2alm(sky_map, lmax=lmax, mmax=mmax)
+        sky_alm = map2alm(sky_map, lmax=lmax)
         obj = cls(
             sky_alm,
             lmax=lmax,
-            mmax=mmax,
             frequencies=freq,
             coord="G",
         )

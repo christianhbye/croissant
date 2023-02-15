@@ -21,12 +21,11 @@ class Simulator:
         N_times=None,
         delta_t=None,
         frequencies=None,
-        lmax=16,
+        lmax=None,
     ):
         """
         Simulator class. Prepares and runs simulations.
         """
-        self.lmax = lmax
         self.world = world.lower()
         # set up frequencies to run the simulation at
         if frequencies is None:
@@ -69,8 +68,11 @@ class Simulator:
         self.dt = dt
         self.N_times = N_times
         
-        #XXX need to set beam and sky to same lmax/mmax first
-
+        #XXX need to set beam and sky to same lmax first
+        if lmax is None:
+            lmax = np.min(beam.lmax, sky.lmax)
+        self.lmax = lmax
+        ells = np.arange(self.lmax + 1)
         # initialize beam
         self.beam = deepcopy(beam)
         if not hasattr(self.beam, "total_power"):
@@ -79,6 +81,7 @@ class Simulator:
             self.beam.switch_coords(
                 self.sim_coord, loc=self.loc, time=self.t_start
             )
+        
 
         # initialize sky
         self.sky = deepcopy(sky)

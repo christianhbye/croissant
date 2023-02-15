@@ -56,7 +56,7 @@ def test_simulator_init():
     # check sky is in the desired simulation coords
     assert sim.sky.coord == sim.sim_coord
     rot = Rotator(coord="gm")
-    sky_alm = rot.rotate_alm(sky.alm, lmax=sky.lmax, mmax=sky.mmax)
+    sky_alm = rot.rotate_alm(sky.alm, lmax=sky.lmax)
     assert np.allclose(sim.sky.alm, sky_alm)
 
     # check that init works correcttly on earth

@@ -3,7 +3,7 @@ import numpy as np
 
 from .constants import PIX_WEIGHTS_NSIDE
 
-def alm2map(alm, nside, lmax=None, mmax=None):
+def alm2map(alm, nside, lmax=None):
     alm = np.array(alm, copy=True)
     if alm.ndim == 1:
         alm.shape = (1, -1)
@@ -11,11 +11,11 @@ def alm2map(alm, nside, lmax=None, mmax=None):
     npix = hp.nside2npix(nside)
     hp_map = np.empty((nfreqs, npix))
     for i in range(nfreqs):
-        map_i = hp.alm2map(alm[i], nside, lmax=lmax, mmax=mmax)
+        map_i = hp.alm2map(alm[i], nside, lmax=lmax)
         hp_map[i] = map_i
     return np.squeeze(hp_map)
 
-def map2alm(data, lmax=None, mmax=None):
+def map2alm(data, lmax=None):
     """
     Compute the spherical harmonics coefficents of a healpix map.
     """
@@ -27,7 +27,6 @@ def map2alm(data, lmax=None, mmax=None):
     use_ring_weights = not use_pix_weights
     kwargs = {
         "lmax": lmax,
-        "mmax": mmax,
         "pol": False,
         "use_weights": use_ring_weights,
         "use_pixel_weights": use_pix_weights,

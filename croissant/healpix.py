@@ -279,7 +279,6 @@ class HealpixMap:
         self,
         to_coord,
         lmax=None,
-        mmax=None,
         rot_pixel=False,
         loc=None,
         time=None,
@@ -296,8 +295,6 @@ class HealpixMap:
             "E" (ecliptic), "C" (equatorial), "M" (mcmf), or T" (topocentric).
         lmax : int
             The maximum l value to use for the spherical harmonic transform.
-        mmax : int
-            The maximum m value to use for the spherical harmonic transform.
         rot_pixel : bool
             If True, rotate the map in pixel space. If False, rotate the map
             in spherical harmonic space.
@@ -315,16 +312,16 @@ class HealpixMap:
         if rot_pixel:
             self.data = rot.rotate_map_pixel(self.data)
         else:
-            self.data = rot.rotate_map_alms(self.data, lmax=lmax, mmax=mmax)
+            self.data = rot.rotate_map_alms(self.data, lmax=lmax)
         self.coord = to_coord
 
-    def alm(self, lmax=None, mmax=None):
+    def alm(self, lmax=None):
         """
         Compute the spherical harmonics coefficents of the map.
         """
         if lmax is None:
             lmax = 3 * self.nside - 1
-        return map2alm(self.data, lmax=lmax, mmax=mmax)
+        return map2alm(self.data, lmax=lmax)
 
     def plot(self, frequency=None, **kwargs):
         """
@@ -346,7 +343,7 @@ class HealpixMap:
 
 class Alm(hp.Alm):
     def __init__(
-        self, alm, lmax=None, mmax=None, frequencies=None, coord=None
+        self, alm, lmax=None, frequencies=None, coord=None
     ):
         """
         Base class for spherical harmonics coefficients.
@@ -366,7 +363,6 @@ class Alm(hp.Alm):
             alm.reshape(self.frequencies.size, -1)
             self.alm = alm
         self.lmax = lmax
-        self.mmax = mmax
         if coord is None:
             self.coord = None
         else:
@@ -402,17 +398,16 @@ class Alm(hp.Alm):
         return coeff
 
     @classmethod
-    def from_healpix(cls, hp_obj, lmax=None, mmax=None):
+    def from_healpix(cls, hp_obj, lmax=None):
         """
         Construct an Alm from a HealpixMap object.
         """
-        alm = hp_obj.alm(lmax=lmax, mmax=mmax)
+        alm = hp_obj.alm(lmax=lmax)
         if lmax is None:
-            lmax = hp.Alm.getlmax(alm.size, mmax=mmax)
+            lmax = hp.Alm.getlmax(alm.size)
         obj = cls(
             alm=alm,
             lmax=lmax,
-            mmax=mmax,
             frequencies=hp_obj.frequencies,
             coord=hp_obj.coord,
         )
@@ -425,7 +420,6 @@ class Alm(hp.Alm):
         theta,
         phi,
         lmax,
-        mmax=None,
         nside=128,
         frequencies=None,
         coord=None,
@@ -446,8 +440,6 @@ class Alm(hp.Alm):
             The phi values of the data. Must have shape (Nphi,).
         lmax : int
             The maximum value of ell to use in the spherical harmonics.
-        mmmax : int
-            The maximum value of emm to use in the spherical harmonics.
         nside : int
             The nside of the Healpix grid to use for the interpolation.
         frequencies : array_like
@@ -460,11 +452,10 @@ class Alm(hp.Alm):
         theta = np.array(theta, copy=True)
         phi = np.array(phi, copy=True)
         hp_map = grid2healpix(data, nside, theta=theta, phi=phi)
-        alm = map2alm(hp_map, lmax=lmax, mmax=mmax)
+        alm = map2alm(hp_map, lmax=lmax)
         obj = cls(
             alm=alm,
             lmax=lmax,
-            mmax=mmax,
             frequencies=frequencies,
             coord=coord,
         )
@@ -473,7 +464,7 @@ class Alm(hp.Alm):
     def switch_coords(self, to_coord, loc=None, time=None):
         to_coord = coord_rep(to_coord)
         rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
-        rot.rotate_alm(self.alm, lmax=self.lmax, mmax=self.mmax, inplace=True)
+        rot.rotate_alm(self.alm, lmax=self.lmax, inplace=True)
         self.coord = to_coord
 
     def getlm(self, i=None):
@@ -496,7 +487,7 @@ class Alm(hp.Alm):
         """
         Get the size of the alm array.
         """
-        return super().getsize(self.lmax, mmax=self.mmax)
+        return super().getsize(self.lmax)
 
     @property
     def getlmax(self):
@@ -509,7 +500,7 @@ class Alm(hp.Alm):
         """
         Construct a healpy map from the Alm.
         """
-        return alm2map(self.alm, nside=nside, lmax=self.lmax, mmax=self.mmax)
+        return alm2map(self.alm, nside=nside, lmax=self.lmax)
 
     def rot_alm_z(self, phi=None, times=None, world="moon"):
         """

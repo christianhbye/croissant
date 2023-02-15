@@ -203,12 +203,12 @@ def test_alm():
     # test default lmax
     alm = hp_map.alm(lmax=None)
     expected_lmax = 3 * nside - 1  # should be default
-    expected_size = healpy.Alm.getsize(expected_lmax, mmax=expected_lmax)
+    expected_size = healpy.Alm.getsize(expected_lmax)
     assert alm.shape == (expected_size,)
     # specify lmax
     lmax = 10
     alm = hp_map.alm(lmax=lmax)
-    expected_size = healpy.Alm.getsize(lmax, mmax=lmax)
+    expected_size = healpy.Alm.getsize(lmax)
     assert alm.shape == (expected_size,)
 
     # several maps at once
@@ -225,7 +225,7 @@ def test_alm_indexing():
     nfreqs = freqs.size
     # initialize all alms to 0
     alm_arr = np.zeros(
-        (nfreqs, healpy.Alm.getsize(lmax, mmax=lmax)),
+        (nfreqs, healpy.Alm.getsize(lmax)),
         dtype=np.complex128,
     )
     alm = hp.Alm(alm=alm_arr, lmax=lmax, frequencies=freqs)
@@ -276,7 +276,7 @@ def test_from_healpix():
     coord = "equatorial"
     hp_map = hp.HealpixMap(data, frequencies=freqs, coord=coord)
     lmax = 10
-    alm = hp.Alm.from_healpix(hp_map, lmax=lmax, mmax=lmax)
+    alm = hp.Alm.from_healpix(hp_map, lmax=lmax)
     assert alm.lmax == lmax
     assert np.allclose(alm.frequencies, freqs)
     assert alm.coord == hp.coord_rep(coord)
@@ -290,7 +290,7 @@ def test_alm_from_grid():
 
 def test_alm_switch_coords():
     lmax = 10
-    size = healpy.Alm.getsize(lmax, mmax=lmax)
+    size = healpy.Alm.getsize(lmax)
     data = np.arange(size, dtype=np.complex128)
     # switch from galactic to equatorial
     coord = "G"

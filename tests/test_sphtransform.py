@@ -6,26 +6,14 @@ from croissant.sphtransform import alm2map, map2alm
 
 
 def test_alm2map():
-    # make constant map with mmax = lmax
+    # make constant map
     lmax = 10
-    mmax = lmax
     a00 = 3
-    size = hp.Alm.getsize(lmax, mmax=mmax)
+    size = hp.Alm.getsize(lmax)
     alm = np.zeros(size, dtype=np.complex128)
     alm[0] = a00
     nside = 32
-    hp_map = alm2map(alm, nside, lmax=lmax, mmax=mmax)
-    npix = hp_map.shape[-1]
-    assert nside == hp.npix2nside(npix)
-    expected_map = np.full(npix, a00 * Y00)
-    assert np.allclose(hp_map, expected_map)
-
-    # constant map with mmax < lmax
-    mmax = 5
-    size = hp.Alm.getsize(lmax, mmax=mmax)
-    alm = np.zeros(size, dtype=np.complex128)
-    alm[0] = a00
-    hp_map = alm2map(alm, nside, lmax=lmax, mmax=mmax)
+    hp_map = alm2map(alm, nside, lmax=lmax)
     npix = hp_map.shape[-1]
     assert nside == hp.npix2nside(npix)
     expected_map = np.full(npix, a00 * Y00)
@@ -33,19 +21,17 @@ def test_alm2map():
 
     # make many maps
     frequencies = np.linspace(1, 50, 50)
-    mmax = lmax
-    size = hp.Alm.getsize(lmax, mmax=mmax)
+    size = hp.Alm.getsize(lmax)
     alm = np.zeros((frequencies.size, size), dtype=np.complex128)
     alm[:, 0] = a00 * frequencies**2.5
-    hp_map = alm2map(alm, nside, lmax=lmax, mmax=mmax)
+    hp_map = alm2map(alm, nside, lmax=lmax)
     expected_maps = np.full((frequencies.size, npix), a00 * Y00)
     expected_maps *= frequencies.reshape(-1, 1) ** 2.5
     assert np.allclose(hp_map, expected_maps)
 
     # inverting map2alm
     lmax = 10
-    mmax = lmax
-    size = hp.Alm.getsize(lmax, mmax=mmax)
+    size = hp.Alm.getsize(lmax)
     alm = np.zeros(size, dtype=np.complex128)
     lm_dict = {
         (0, 0): 5.1,
@@ -59,10 +45,10 @@ def test_alm2map():
         alm[ix] = lm_dict[(ell, emm)]
 
     nside = 64
-    m = alm2map(alm, nside, lmax=lmax, mmax=mmax)
-    alm_ = map2alm(m, lmax=lmax, mmax=mmax)
+    m = alm2map(alm, nside, lmax=lmax)
+    alm_ = map2alm(m, lmax=lmax)
     assert np.allclose(alm, alm_)
-    m_ = alm2map(alm_, nside, lmax=lmax, mmax=mmax)
+    m_ = alm2map(alm_, nside, lmax=lmax)
     assert np.allclose(m, m_)
 
 

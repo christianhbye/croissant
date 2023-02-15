@@ -172,7 +172,7 @@ class Rotator(hp.Rotator):
             rot=rot, coord=coord, inv=inv, deg=deg, eulertype=eulertype
         )
 
-    def rotate_alm(self, alm, lmax=None, mmax=None, inplace=False):
+    def rotate_alm(self, alm, lmax=None, inplace=False):
         """
         Rotate an alm or a list of alms.
 
@@ -182,8 +182,6 @@ class Rotator(hp.Rotator):
             The alm or list of alms to rotate.
         lmax : int
             The maximum ell value to rotate.
-        mmax : int
-            The maximum m value to rotate.
         inplace : bool
             If True, the alm is rotated in place. Otherwise, a copy is
             rotated and returned.
@@ -202,13 +200,13 @@ class Rotator(hp.Rotator):
 
         if rotated_alm.ndim == 1:
             super().rotate_alm(
-                rotated_alm, lmax=lmax, mmax=mmax, inplace=True
+                rotated_alm, lmax=lmax, inplace=True
             )
         elif rotated_alm.ndim == 2:
             # iterate over the list of alms
             for i in range(len(rotated_alm)):
                 super().rotate_alm(
-                    rotated_alm[i], lmax=lmax, mmax=mmax, inplace=True
+                    rotated_alm[i], lmax=lmax, inplace=True
                 )
         else:
             raise ValueError(
@@ -218,7 +216,7 @@ class Rotator(hp.Rotator):
         if not inplace:
             return rotated_alm
 
-    def rotate_map_alms(self, m, lmax=None, mmax=None, inplace=False):
+    def rotate_map_alms(self, m, lmax=None, inplace=False):
         """
         Rotate a map or a list of maps in spherical harmonics space.
 
@@ -228,8 +226,6 @@ class Rotator(hp.Rotator):
             The map or list of maps to rotate.
         lmax : int
             The maximum ell value to rotate.
-        mmax : int
-            The maximum m value to rotate.
         inplace : bool
             If True, the map is rotated in place. Otherwise, a copy is
             rotated and returned.
@@ -243,9 +239,9 @@ class Rotator(hp.Rotator):
         """
         npix = m.shape[-1]
         nside = hp.npix2nside(npix)
-        alm = map2alm(m, lmax=lmax, mmax=mmax)
-        self.rotate_alm(alm, lmax=lmax, mmax=mmax, inplace=True)
-        rotated_m = alm2map(alm, nside, lmax=lmax, mmax=mmax)
+        alm = map2alm(m, lmax=lmax)
+        self.rotate_alm(alm, lmax=lmax, inplace=True)
+        rotated_m = alm2map(alm, nside, lmax=lmax)
         if inplace:
             m = rotated_m
         else:
