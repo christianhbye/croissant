@@ -19,15 +19,26 @@ def get_rot_mat(from_frame, to_frame):
 
     Returns
     -------
-    mat : np.ndarray
+    rmat : np.ndarray
         The rotation matrix.
 
     """
+    # cannot instantiate a SkyCoord with a gaalctic frame from cartesian
+    from_name = from_frame.name if hasattr(from_frame, "name") else from_frame
+    if from_name.lower() == "galactic":
+        from_frame = to_frame
+        to_frame = "galactic"
+        return_inv = True
+    else:
+        return_inv = False
     x, y, z = np.eye(3)  # unit vectors
     sc = SkyCoord(
         x=x, y=y, z=z, frame=from_frame, representation_type="cartesian"
     )
-    return sc.transform_to(to_frame).cartesian.xyz.value
+    rmat = sc.transform_to(to_frame).cartesian.xyz.value
+    if return_inv:
+        rmat = rmat.T
+    return rmat
 
 
 def rotmat_to_euler(mat):
@@ -43,15 +54,13 @@ def rotmat_to_euler(mat):
     Returns
     --------
     eul : tup
-        The Euler angles. Note, this returns -beta instead of beta to match
-        the healpy convention (the sign is inverted in
-        healpy.Rotator.get_rotation_matrix).
+        The Euler angles.
 
     """
     beta = np.arcsin(mat[0, 2])
-    alpha = np.arctan2(-mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta))
-    gamma = np.arctan2(-mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta))
-    eul = (gamma, -beta, alpha)
+    alpha = np.arctan2(mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta))
+    gamma = np.arctan2(mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta))
+    eul = (gamma, beta, alpha)
     return eul
 
 
@@ -114,7 +123,7 @@ class Rotator(hp.Rotator):
             "G": "galactic",
             "C": "fk5",
             "E": "BarycentricMeanEcliptic",
-            "M": MCMF(),
+            "M": "mcmf",
         }
 
         if coord is not None:
@@ -151,9 +160,9 @@ class Rotator(hp.Rotator):
             if rot is None:
                 rot = rotmat_to_euler(convmat)
             else:  # combine the coordinate transform with rotation
-                rotmat = hp.get_rotation_matrix(
+                rotmat = hp.rotator.get_rotation_matrix(
                     rot, deg=deg, eulertype=eulertype
-                )
+                )[0]
                 rot = rotmat_to_euler(rotmat @ convmat)
             eulertype = "ZYX"
             deg = False
