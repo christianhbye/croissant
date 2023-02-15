@@ -143,6 +143,7 @@ def test_from_alm():
     assert np.allclose(hp_map.data, expected_map)
 
 
+@pytest.mark.skip()
 def test_from_grid():
     assert False
 
@@ -167,7 +168,7 @@ def test_ud_grade():
 
 
 def test_switch_coords():
-    nside = 8
+    nside = 64
     npix = healpy.nside2npix(nside)
     data = np.arange(npix)
     # switch from galactic to equatorial
@@ -182,9 +183,9 @@ def test_switch_coords():
     assert np.allclose(hp_map.data, expected_data)
 
     # several maps at once
-    freqs = np.arange(10).reshape(-1, 1)
-    data = np.arange(npix).reshape(1, -1) * freqs
-    hp_map = hp.HealpixMap(data, nside=nside, coord=coord)
+    freqs = np.arange(1, 11).reshape(-1, 1)
+    data = np.arange(npix, dtype=np.float64).reshape(1, -1) * freqs
+    hp_map = hp.HealpixMap(data, frequencies=freqs, coord=coord)
     assert hp_map.coord == coord
     hp_map.switch_coords(new_coord)
     assert hp_map.coord == new_coord
@@ -282,6 +283,7 @@ def test_from_healpix():
     assert np.allclose(alm.alm, spht.map2alm(data, lmax=lmax))
 
 
+@pytest.mark.skip()
 def test_alm_from_grid():
     assert False
 
@@ -289,7 +291,7 @@ def test_alm_from_grid():
 def test_alm_switch_coords():
     lmax = 10
     size = healpy.Alm.getsize(lmax, mmax=lmax)
-    data = np.arange(size)
+    data = np.arange(size, dtype=np.complex128)
     # switch from galactic to equatorial
     coord = "G"
     new_coord = "C"
@@ -303,7 +305,7 @@ def test_alm_switch_coords():
 
     # several alms at once
     freqs = np.arange(10).reshape(-1, 1)
-    data = np.arange(size).reshape(1, -1) * freqs
+    data = np.arange(size, dtype=np.complex128).reshape(1, -1) * freqs
     alm = hp.Alm(alm=data, lmax=lmax, frequencies=freqs, coord=coord)
     assert alm.coord == coord
     alm.switch_coords(new_coord)
@@ -371,21 +373,21 @@ def test_rot_alm_z():
     for ell in range(lmax + 1):
         for emm in range(ell + 1):
             ix = alm.getidx(ell, emm)
-            assert np.isclose(phase[0, ix], np.exp(1j * emm * phi))
+            assert np.isclose(phase[ix], np.exp(-1j * emm * phi))
 
     # rotate a set of angles
     phi = np.linspace(0, 2 * np.pi, num=361)  # 1 deg spacing
-    phase = alm.rotate_alm_z(phi=phi)
+    phase = alm.rot_alm_z(phi=phi)
     for ell in range(lmax + 1):
         for emm in range(ell + 1):
             ix = alm.getidx(ell, emm)
-            assert np.allclose(phase[:, 0, ix], np.exp(1j * emm * phi))
+            assert np.allclose(phase[:, ix], np.exp(-1j * emm * phi))
 
     # check that phi = 0 and phi = 2pi give the same answer
     assert np.allclose(phase[0], phase[-1])
 
     # rotate in time
-    alm = hp.Alm(alm_arr, lmax=20, frequencies=np.linspace(1, 50, 50))
+    alm = hp.Alm(alm_arr, lmax=20)
     div = [1, 2, 4, 8]
     for d in div:
         dphi = 2 * np.pi / d
