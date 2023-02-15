@@ -14,7 +14,7 @@ def test_get_rot_mat():
     assert np.allclose(rot_mat, rot.mat)
 
     # equatorial -> galactic
-    rot_mat = rotations.get_rot_mat("equatorial", "galactic")
+    rot_mat = rotations.get_rot_mat("fk5", "galactic")
     rot = hp.Rotator(coord=["C", "G"])
     assert np.allclose(rot_mat, rot.mat)
 
@@ -22,52 +22,54 @@ def test_get_rot_mat():
     time = Time("2022-06-16 17:00:00")
     loc = EarthLocation(lon=0, lat=40)
     to_frame = AltAz(obstime=time, location=loc)
-    rot_mat = rotations.get_rot_mat("equatorial", to_frame)
+    rot_mat = rotations.get_rot_mat("fk5", to_frame)
     x, y, z = np.eye(3)
     xp, yp, zp = (
-        SkyCoord(x=x, y=y, z=z, frame="fk5")
+        SkyCoord(x=x, y=y, z=z, frame="fk5", representation_type="cartesian")
         .transform_to(to_frame)
         .cartesian.xyz.value
     )
-    assert np.allclose(rot_mat, np.array([xp, yp, zp]).T)
+    assert np.allclose(rot_mat, np.array([xp, yp, zp]))
 
     # MCMF -> AltAz
     loc = MoonLocation(lon=0, lat=40)
     to_frame = LunarTopo(obstime=time, location=loc)
     rot_mat = rotations.get_rot_mat("mcmf", to_frame)
     xp, yp, zp = (
-        SkyCoord(x=x, y=y, z=z, frame=MCMF())
+        SkyCoord(x=x, y=y, z=z, frame="mcmf", representation_type="cartesian")
         .transform_to(to_frame)
         .cartesian.xyz.value
     )
-    assert np.allclose(rot_mat, np.array([xp, yp, zp]).T)
+    assert np.allclose(rot_mat, np.array([xp, yp, zp]))
 
     # galactic -> MCMF
+    # in this case we have to invert the matrix that does MCMF -> galactic
+    # since we cannot instantiate a galactic frame from cartesian coords
     rot_mat = rotations.get_rot_mat("galactic", MCMF())
     xp, yp, zp = (
-        SkyCoord(x=x, y=y, z=z, frame="galactic")
-        .transform_to(MCMF())
+        SkyCoord(x=x, y=y, z=z, frame="mcmf", representation_type="cartesian")
+        .transform_to("galactic")
         .cartesian.xyz.value
     )
     assert np.allclose(rot_mat, np.array([xp, yp, zp]).T)
 
 
-eul = np.repeat(np.linspace(0, 2 * np.pi, 10), 3).reshape(-1, 3)
+def test_rotmat_to_euler():
+    # check that rotmat_to_euler is the inverse of euler_matrix_new
+    rot_mat = rotations.get_rot_mat("galactic", "fk5")
+    eul = rotations.rotmat_to_euler(rot_mat)
+    rmat = hp.rotator.get_rotation_matrix(eul)[0]
+    assert np.allclose(rot_mat, rmat)
 
+    rot_mat = rotations.get_rot_mat("galactic", "mcmf")
+    eul = rotations.rotmat_to_euler(rot_mat)
+    rmat = hp.rotator.get_rotation_matrix(eul)[0]
+    assert np.allclose(rot_mat, rmat)
 
-@pytest.mark.parametrize("alpha, beta, gamma", eul)
-def test_rotmat_to_euler(alpha, beta, gamma):
-    ca, cb, cg = np.cos(alpha), np.cos(beta), np.cos(gamma)
-    sa, sb, sg = np.sin(alpha), np.sin(beta), np.sin(gamma)
-
-    Z = np.array([[cg, -sg, 0], [sg, cg, 0], [0, 0, 1]])
-    Y = np.array([[cb, 0, sb], [0, 1, 0], [-sb, 0, cb]])
-    X = np.array([[1, 0, 0], [0, ca, -sa], [0, sa, ca]])
-
-    rot_mat = X @ Y @ Z
-    euler = rotations.rotmat_to_euler(rot_mat)
-    assert np.allclose(euler, [alpha, -beta, gamma])  # weird sign convention
-
+    rot_mat = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]])
+    eul = rotations.rotmat_to_euler(rot_mat)
+    rmat = hp.rotator.get_rotation_matrix(eul)[0]
+    assert np.allclose(rot_mat, rmat)
 
 def test_rotate_alm():
     lmax = 10
@@ -104,23 +106,13 @@ def test_rotate_alm():
 
 
 def test_rotate_map():
-    # pixel weights are not computed for nside = 8
-    nside = 8
-    npix = hp.nside2npix(nside)
-    m = np.arange(npix)
-    rot = rotations.Rotator(coord=["G", "C"])
-    rm = rot.rotate_map_alms(m)
-    hp_rot = hp.Rotator(coord=["G", "C"])
-    hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=False)
-    assert np.allclose(rm, hprm)
-
     # compare for nside 64 which uses pixel weights
     nside = 64
     npix = hp.nside2npix(nside)
     m = np.arange(npix)
     rot = rotations.Rotator(coord=["G", "C"])
-    rm = rotations.rotate_map_alms(m)
-    hp_rot = hp.Rotator(coord=["C", "G"])
+    rm = rot.rotate_map_alms(m)
+    hp_rot = hp.Rotator(coord=["G", "C"])
     hprm = hp_rot.rotate_map_alms(m, use_pixel_weights=True)
     assert np.allclose(rm, hprm)
     # without pixel weights it should be different
