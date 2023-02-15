@@ -1,7 +1,7 @@
 import healpy as hp
 import numpy as np
 
-from . import constants
+from .constants import PIX_WEIGHTS_NSIDE
 
 def alm2map(alm, nside, lmax=None, mmax=None):
     alm = np.array(alm, copy=True)
@@ -23,7 +23,7 @@ def map2alm(data, lmax=None, mmax=None):
     data = np.array(data)
     npix = data.shape[-1]
     nside = hp.npix2nside(npix)
-    use_pix_weights = nside in constants.PIX_WEIGHTS_NSIDE
+    use_pix_weights = nside in PIX_WEIGHTS_NSIDE
     use_ring_weights = not use_pix_weights
     kwargs = {
         "lmax": lmax,
@@ -35,10 +35,11 @@ def map2alm(data, lmax=None, mmax=None):
     if data.ndim == 1:
         alm = hp.map2alm(data, **kwargs)
     elif data.ndim == 2:
-        alm = np.empty(
-            (len(data), hp.Alm.getsize(lmax, mmax=lmax)), dtype=np.complex128
-        )
-        for i in range(len(data)):
+        # compute the alms of the first map to determine the size of the array
+        alm0 = hp.map2alm(data[0], **kwargs)
+        alm = np.empty((len(data), alm0.size), dtype=alm0.dtype)
+        alm[0] = alm0
+        for i in range(1, len(data)):
             alm[i] = hp.map2alm(data[i], **kwargs)
     else:
         raise ValueError("Input data must be a map or list of maps.")
