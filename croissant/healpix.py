@@ -362,7 +362,10 @@ class Alm(hp.Alm):
             self.frequencies = np.array(frequencies)
             alm.reshape(self.frequencies.size, -1)
             self.alm = alm
-        self.lmax = lmax
+        try:
+            self.lmax = np.min([lmax, self.getlmax()])
+        except TypeError:  # lmax is None
+            self.lmax = self.getlmax()
         if coord is None:
             self.coord = None
         else:
@@ -396,6 +399,18 @@ class Alm(hp.Alm):
         if emm < 0:
             coeff = (-1) ** emm * coeff.conj()
         return coeff
+
+    def reduce_lmax(self, new_lmax):
+        """
+        Reduce the maximum l value of the alm.
+        """
+        ells, emms = super().getlm(new_lmax)
+        ix = super().getidx(self.lmax, ells, emms)
+        if self.alm.ndim == 1:
+            self.alm = self.alm[ix]
+        else:
+            self.alm = self.alm[:, ix]
+        self.lmax = new_lmax
 
     @classmethod
     def from_healpix(cls, hp_obj, lmax=None):
@@ -494,7 +509,10 @@ class Alm(hp.Alm):
         """
         Get the maxmium ell of the Alm object.
         """
-        return self.lmax
+        if self.lmax is None:
+            return super().getlmax(self.alm.size)
+        else:
+            return self.lmax
 
     def hp_map(self, nside):
         """

@@ -68,11 +68,12 @@ class Simulator:
         self.dt = dt
         self.N_times = N_times
         
-        #XXX need to set beam and sky to same lmax first
         if lmax is None:
-            lmax = np.min(beam.lmax, sky.lmax)
+            lmax = np.min([beam.lmax, sky.lmax])
+        else:
+            lmax = np.min([lmax, beam.lmax, sky.lmax])
+
         self.lmax = lmax
-        ells = np.arange(self.lmax + 1)
         # initialize beam
         self.beam = deepcopy(beam)
         if not hasattr(self.beam, "total_power"):
@@ -81,7 +82,8 @@ class Simulator:
             self.beam.switch_coords(
                 self.sim_coord, loc=self.loc, time=self.t_start
             )
-        
+        if self.beam.lmax > self.lmax:
+            self.beam.reduce_lmax(self.lmax)
 
         # initialize sky
         self.sky = deepcopy(sky)
@@ -89,6 +91,8 @@ class Simulator:
             self.sky.switch_coords(
                 self.sim_coord, loc=self.loc, time=self.t_start
             )
+        if self.sky.lmax > self.lmax:
+            self.sky.reduce_lmax(self.lmax)
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
