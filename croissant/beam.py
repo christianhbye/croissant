@@ -18,7 +18,7 @@ class Beam(Alm):
             a00 = self[:, 0, 0]
         else:
             a00 = self[0, 0]
-        power = a00 * Y00 * 4 * np.pi
+        power = a00.real * Y00 * 4 * np.pi
         self.total_power = power
 
     def horizon_cut(self, horizon=None, nside=128):

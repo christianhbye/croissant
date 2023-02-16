@@ -162,7 +162,7 @@ class Simulator:
                 )
             )
 
-        self.waterfall = np.squeeze(waterfall.real) / self.beam.total_power
+        self.waterfall = np.squeeze(waterfall) / self.beam.total_power
 
     def plot(
         self,
