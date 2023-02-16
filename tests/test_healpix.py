@@ -143,9 +143,16 @@ def test_from_alm():
     assert np.allclose(hp_map.data, expected_map)
 
 
-@pytest.mark.skip()
 def test_from_grid():
-    assert False
+    nside = 32
+    theta = np.linspace(0, np.pi, 181)
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    data = np.cos(phi)[None] * np.sin(theta)[:, None]  # mock data
+    hp_map = hp.HealpixMap.from_grid(data, nside, theta, phi, coord="T")
+    assert hp_map.nside == nside
+    assert hp_map.frequencies is None
+    assert hp_map.coord == "T"
+    assert np.allclose(hp_map.data, hp.grid2healpix(data, nside, theta, phi))
 
 
 def test_ud_grade():
@@ -298,9 +305,17 @@ def test_from_healpix():
     assert np.allclose(alm.alm, spht.map2alm(data, lmax=lmax))
 
 
-@pytest.mark.skip()
 def test_alm_from_grid():
-    assert False
+    lmax = 45
+    nside = 32
+    theta = np.linspace(0, np.pi, 181)
+    phi = np.linspace(0, 2 * np.pi, 360, endpoint=False)
+    data = np.cos(phi)[None] * np.sin(theta)[:, None]  # mock data
+    alm = hp.Alm.from_grid(data, theta, phi, lmax, nside=nside)
+    assert alm.lmax == lmax
+    hp_map = hp.HealpixMap.from_grid(data, nside, theta, phi)
+    alm2 = hp.Alm.from_healpix(hp_map, lmax=lmax)
+    assert np.allclose(alm.alm, alm2.alm)
 
 
 def test_alm_switch_coords():
