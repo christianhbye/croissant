@@ -14,14 +14,14 @@ class Simulator:
         self,
         beam,
         sky,
-        obs_loc,
-        t_start,
+        lmax=None,
+        frequencies=None,
         world="moon",
+        location=None,
+        t_start=None,
         t_end=None,
         N_times=None,
         delta_t=None,
-        frequencies=None,
-        lmax=None,
     ):
         """
         Simulator class. Prepares and runs simulations.
@@ -40,59 +40,64 @@ class Simulator:
         else:
             raise KeyError('Keyword ``world\'\' must be "earth" or "moon".')
 
-        if isinstance(obs_loc, Location):
-            self.loc = obs_loc
-        else:
-            self.loc = Location(*obs_loc)
-
-        self.t_start = Time(t_start, location=self.loc, scale="utc")
-        if delta_t is not None:
-            try:
-                delta_t = delta_t.to_value(units.s)
-            except AttributeError:
-                warnings.warn(
-                    "No units specified for delta_t, assuming seconds.",
-                    UserWarning,
-                )
-                delta_t = delta_t
-        if t_end is None:
-            dt = np.arange(N_times) * delta_t
-        else:
-            t_end = Time(t_end, location=self.loc)
-            total_time = (t_end - self.t_start).to_value(units.s)
-            if delta_t is not None:
-                dt = np.arange(0, total_time + delta_t, delta_t)
-                N_times = len(dt)
-            else:
-                dt = np.linspace(0, total_time, N_times)
-        self.dt = dt
-        self.N_times = N_times
+        try:
+            self.location = Location(*location)
+        except TypeError:  # location is None or already Location
+            self.location = location
 
         if lmax is None:
             lmax = np.min([beam.lmax, sky.lmax])
         else:
             lmax = np.min([lmax, beam.lmax, sky.lmax])
-
         self.lmax = lmax
-        # initialize beam
+
+        if t_start is not None:
+            t_start = Time(t_start, location=self.location, scale="utc")
+
+        # initialize beam and sky
         self.beam = deepcopy(beam)
         if not hasattr(self.beam, "total_power"):
             self.beam.compute_total_power()
         if self.beam.coord != self.sim_coord:
             self.beam.switch_coords(
-                self.sim_coord, loc=self.loc, time=self.t_start
+                self.sim_coord, loc=self.location, time=t_start
             )
         if self.beam.lmax > self.lmax:
             self.beam.reduce_lmax(self.lmax)
-
-        # initialize sky
         self.sky = deepcopy(sky)
         if self.sky.coord != self.sim_coord:
             self.sky.switch_coords(
-                self.sim_coord, loc=self.loc, time=self.t_start
+                self.sim_coord, loc=self.location, time=t_start
             )
         if self.sky.lmax > self.lmax:
             self.sky.reduce_lmax(self.lmax)
+
+        # set up times to run the simulation at
+        try:
+            try:
+                delta_t = delta_t.sec
+            except AttributeError:
+                warnings.warn(
+                    "No units specified for delta_t, assuming seconds.",
+                    UserWarning,
+                )
+            dt = np.arange(N_times) * delta_t  # seconds
+        except TypeError:
+            t_end = Time(t_end, location=self.location, scale="utc")
+            total_time = (t_end - t_start).sec
+            if N_times is None:
+                dt = np.arange(0, total_time + delta_t, delta_t)
+                N_times = len(dt)
+            else:
+                dt, delta_t = np.linspace(0, total_time, N_times, retstep=True)
+
+        if t_start is None:
+            self.times = dt
+        else:
+            self.times = t_start + dt * units.s
+
+        self.dt = dt
+        self.N_times = N_times
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
@@ -175,13 +180,17 @@ class Simulator:
         """
         Plot the result of the simulation.
         """
+        if self.times[0] == 0:
+            time_label = "Time [hours]"
+        else:
+            t_start = self.times[0].to_value("iso", subfmt="date_hm")
+            time_label = f"Hours since {t_start}"
+        temp_label = "Temperature [K]"
         plt.figure(figsize=figsize)
         if self.waterfall.ndim == 1:  # no frequency axis
             plt.plot(self.dt / 3600, self.waterfall)
-            plt.xlabel(
-                f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
-            )
-            plt.ylabel("Temperature [K]")
+            plt.xlabel(time_label)
+            plt.ylabel(temp_label)
         else:
             if extent is None:
                 extent = [
@@ -197,9 +206,7 @@ class Simulator:
                 aspect=aspect,
                 interpolation=interpolation,
             )
-            plt.colorbar(label="Temperature [K]")
+            plt.colorbar(label=temp_label)
             plt.xlabel("Frequency [MHz]")
-            plt.ylabel(
-                f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
-            )
+            plt.ylabel(time_label)
         plt.show()
