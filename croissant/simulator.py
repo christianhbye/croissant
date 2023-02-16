@@ -41,7 +41,7 @@ def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
         total_time = (t_end - t_start).sec
         if N_times is None:
             try:
-                delta_t = delta_t.sec
+                delta_t = delta_t.to_value("s")
             except AttributeError:
                 warnings.warn(
                     "delta_t is not an astropy.units.Quantity. Assuming "
