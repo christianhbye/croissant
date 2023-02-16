@@ -401,7 +401,7 @@ class Alm(hp.Alm):
         Reduce the maximum l value of the alm.
         """
         ells, emms = super().getlm(new_lmax)
-        ix = super().getidx(self.lmax, ells, emms)
+        ix = self.getidx(ells, emms)
         if self.alm.ndim == 1:
             self.alm = self.alm[ix]
         else:
@@ -480,8 +480,7 @@ class Alm(hp.Alm):
 
     def getlm(self, i=None):
         """
-        Get the ell and emm corresponding to the numpy index of the alm
-        array.
+        Get the ell and emm corresponding to the index of the alm array.
         """
         return super().getlm(self.lmax, i=i)
 
@@ -489,8 +488,8 @@ class Alm(hp.Alm):
         """
         Get the index of the alm array for a given ell and emm.
         """
-        if not (0 <= emm <= ell <= self.lmax):
-            raise ValueError("Ell or emm are out of bounds.")
+        if not ((0 <= emm) & (emm <= ell) & (ell <= self.lmax)).all():
+            raise IndexError("Ell or emm are out of set by m <= l <= lmax.")
         return super().getidx(self.lmax, ell, emm)
 
     @property
