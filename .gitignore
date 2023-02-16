@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 
 TODO.txt
+notebooks/hera_sim_test.ipynb
