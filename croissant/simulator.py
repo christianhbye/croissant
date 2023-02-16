@@ -162,8 +162,7 @@ class Simulator:
                 )
             )
 
-        # norm = self.beam.total_power.reshape(1, -1)
-        self.waterfall = np.squeeze(waterfall) / self.beam.total_power
+        self.waterfall = np.squeeze(waterfall.real) / self.beam.total_power
 
     def plot(
         self,
@@ -177,23 +176,30 @@ class Simulator:
         Plot the result of the simulation.
         """
         plt.figure(figsize=figsize)
-        if extent is None:
-            extent = [
-                self.frequencies.min(),
-                self.frequencies.max(),
-                self.dt[-1] / 3600,
-                0,
-            ]
-        weight = self.frequencies**power
-        plt.imshow(
-            self.waterfall * weight.reshape(1, -1),
-            extent=extent,
-            aspect=aspect,
-            interpolation=interpolation,
-        )
-        plt.colorbar(label="Temperature [K]")
-        plt.xlabel("Frequency [MHz]")
-        plt.ylabel(
-            f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
-        )
+        if self.waterfall.ndim == 1:  # no frequency axis
+            plt.plot(self.dt / 3600, self.waterfall)
+            plt.xlabel(
+                f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
+            )
+            plt.ylabel("Temperature [K]")
+        else:
+            if extent is None:
+                extent = [
+                    self.frequencies.min(),
+                    self.frequencies.max(),
+                    self.dt[-1] / 3600,
+                    0,
+                ]
+            weight = self.frequencies**power
+            plt.imshow(
+                self.waterfall * weight.reshape(1, -1),
+                extent=extent,
+                aspect=aspect,
+                interpolation=interpolation,
+            )
+            plt.colorbar(label="Temperature [K]")
+            plt.xlabel("Frequency [MHz]")
+            plt.ylabel(
+                f"Hours since {self.t_start.to_value('iso', subfmt='date_hm')}"
+            )
         plt.show()
