@@ -4,9 +4,9 @@ from lunarsky import Time
 import numpy as np
 import pytest
 
-from croissant import Beam, dpss, Rotator, Sky
+from croissant import Beam, dpss, Rotator, Simulator, Sky
 from croissant.constants import sidereal_day_earth
-from croissant.simulator import Simulator
+from croissant.simulator import time_array
 
 
 # define default params for simulator
@@ -24,33 +24,37 @@ loc = (137.0, 40.0)  # (lon, lat) in degrees
 t_start = "2022-06-10 12:59:00"
 N_times = 150
 delta_t = 3600 * units.s
+times = time_array(t_start=t_start, N_times=N_times, delta_t=delta_t)
+args = (beam, sky)
+kwargs = {"lmax": lmax, "world": "moon", "location": loc, "times": times}
 
 
-def test_simulator_init():
+def test_time_array():
+
     # check that the times are set consistently regardless of
     # which parameters that specify it
     delta_t, step = np.linspace(0, sidereal_day_earth, N_times, retstep=True)
+    delta_t = delta_t * units.s
     step = step * units.s
-    t_end = Time(t_start) + delta_t[-1] * units.s
+    t_end = Time(t_start) + delta_t[-1]
     # specify end, ntimes:
-    sim = Simulator(
-        beam, sky, loc, t_start, t_end=t_end, N_times=N_times, lmax=lmax
-    )
-    assert np.allclose(delta_t, sim.dt)
-    assert np.isclose(N_times, sim.N_times)
+    times = time_array(t_start, t_end=t_end, N_times=N_times)
+    assert np.allclose(delta_t.value, (times - times[0]).sec)
     # specify end, delta t
-    sim = Simulator(
-        beam, sky, loc, t_start, t_end=t_end, delta_t=step, lmax=lmax
-    )
-    assert np.allclose(delta_t, sim.dt)
-    assert np.isclose(N_times, sim.N_times)
+    times = time_array(t_start, t_end=t_end, delta_t=step)
+    assert np.allclose(delta_t.value, (times - times[0]).sec)
     # specify ntimes, delta t
-    sim = Simulator(
-        beam, sky, loc, t_start, N_times=N_times, delta_t=step, lmax=lmax
-    )
-    assert np.allclose(delta_t, sim.dt)
-    assert np.isclose(N_times, sim.N_times)
+    times = time_array(t_start, N_times=N_times, delta_t=step)
+    assert np.allclose(delta_t.value, (times - times[0]).sec)
+    # check that we get a UserWarning if delta t does not have units
+    delta_t = 2
+    with pytest.warns(UserWarning):
+        time_array(t_start, t_end=t_end, delta_t=delta_t)
 
+
+def test_simulator_init():
+
+    sim = Simulator(*args, **kwargs)
     # check that the simulation coords are set properly
     assert sim.sim_coord == "M"  # mcmf
     # check sky is in the desired simulation coords
@@ -60,30 +64,20 @@ def test_simulator_init():
     assert np.allclose(sim.sky.alm, sky_alm)
 
     # check that init works correcttly on earth
-    sim = Simulator(
-        beam,
-        sky,
-        loc,
-        t_start,
-        world="earth",
-        N_times=N_times,
-        delta_t=step,
-        lmax=lmax,
-    )
+    kwargs["world"] = "earth"
+    sim = Simulator(*args, **kwargs)
     assert sim.sim_coord == "C"
 
-    # check that we get a UserWarning if delta t does not have units
-    delta_t = 2
-    with pytest.warns(UserWarning):
-        Simulator(
-            beam, sky, loc, t_start, N_times=2, delta_t=delta_t, lmax=lmax
-        )
+    # check that we get a KeyError if world is not "earth" or "moon"
+    kwargs["world"] = "mars"
+    with pytest.raises(KeyError):
+        Simulator(*args, **kwargs)
+
+    kwargs["world"] = "moon"
 
 
 def test_compute_dpss():
-    sim = Simulator(
-        beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
-    )
+    sim = Simulator(*args, **kwargs)
     sim.compute_dpss(nterms=10)
     design_matrix = dpss.dpss_op(frequencies, nterms=10)
     assert np.allclose(design_matrix, sim.design_matrix)
@@ -97,6 +91,7 @@ def test_run():
     # retrieve constant temperature sky
     freq = np.linspace(1, 50, 50)  # MHz
     lmax = 16
+    kwargs["lmax"] = lmax
     sky_alm = np.zeros((freq.size, hp.Alm.getsize(lmax)), dtype=np.complex128)
     sky_alm[:, 0] = 10 * freq ** (-2.5)
     # sky is constant in space, varies like power law spectrally
@@ -107,9 +102,7 @@ def test_run():
     beam = Beam(beam_alm, lmax=lmax, frequencies=freq, coord="T")
     # beam is no longer constant after horizon cut
     beam.horizon_cut()
-    sim = Simulator(
-        beam, sky, loc, t_start, N_times=N_times, delta_t=delta_t, lmax=lmax
-    )
+    sim = Simulator(beam, sky, **kwargs)
     sim.run(dpss=False)
     beam_a00 = sim.beam[0, 0, 0]  # a00 @ freq = 1 MHz
     sky_a00 = sim.sky[0, 0, 0]  # a00 @ freq = 1 MHz
@@ -123,6 +116,7 @@ def test_run():
     assert np.allclose(sim.waterfall, np.repeat(expected_vis, N_times, axis=0))
 
     # test with nonzero m-modes
+    kwargs["times"] = None
     sky_alm = np.zeros_like(sky_alm[0])  # remove the frequency axis
     sky = Sky(sky_alm, lmax=lmax, coord="M")
     sky[0, 0] = 1e7
@@ -137,9 +131,7 @@ def test_run():
     beam[3, 1] = 1 + 2j
     beam[6, 6] = -1 - 1.34j
 
-    sim = Simulator(
-        beam, sky, loc, t_start, N_times=1, delta_t=delta_t, lmax=lmax
-    )
+    sim = Simulator(beam, sky, **kwargs)
 
     sim.run(dpss=False)
     expected_vis = (
@@ -157,9 +149,7 @@ def test_run():
     beam = Beam(beam_alm, lmax=lmax, frequencies=frequencies, coord="M")
     sky_alm = sky.alm.reshape(1, -1) * frequencies ** (-2.5)
     sky = Sky(sky_alm, lmax=lmax, frequencies=frequencies, coord="M")
-    sim = Simulator(
-        beam, sky, loc, t_start, N_times=1, delta_t=delta_t, lmax=lmax
-    )
+    sim = Simulator(beam, sky, **kwargs)
     sim.run(dpss=True, nterms=10)
     # expected output is dot product of alms in frequency space:
     sky_alm = sim.sky.alm
