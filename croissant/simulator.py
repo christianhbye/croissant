@@ -9,6 +9,58 @@ import warnings
 from . import dpss
 
 
+def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
+    """
+    Generate an array of evenly sampled times to run the simulation at.
+
+    Parameters
+    ----------
+    t_start : str or astropy.time.Time
+        The start time of the simulation.
+    t_end : str or astropy.time.Time
+        The end time of the simulation.
+    N_times : int
+        The number of times to run the simulation at.
+    delta_t : float or astropy.units.Quantity
+        The time step between each time in the simulation.
+
+    Returns
+    -------
+    times : astropy.time.Time or astropy.units.Quantity
+        The evenly sampled times to run the simulation at.
+
+    """
+
+    if t_start is not None:
+        t_start = Time(t_start, scale="utc")
+
+    try:
+        dt = np.arange(N_times) * delta_t
+    except TypeError:
+        t_end = Time(t_end, scale="utc")
+        total_time = (t_end - t_start).sec
+        if N_times is None:
+            try:
+                delta_t = delta_t.sec
+            except AttributeError:
+                warnings.warn(
+                    "delta_t is not an astropy.units.Quantity. Assuming "
+                    "units of seconds.",
+                    UserWarning,
+                )
+            dt = np.arange(0, total_time + delta_t, delta_t)
+        else:
+            dt = np.linspace(0, total_time, N_times)
+        dt = dt * units.s
+
+    if t_start is None:
+        times = dt
+    else:
+        times = t_start + dt
+
+    return times
+
+
 class Simulator:
     def __init__(
         self,
@@ -18,10 +70,7 @@ class Simulator:
         frequencies=None,
         world="moon",
         location=None,
-        t_start=None,
-        t_end=None,
-        N_times=None,
-        delta_t=None,
+        times=None,
     ):
         """
         Simulator class. Prepares and runs simulations.
@@ -51,8 +100,22 @@ class Simulator:
             lmax = np.min([lmax, beam.lmax, sky.lmax])
         self.lmax = lmax
 
-        if t_start is not None:
-            t_start = Time(t_start, location=self.location, scale="utc")
+        if times is None:
+            self.times = np.array([0])
+            t_start = None
+        elif isinstance(times, Time):
+            self.times = times
+            t_start = times[0]
+        else:
+            self.times = times
+            t_start = None
+
+        dt = self.times - self.times[0]
+        try:
+            self.dt = dt.sec
+        except AttributeError:
+            self.dt = dt
+        self.N_times = self.dt.size
 
         # initialize beam and sky
         self.beam = deepcopy(beam)
@@ -71,33 +134,6 @@ class Simulator:
             )
         if self.sky.lmax > self.lmax:
             self.sky.reduce_lmax(self.lmax)
-
-        # set up times to run the simulation at
-        try:
-            try:
-                delta_t = delta_t.sec
-            except AttributeError:
-                warnings.warn(
-                    "No units specified for delta_t, assuming seconds.",
-                    UserWarning,
-                )
-            dt = np.arange(N_times) * delta_t  # seconds
-        except TypeError:
-            t_end = Time(t_end, location=self.location, scale="utc")
-            total_time = (t_end - t_start).sec
-            if N_times is None:
-                dt = np.arange(0, total_time + delta_t, delta_t)
-                N_times = len(dt)
-            else:
-                dt, delta_t = np.linspace(0, total_time, N_times, retstep=True)
-
-        if t_start is None:
-            self.times = dt
-        else:
-            self.times = t_start + dt * units.s
-
-        self.dt = dt
-        self.N_times = N_times
 
     def compute_dpss(self, **kwargs):
         # generate the set of target frequencies (subset of all freqs)
