@@ -268,9 +268,19 @@ def test_alm_indexing():
     assert alm[5, 2] == 3.0
 
 
-@pytest.mark.skip()
 def test_reduce_lmax():
-    assert False
+    old_lmax = 10
+    new_lmax = 5
+    old_size = hp.Alm.getsize(old_lmax)
+    alm = hp.Alm(np.arange(old_size))
+    ell, emm = healpy.Alm.getlm(new_lmax)
+    ix = alm.getidx(ell, emm)
+    old_alms = alm.alm[ix]
+    alm.reduce_lmax(new_lmax)
+    assert alm.lmax == new_lmax
+    with pytest.raises(IndexError):
+        alm[7, 0]  # asking for ell > new_lmax should raise error
+    assert np.allclose(alm.alm, old_alms)
 
 
 def test_from_healpix():
@@ -329,7 +339,7 @@ def test_getidx():
     emm = 2
     bad_ell = 2 * lmax  # bigger than lmax
     bad_emm = 4  # bigger than ell
-    with pytest.raises(ValueError):
+    with pytest.raises(IndexError):
         alm.getidx(bad_ell, emm)
         alm.getidx(ell, bad_emm)
         alm.getidx(-ell, emm)  # should fail since l < 0
