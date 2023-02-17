@@ -128,4 +128,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-TODO.txt
+*.npy
+notebooks/hera_sim_test.ipynb
+notebooks/ulsa_test.ipynb

@@ -2,7 +2,32 @@ import healpy as hp
 import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 
-from . import rotations, constants
+from . import constants
+from .rotations import Rotator
+from .sphtransform import alm2map, map2alm
+
+
+def coord_rep(coord):
+    """
+    Shorthand notation for coordinate systems.
+
+    Parameters
+    ----------
+    coord : str
+        The name of the coordinate system.
+
+    Returns
+    -------
+    rep : str
+        The one-letter shorthand notation for the coordinate system.
+
+    """
+    coord = coord.upper()
+    if coord[0] == "E" and coord[1] == "Q":
+        rep = "C"
+    else:
+        rep = coord[0]
+    return rep
 
 
 def healpix2lonlat(nside, pix=None):
@@ -142,57 +167,13 @@ def grid2healpix(data, nside, theta=None, phi=None, pixel_centers=None):
     return hp_map
 
 
-def map2alm(data, lmax):
-    """
-    Compute the spherical harmonics coefficents of a healpix map.
-    """
-
-    data = np.array(data)
-    npix = data.shape[-1]
-    nside = hp.npix2nside(npix)
-    use_pix_weights = nside in constants.PIX_WEIGHTS_NSIDE
-    use_ring_weights = not use_pix_weights
-    kwargs = {
-        "lmax": lmax,
-        "mmax": lmax,
-        "use_weights": use_ring_weights,
-        "use_pixel_weights": use_pix_weights,
-    }
-    if data.ndim == 1:
-        alm = hp.map2alm(data, **kwargs)
-    else:
-        alm = np.empty(
-            (len(data), hp.Alm.getsize(lmax, mmax=lmax)), dtype=np.complex128
-        )
-        for i in range(len(data)):
-            alm[i] = hp.map2alm(data[i], **kwargs)
-    return alm
-
-
-def alm2map(alm, nside=128, mmax=None):
-    alm = np.array(alm, copy=True)
-    if alm.ndim == 1:
-        alm.shape = (1, -1)
-    nfreqs = alm.shape[0]
-    lmax = hp.Alm.getlmax(alm.shape[1], mmax=mmax)
-    if mmax is None:
-        mmax = lmax
-    npix = hp.nside2npix(nside)
-    hp_map = np.empty((nfreqs, npix))
-    for i in range(nfreqs):
-        map_i = hp.alm2map(alm[i], nside, lmax=lmax, mmax=mmax)
-        hp_map[i] = map_i
-    return np.squeeze(hp_map)
-
-
 class HealpixMap:
     def __init__(
         self,
-        data=None,
-        nside=None,
-        nested_input=False,
+        data,
+        nest=False,
         frequencies=None,
-        coords="galactic",
+        coord=None,
     ):
         """
         The base class for healpix maps. This is a wrapper that does a lot of
@@ -200,38 +181,30 @@ class HealpixMap:
         It ensures that all maps have the right shapes and provdes an
         interpolation method.
         """
-        if frequencies is not None:
-            self.frequencies = np.atleast_1d(frequencies).copy()
-        else:
+        if frequencies is None:
             self.frequencies = None
-        self.coords = coords
-
-        if data is None:
-            nested_input = False
-            self.nside = nside
         else:
-            data = np.array(data, copy=True, dtype=np.float64)
-            data.shape = (np.size(self.frequencies), -1)
-            npix = data.shape[-1]
-            self.nside = hp.npix2nside(npix)
+            self.frequencies = np.array(frequencies)
+            nfreq = self.frequencies.size
 
-        if nside is not None and nside != self.nside:
-            raise ValueError(
-                (
-                    "Mismatch between nside and data shape. The data has"
-                    f" shape {data.shape} which suggests nside = {self.nside},"
-                    f" but nside is set to {nside}."
-                )
-            )
+        if coord is None:
+            self.coord = None
+        else:
+            self.coord = coord_rep(coord)
 
-        if self.nside is not None:
-            hp.pixelfunc.check_nside(self.nside, nest=nested_input)
+        data = np.array(data, copy=True, dtype=np.float64)
+        if frequencies is not None:
+            data.shape = (nfreq, -1)
+        npix = data.shape[-1]
+        nside = hp.npix2nside(npix)
+        hp.pixelfunc.check_nside(nside, nest=nest)
+        self.nside = nside
 
-        if nested_input:
+        if nest:
             ix = hp.nest2ring(self.nside, np.arange(self.npix))
-            data = data[:, ix]
+            data = data[..., ix]
 
-        self.data = data
+        self.data = np.squeeze(data)
 
     @property
     def npix(self):
@@ -250,10 +223,39 @@ class HealpixMap:
         hp_map = alm_obj.hp_map(nside=nside)
         obj = cls(
             data=hp_map,
-            nside=nside,
-            nested_input=False,
+            nest=False,
             frequencies=alm_obj.frequencies,
-            coords=alm_obj.coords,
+            coord=alm_obj.coord,
+        )
+        return obj
+
+    @classmethod
+    def from_grid(cls, data, nside, theta, phi, frequencies=None, coord=None):
+        """
+        Construct a HealpixMap instance from data defined on a grid of points.
+        Parameters
+        ----------
+        data : array_like
+            The data defined on the grid.
+        nside : int
+            The nside of the healpix map.
+        theta : array_like
+            The theta coordinates of the grid.
+        phi : array_like
+            The phi coordinates of the grid.
+        frequencies : array_like
+            The frequencies of the grid.
+        coord : str
+            The coordinate system of the grid.
+        """
+        theta = np.array(theta, copy=True)
+        phi = np.array(phi, copy=True)
+        hp_map = grid2healpix(data, nside, theta=theta, phi=phi)
+        obj = cls(
+            data=hp_map,
+            nest=False,
+            frequencies=frequencies,
+            coord=coord,
         )
         return obj
 
@@ -271,12 +273,45 @@ class HealpixMap:
         self.data = new_map
         self.nside = nside_out
 
-    def switch_coords(self, to_coords):
-        rotated_map = rotations.rotate_map(
-            self.data, from_coords=self.coords, to_coords=to_coords
-        )
-        self.data = rotated_map
-        self.coords = to_coords
+    def switch_coords(
+        self,
+        to_coord,
+        lmax=None,
+        rot_pixel=False,
+        loc=None,
+        time=None,
+    ):
+        """
+        Switch the coordinate system of the map. This is done by rotating the
+        map in spherical harmonic space (if rot_pixel is False) or by rotating
+        the map in pixel space (if rot_pixel is True).
+
+        Parameters
+        ----------
+        to_coord : str
+            The coordinate system to switch to. Must be one of "G" (galactic),
+            "E" (ecliptic), "C" (equatorial), "M" (mcmf), or T" (topocentric).
+        lmax : int
+            The maximum l value to use for the spherical harmonic transform.
+        rot_pixel : bool
+            If True, rotate the map in pixel space. If False, rotate the map
+            in spherical harmonic space.
+        loc : tup, astropy.coordinates.EarthLocation or lunarsky.MoonLocation
+            The observation location for the topocentric coordinate system. If
+            a tuple is given, it must be able to instantiate an EarthLocation
+            or MoonLocation object.
+        time : str or astropy.time.Time
+            The observation time for the topocentric coordinate system. If a
+            string is given, it must be able to instantiate a Time object.
+
+        """
+        to_coord = coord_rep(to_coord)
+        rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
+        if rot_pixel:
+            self.data = rot.rotate_map_pixel(self.data)
+        else:
+            self.data = rot.rotate_map_alms(self.data, lmax=lmax)
+        self.coord = to_coord
 
     def alm(self, lmax=None):
         """
@@ -284,18 +319,14 @@ class HealpixMap:
         """
         if lmax is None:
             lmax = 3 * self.nside - 1
-        return map2alm(self.data, lmax)
+        return map2alm(self.data, lmax=lmax)
 
     def plot(self, frequency=None, **kwargs):
         """
         Simple plotter of healpix maps. Can plot in several projections,
         including ``mollweide'', ``cartesian'' and ``polar''.
         """
-        if self.data.ndim == 2 and self.frequencies is None:
-            _m = self.data[0]
-        else:
-            _m = self.data
-        m = kwargs.pop("m", _m)
+        m = kwargs.pop("m", self.data)
         title = None
         if self.frequencies is not None:
             if frequency is None:
@@ -309,84 +340,70 @@ class HealpixMap:
 
 
 class Alm(hp.Alm):
-    def __init__(
-        self, alm=None, lmax=None, frequencies=None, coords="galactic"
-    ):
+    def __init__(self, alm, lmax=None, frequencies=None, coord=None):
         """
         Base class for spherical harmonics coefficients.
 
         Alm can be indexed with [freq_index, ell, emm] to get the
         coeffiecient corresponding to the given frequency index, and values of
-        ell and emm. The frequencies can be index in the usual numpy way and
+        ell and emm. The frequencies can be indexed in the usual numpy way and
         may be 0 if the alms are specified for only one frequency.
 
         """
-        if alm is None and lmax is None:
-            raise ValueError("Specify at least one of lmax and alm.")
-
-        self.frequencies = np.ravel(frequencies).copy()
-        if alm is None:
-            self.lmax = lmax
-            self.all_zero()
-        elif lmax is None:
-            alm = np.array(alm, copy=True, dtype=np.complex128)
-            self.alm = alm.reshape(self.frequencies.size, -1)
-            self.lmax = super().getlmax(alm.shape[1])
+        alm = np.array(alm, copy=True, dtype=np.complex128)
+        if frequencies is None:
+            self.frequencies = None
+            self.alm = alm
         else:
-            self.lmax = lmax
-            alm = np.array(alm, copy=True, dtype=np.complex128)
-            self.alm = alm.reshape(*self.shape)
-
-        self.coords = coords
+            self.frequencies = np.array(frequencies)
+            alm.reshape(self.frequencies.size, -1)
+            self.alm = alm
+        try:
+            self.lmax = np.min([lmax, self.getlmax])
+        except TypeError:  # lmax is None
+            self.lmax = self.getlmax
+        if coord is None:
+            self.coord = None
+        else:
+            self.coord = coord_rep(coord)
 
     def __setitem__(self, key, value):
         """
         Set the value of the alm given the frequency index and the values of
         ell and emm.
         """
-        # if alm only has one frequency, it doesn't matter if the freq_idx is
-        # not specified:
-        if self.shape[0] == 1 and len(key) == 2:
-            ell, emm = key
-            key = [0, ell, emm]
-        if len(key) != 3:
-            raise IndexError(
-                f"Key has length {len(key)}, but must have length 3 to specify"
-                " frequency index, ell, and emm."
-            )
-        freq_idx, ell, emm = key
+        if not len(key) == self.alm.ndim + 1:
+            raise IndexError("Number of indices must be alm.ndim + 1.")
+        ell, emm = key[-2:]
         ix = self.getidx(ell, emm)
-        self.alm[freq_idx, ix] = value
+        if self.alm.ndim == 1:
+            self.alm[ix] = value
+        else:
+            freq_idx = key[0]
+            self.alm[freq_idx, ix] = value
 
     def __getitem__(self, key):
-        # if alm only has one frequency, it doesn't matter if the freq_idx is
-        # not specified:
-        if self.shape[0] == 1 and len(key) == 2:
-            ell, emm = key
-            key = [0, ell, emm]
-        if len(key) != 3:
-            raise IndexError(
-                f"Key has length {len(key)}, but must have length 3 to specify"
-                " frequency index, ell, and emm."
-            )
-        freq_idx, ell, emm = key
+        if not len(key) == self.alm.ndim + 1:
+            raise IndexError("Number of indices must be alm.ndim + 1.")
+        ell, emm = key[-2:]
         ix = self.getidx(ell, np.abs(emm))
-        coeff = self.alm[freq_idx, ix]
+        if self.alm.ndim == 1:
+            coeff = self.alm[ix]
+        else:
+            freq_idx = key[0]
+            coeff = self.alm[freq_idx, ix]
         if emm < 0:
             coeff = (-1) ** emm * coeff.conj()
         return coeff
 
-    def all_zero(self):
-        self.alm = np.zeros(self.shape, dtype=np.complex128)
-
-    @property
-    def shape(self):
+    def reduce_lmax(self, new_lmax):
         """
-        Get the expected shape of the spherical harmonics.
+        Reduce the maximum l value of the alm.
         """
-        Nfreq = self.frequencies.size
-        shape = (Nfreq, self.size)
-        return shape
+        ells, emms = super().getlm(new_lmax)
+        ix = self.getidx(ells, emms)
+        self.alm = self.alm[..., ix]
+        self.lmax = new_lmax
 
     @classmethod
     def from_healpix(cls, hp_obj, lmax=None):
@@ -400,36 +417,67 @@ class Alm(hp.Alm):
             alm=alm,
             lmax=lmax,
             frequencies=hp_obj.frequencies,
-            coords=hp_obj.coords,
+            coord=hp_obj.coord,
         )
         return obj
 
     @classmethod
-    def from_angles(
+    def from_grid(
         cls,
         data,
         theta,
         phi,
+        lmax,
+        nside=128,
         frequencies=None,
-        lmax=None,
-        coords="topographic",
+        coord=None,
     ):
         """
-        Construct an Alm from a grid in theta and phi.
-        """
-        raise NotImplementedError
+        Construct an Alm from a grid in theta and phi. This function first
+        interpolates the data onto a Healpix grid, then converts the data to
+        spherical harmonics using healpy.
 
-    def switch_coords(self, to_coords):
-        rotated_alm = rotations.rotate_alm(
-            self.alm, from_coords=self.coords, to_coords=to_coords
+        Parameters
+        ----------
+        data : array_like
+            The data to be converted to spherical harmonics. Must have shape
+            (Nfreq, Ntheta, Nphi) or (Ntheta, Nphi).
+        theta : array_like
+            The theta values of the data. Must have shape (Ntheta,).
+        phi : array_like
+            The phi values of the data. Must have shape (Nphi,).
+        lmax : int
+            The maximum value of ell to use in the spherical harmonics.
+        nside : int
+            The nside of the Healpix grid to use for the interpolation.
+        frequencies : array_like
+            The frequencies corresponding to the data. Must have shape
+            (Nfreq,).
+        coord : str
+            The coordinate system of the data.
+
+        """
+        theta = np.array(theta, copy=True)
+        phi = np.array(phi, copy=True)
+        hp_map = grid2healpix(data, nside, theta=theta, phi=phi)
+        alm = map2alm(hp_map, lmax=lmax)
+        obj = cls(
+            alm=alm,
+            lmax=lmax,
+            frequencies=frequencies,
+            coord=coord,
         )
-        self.alm = rotated_alm
-        self.coords = to_coords
+        return obj
+
+    def switch_coords(self, to_coord, loc=None, time=None):
+        to_coord = coord_rep(to_coord)
+        rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
+        rot.rotate_alm(self.alm, lmax=self.lmax, inplace=True)
+        self.coord = to_coord
 
     def getlm(self, i=None):
         """
-        Get the ell and emm corresponding to the numpy index of the alm
-        array.
+        Get the ell and emm corresponding to the index of the alm array.
         """
         return super().getlm(self.lmax, i=i)
 
@@ -437,8 +485,8 @@ class Alm(hp.Alm):
         """
         Get the index of the alm array for a given ell and emm.
         """
-        if not (0 <= emm <= ell <= self.lmax):
-            raise ValueError("Ell or emm are out of bounds.")
+        if not ((0 <= emm) & (emm <= ell) & (ell <= self.lmax)).all():
+            raise IndexError("Ell or emm are out of set by m <= l <= lmax.")
         return super().getidx(self.lmax, ell, emm)
 
     @property
@@ -446,54 +494,60 @@ class Alm(hp.Alm):
         """
         Get the size of the alm array.
         """
-        return super().getsize(self.lmax, mmax=self.lmax)
+        return super().getsize(self.lmax)
 
     @property
     def getlmax(self):
         """
         Get the maxmium ell of the Alm object.
         """
-        return self.lmax
+        if not hasattr(self, "lmax") or self.lmax is None:
+            return super().getlmax(self.alm.shape[-1])
+        else:
+            return self.lmax
 
-    def hp_map(self, nside=64):
+    def hp_map(self, nside):
         """
         Construct a healpy map from the Alm.
         """
-        return alm2map(self.alm, nside=nside, mmax=None)
+        return alm2map(self.alm, nside=nside, lmax=self.lmax)
 
-    def rotate_alm_angle(self, phi):
+    def rot_alm_z(self, phi=None, times=None, world="moon"):
         """
         Get the coefficients that rotate the alms around the z-axis by phi
-        (measured counterclockwise).
+        (measured counterclockwise) or in time.
 
         Parameters
         ----------
         phi : array-like
             The angle(s) to rotate the azimuth by in radians.
+        times : array-like
+            The times to rotate the azimuth by in seconds. If given, phi will
+            be ignored and the rotation angle will be calculated from the
+            times and the sidereal day of the world.
+        world : str
+            The world to use for the sidereal day. Must be 'moon' or 'earth'.
 
         Returns
         -------
         phase : np.ndarray
-            The coefficients that rotate the alms by phi. Will have shape
-            (phi.size, 1, alm.size) to be broadcastable with alm shapes.
+            The coefficients (shape = (phi.size, alm.size) that rotate the
+            alms by phi.
 
         """
-        phi = np.ravel(phi)
-        phase = rotations.rot_alm_z(phi, self.lmax)
-        phase.shape = (phi.size, 1, self.size)
-        return phase
+        if times is not None:
+            if world.lower() == "moon":
+                sidereal_day = constants.sidereal_day_moon
+            elif world.lower() == "earth":
+                sidereal_day = constants.sidereal_day_earth
+            else:
+                raise ValueError(
+                    f"World must be 'moon' or 'earth', not {world}."
+                )
+            phi = 2 * np.pi * times / sidereal_day
+            return self.rot_alm_z(phi=phi, times=None)
 
-    def rotate_alm_time(self, times, world="moon"):
-        """
-        Rotate alms in time counterclockwise around the z-axis.
-        """
-        world = world.lower()
-        if world == "moon":
-            sidereal_day = constants.sidereal_day_moon
-        elif world == "earth":
-            sidereal_day = constants.sidereal_day_earth
-        else:
-            raise ValueError(f"World must be 'moon' or 'earth', not {world}.")
-        dphi = 2 * np.pi * times / sidereal_day
-        phase = self.rotate_alm_angle(dphi)
-        return phase
+        phi = np.ravel(phi).reshape(-1, 1)
+        emms = self.getlm()[1].reshape(1, -1)
+        phase = np.exp(-1j * emms * phi)
+        return np.squeeze(phase)

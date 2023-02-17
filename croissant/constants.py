@@ -1,7 +1,7 @@
 import numpy as np
 
 # nside's for which healpix has computed pixel weights:
-PIX_WEIGHTS_NSIDE = [32, 64, 128, 256, 512, 1024, 2048, 4096]
+PIX_WEIGHTS_NSIDE = (32, 64, 128, 256, 512, 1024, 2048, 4096)
 
 # sidereal days in seconds
 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html

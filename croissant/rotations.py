@@ -1,443 +1,276 @@
-from astropy.coordinates import AltAz, EarthLocation, ICRS
-from astropy import units
+from astropy.coordinates import AltAz, EarthLocation
 import healpy as hp
-from lunarsky import LunarTopo, MCMF, MoonLocation, Time
+from lunarsky import LunarTopo, MoonLocation, SkyCoord
 import numpy as np
-from spiceypy import pxform
 
-from .constants import PIX_WEIGHTS_NSIDE
+from .sphtransform import map2alm, alm2map
 
 
-def topo2radec(theta, phi, time, loc, grid=True):
+def get_rot_mat(from_frame, to_frame):
     """
-    Convert topocentric coordinates to ra/dec at given time. Useful for
-    antenna beams.
+    Get the rotation matrix that transforms from one frame to another.
 
     Parameters
     ----------
-    phi : array-like
-        The azimuth(s) in radians.
-    theta : array-like
-        The zenith angle(s) in radians.
-    time : array-like, str, or Time instance
-        The time to compute the transformation at. Must be able to initialize
-        an astropy.time.Time object.
-    loc : array-like (lat, lon, alt) or EarthLocation instance
-        The location of the topocentric coordinates. Must be able to initialize
-        an astropy.coordinates.EarthLocation object.
-    grid : bool
-        If True then phi and theta are assumed to be coordinate axes of a grid.
-        This has no effect if phi and theta have size 1.
+    from_frame : str or astropy frame
+        The coordinate frame to transform from.
+    to_frame : str or astropy frame
+        The coordinate frame to transform to.
 
     Returns
     -------
-    ra : np.ndarray
-        The right acension(s) in degrees.
-    dec : np.ndarray
-        The declination(s) in degrees.
+    rmat : np.ndarray
+        The rotation matrix.
 
     """
-    phi = np.ravel(phi)
-    theta = np.ravel(theta)
-    if grid:  # phi and theta are coordinate axis
-        phi, theta = np.meshgrid(phi, theta)
-        phi = phi.ravel()
-        theta = theta.ravel()
-    # Allow loc to be earth location object and time to be Time object
-    if not isinstance(loc, EarthLocation):
-        lat, lon, alt = loc
-        loc = EarthLocation(
-            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
-        )
-
-    time = Time(time, scale="utc", location=loc)
-    azs = phi * units.rad
-    alts = (np.pi / 2 - theta) * units.rad
-    altaz = AltAz(alt=alts, az=azs, location=loc, obstime=time)
-    icrs = altaz.transform_to(ICRS())
-    ra = icrs.ra.deg
-    dec = icrs.dec.deg
-    return ra, dec
-
-
-def radec2topo(ra, dec, time, loc):
-    """
-    Convert ra/dec-combination(s) to topocentric coordinates.
-
-    Parameters
-    ----------
-    ra : array-like
-        The right ascension(s) in degrees.
-    dec : array-like
-        The declination(s) in degrees.
-    time : array-like, str, or Time instance
-        The time to compute the transformation at. Must be able to initialize
-        an astropy.time.Time object.
-    loc : array-like (lat, lon, alt) or EarthLocation instance
-        The location of the topocentric coordinates. Must be able to initialize
-        an astropy.coordinates.EarthLocation object.
-
-    Returns
-    -------
-    theta : np.ndarray
-        Colatitudes in radians.
-    phi : np.ndarray
-        Azimuths in radians.
-
-    """
-    if not isinstance(loc, EarthLocation):
-        lat, lon, alt = loc
-        loc = EarthLocation(
-            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
-        )
-
-    time = Time(time, scale="utc", location=loc)
-
-    icrs = ICRS(ra=ra * units.deg, dec=dec * units.deg)
-    # transform to altaz
-    altaz = icrs.transform_to(AltAz(location=loc, obstime=time))
-    theta = np.pi / 2 - altaz.alt.rad
-    phi = altaz.az.rad
-    return theta, phi
-
-
-def topo2mcmf(theta, phi, time, loc, grid=True):
-    """
-    Convert topocentric coordinates to mcmf at given time. Useful for
-    antenna beams.
-
-    Parameters
-    ----------
-    phi : array-like
-        The azimuth(s) in radians.
-    theta : array-like
-        The zenith angle(s) in radians.
-    time : array-like, str, or Time instance
-        The time to compute the transformation at. Must be able to initialize
-        an astropy.time.Time object.
-    loc : array-like (lat, lon, alt) or EarthLocation instance
-        The location of the topocentric coordinates. Must be able to initialize
-        an astropy.coordinates.EarthLocation object.
-    grid : bool
-        If True then phi and theta are assumed to be coordinate axes of a grid.
-        This has no effect if phi and theta have size 1.
-
-    Returns
-    -------
-    lon : np.ndarray
-        MCMF longtitude in degrees.
-    lat : np.ndarray
-        MCMF latitude in degrees.
-
-    """
-    phi = np.ravel(phi)
-    theta = np.ravel(theta)
-    if grid:  # phi and theta are coordinate axis
-        phi, theta = np.meshgrid(phi, theta)
-        phi = phi.ravel()
-        theta = theta.ravel()
-    # Allow loc to be earth location object and time to be Time object
-    if not isinstance(loc, MoonLocation):
-        lat, lon, alt = loc
-        loc = MoonLocation(
-            lat=lat * units.deg, lon=lon * units.deg, height=alt * units.m
-        )
-
-    time = Time(time, scale="utc", location=loc)
-    azs = phi * units.rad
-    alts = (np.pi / 2 - theta) * units.rad
-    altaz = LunarTopo(alt=alts, az=azs, location=loc, obstime=time)
-    mcmf = altaz.transform_to(MCMF())
-    lon = mcmf.spherical.lon.deg
-    lat = mcmf.spherical.lat.deg
-    return lon, lat
-
-
-def mcmf2topo(lon, lat, time, loc):
-    """
-    Convert ra/dec-combination(s) to topocentric coordinates.
-
-    Parameters
-    ----------
-    lon : array-like
-        Longtitude in degrees.
-    lat : array-like
-        Latitude in degrees.
-    time : array-like, str, or Time instance
-        The time to compute the transformation at. Must be able to initialize
-        an astropy.time.Time object.
-    loc : array-like (lat, lon, alt) or EarthLocation instance
-        The location of the topocentric coordinates. Must be able to initialize
-        an astropy.coordinates.EarthLocation object.
-
-    Returns
-    -------
-    theta : np.ndarray
-        Colatitudes in radians.
-    phi : np.ndarray
-        Azimuths in radians.
-
-    """
-    if not isinstance(loc, MoonLocation):
-        obs_lat, obs_lon, alt = loc
-        loc = MoonLocation(
-            lat=obs_lat * units.deg,
-            lon=obs_lon * units.deg,
-            height=alt * units.m,
-        )
-
-    time = Time(time, scale="utc", location=loc)
-
-    mcmf = MCMF(
-        lon=lon * units.deg,
-        lat=lat * units.deg,
-        representation_type="spherical",
+    # cannot instantiate a SkyCoord with a gaalctic frame from cartesian
+    from_name = from_frame.name if hasattr(from_frame, "name") else from_frame
+    if from_name.lower() == "galactic":
+        from_frame = to_frame
+        to_frame = "galactic"
+        return_inv = True
+    else:
+        return_inv = False
+    x, y, z = np.eye(3)  # unit vectors
+    sc = SkyCoord(
+        x=x, y=y, z=z, frame=from_frame, representation_type="cartesian"
     )
-
-    # transform to altaz
-    altaz = mcmf.transform_to(LunarTopo(location=loc, obstime=time))
-    theta = np.pi / 2 - altaz.alt.rad
-    phi = altaz.az.rad
-    return theta, phi
+    rmat = sc.transform_to(to_frame).cartesian.xyz.value
+    if return_inv:
+        rmat = rmat.T
+    return rmat
 
 
-def rot_coords(
-    axis1, axis2, from_coords, to_coords, time=None, loc=None, lonlat=False
-):
+def rotmat_to_euler(mat):
     """
-    Wrapper for the other coordinate transform functions. Rotates coordinates
-    from one coordinate system to another.
-    Supported coordinate system conversions are
-        topocentric <-> mcmf (asssumed topocentric at a MoonLocation)
-        topocentric <-> equatorial  (topocenric at an EarthLocation)
+    Convert a rotation matrix to Euler angles in the ZYX convention. This is
+    sometimes referred to as Tait-Bryan angles X1-Y2-Z3.
 
     Parameters
     ----------
-    axis1 : 1d-array
-        Colatitudes in radians (if lonlat = False) or longtitudes in degrees
-        (if lonlat = True).
-
-    axis2 : 1d-array
-        Azimuth angles in radians (if lonlat = False) or latitudes in degrees
-        (if lonlat = True).
-
-    from_coords : str
-        Coordinate system to transform from.
-
-    to_coords : str
-        Coordinate system to transform to.
-
-    time : str or astropy.time.Time instance or lunarsky.time.Time instance
-        The time of the coordinate transform. Must be able to initialize a Time
-        object. Required if transforming to or from topocentric coordinates.
-
-    loc: array-like (lat, lon, alt) or astropy.coordinates.EarthLocation
-         instance or lunarsky.moon.MoonLocation instance
-        The location of the coordinate transform. Required if transforming
-        to or from topocentric coordinates. If array-like it must have the
-        form (latitude, longtitude, altitude).
-
-    lonlat : bool
-        If True, input and out are longtitudes and latitudes in degrees.
-        Otherwise, they are colatitudes (polar angle) and azimuths in radians.
+    mat : np.ndarray
+        The rotation matrix.
 
     Returns
-    -------
-    rot_axis1 : np.1darray
-        Colatitudes in radians in new coordinate system (if lonlat = False) or
-        longtitudes in degrees (in lonlat = True).
-
-    rot_axis2: np.1darray
-        Azimuths in radians in new coordinate system (if lonlat = False) or
-        latitudes in degrees (if lonlat = True).
+    --------
+    eul : tup
+        The Euler angles.
 
     """
-    from_coords = from_coords.lower()
-    to_coords = to_coords.lower()
+    beta = np.arcsin(mat[0, 2])
+    alpha = np.arctan2(mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta))
+    gamma = np.arctan2(mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta))
+    eul = (gamma, beta, alpha)
+    return eul
 
-    if from_coords == to_coords:
-        return axis1, axis2
 
-    elif from_coords == "topocentric":
-        if to_coords == "equatorial":
-            func = topo2radec
-        elif to_coords == "mcmf":
-            func = topo2mcmf
+class Rotator(hp.Rotator):
+    def __init__(
+        self,
+        rot=None,
+        coord=None,
+        inv=None,
+        deg=True,
+        eulertype="ZYX",
+        loc=None,
+        time=None,
+    ):
+        """
+        Subclass of healpy Rotator that adds functionality to transform to
+        topocentric and moon centric coordinate systems. In addition, it can
+        rotate lists of maps or alms.
+
+        The allowed coordinate transforms are:
+        - ecliptic <--> equatorial <--> galactic <--> mcmf
+        - equatorial <--> topocentric (on earth)
+        - mcmf <--> topocentric (on moon)
+
+        Parameters
+        ----------
+        rot : sequence of floats
+            Euler angles in degrees (or radians if deg=False) describing the
+            rotation. The order of the angles depends on the value of
+            eulertype.
+        coord : sequence of strings
+            Coordinate systems to rotate between. Supported values are
+            "G" (galactic), "C" (equatorial), "E" (ecliptic), "M" (MCMF),
+            "T" (topocentric). The order of the strings determines the order
+            of the rotation. For example, coord=['G', 'C'] will rotate from
+            galactic to equatorial coordinates.
+        inv : bool
+            If True, the inverse rotation is performed.
+        deg : bool
+            If True, the Euler angles are in degrees.
+        eulertype : str
+            The order of the Euler angles. Supported values are "ZYX"
+            (default), "X", and "Y".
+        loc : tup, astropy.coordinates.EarthLocation, or lunarsky.MoonLocation
+            The location of the observer. If a tuple is provided, it must be
+            able to instantiate an astropy.coordinates.EarthLocation object
+            (on Earth) or a lunarsky.MoonLocation object (on the Moon).
+        time : str, astropy.time.Time, or lunarsky.Time
+            The time of the coordinate transform. If a string is provided, it
+            must be able to instantiate an astropy.time.Time object (on Earth)
+            or a lunarsky.Time object (on the Moon).
+
+        """
+        EUL_TYPES = ["ZYX", "X", "Y"]  # types supported by healpy
+        # healpy does not warn about this but silently defaults to "ZYX"
+        if eulertype not in EUL_TYPES:
+            raise ValueError(f"eulertype must be in {EUL_TYPES}")
+        # astropy frames (consistent with healpy)
+        FRAMES = {
+            "G": "galactic",
+            "C": "fk5",
+            "E": "BarycentricMeanEcliptic",
+            "M": "mcmf",
+        }
+
+        if coord is not None:
+            coord = [c.upper() for c in coord]
+            if len(coord) != 2:
+                raise ValueError("coord must be a sequence of length 2")
+            if "T" in coord:  # topocentric
+                if loc is None or time is None:
+                    raise ValueError(
+                        "loc and time must be provided if coord contains 'T'"
+                    )
+                if "M" in coord:  # on moon
+                    if isinstance(loc, tuple):
+                        loc = MoonLocation(*loc)
+                    from_frame = FRAMES["M"]
+                    to_frame = LunarTopo(location=loc, obstime=time)
+                elif "C" in coord:  # on earth
+                    if isinstance(loc, tuple):
+                        loc = EarthLocation(*loc)
+                    from_frame = FRAMES["C"]
+                    to_frame = AltAz(location=loc, obstime=time)
+                else:
+                    raise ValueError(
+                        "Can only transform between topocentric and "
+                        "equatorial/mcmf"
+                    )
+
+                if coord[0] == "T":  # transforming from T
+                    inv = not inv
+            else:
+                from_frame = FRAMES[coord[0]]
+                to_frame = FRAMES[coord[1]]
+            convmat = get_rot_mat(from_frame, to_frame)
+            if rot is None:
+                rot = rotmat_to_euler(convmat)
+            else:  # combine the coordinate transform with rotation
+                rotmat = hp.rotator.get_rotation_matrix(
+                    rot, deg=deg, eulertype=eulertype
+                )[0]
+                rot = rotmat_to_euler(rotmat @ convmat)
+            eulertype = "ZYX"
+            deg = False
+            coord = None
+
+        super().__init__(
+            rot=rot, coord=coord, inv=inv, deg=deg, eulertype=eulertype
+        )
+
+    def rotate_alm(self, alm, lmax=None, inplace=False):
+        """
+        Rotate an alm or a list of alms.
+
+        Parameters
+        ----------
+        alm : array_like
+            The alm or list of alms to rotate.
+        lmax : int
+            The maximum ell value to rotate.
+        inplace : bool
+            If True, the alm is rotated in place. Otherwise, a copy is
+            rotated and returned.
+
+        Returns
+        -------
+        rotated_alm : array_like
+            The rotated alm or list of alms. This is only returned if
+            inplace=False.
+
+        """
+        if inplace:
+            rotated_alm = alm
+        else:
+            rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
+
+        if rotated_alm.ndim == 1:
+            super().rotate_alm(rotated_alm, lmax=lmax, inplace=True)
+        elif rotated_alm.ndim == 2:
+            # iterate over the list of alms
+            for i in range(len(rotated_alm)):
+                super().rotate_alm(rotated_alm[i], lmax=lmax, inplace=True)
         else:
             raise ValueError(
-                "Coordinate transform must be topocentric <-> equatorial or "
-                f"topocentric <-> mcmf, not {from_coords} to {to_coords}."
+                f"alm must have 1 or 2 dimensions, not {alm.ndim}."
             )
 
-        if lonlat:
-            phi = np.deg2rad(axis1)
-            theta = np.pi / 2 - np.deg2rad(axis2)
+        if not inplace:
+            return rotated_alm
+
+    def rotate_map_alms(self, m, lmax=None, inplace=False):
+        """
+        Rotate a map or a list of maps in spherical harmonics space.
+
+        Parameters
+        ----------
+        m : array-like
+            The map or list of maps to rotate.
+        lmax : int
+            The maximum ell value to rotate.
+        inplace : bool
+            If True, the map is rotated in place. Otherwise, a copy is
+            rotated and returned.
+
+        Returns
+        -------
+        rotated_m : np.ndarray
+            The rotated map or list of maps. This is only returned if
+            inplace=False.
+
+        """
+        npix = m.shape[-1]
+        nside = hp.npix2nside(npix)
+        alm = map2alm(m, lmax=lmax)
+        self.rotate_alm(alm, lmax=lmax, inplace=True)
+        rotated_m = alm2map(alm, nside, lmax=lmax)
+        if inplace:
+            m = rotated_m
         else:
-            theta = axis1
-            phi = axis2
-        ra, dec = func(theta, phi, time, loc, grid=False)
-        if lonlat:
-            return ra, dec
+            return rotated_m
+
+    def rotate_map_pixel(self, m, inplace=False):
+        """
+        Rotate a map or a list of maps in pixel space.
+
+        Parameters
+        -----------
+        m : array-like
+            The map or list of maps to rotate.
+        inplace : bool
+            If True, the map is rotated in place. Otherwise, a copy is
+            rotated and returned.
+
+        Returns
+        -------
+        rotated_m : np.ndarray
+            The rotated map or list of maps. This is only returned if
+            inplace=False.
+
+        """
+        if m.ndim == 1:
+            rotated_m = super().rotate_map_pixel(m)
+        elif m.ndim == 2:
+            rotated_m = np.empty_like(m)
+            for i in range(len(m)):
+                rotated_m[i] = super().rotate_map_pixel(m[i])
         else:
-            rot_axis1 = np.pi / 2 - np.deg2rad(dec)
-            rot_axis2 = np.deg2rad(ra)
-            return rot_axis1, rot_axis2
-
-    elif to_coords == "topocentric":
-        if from_coords == "equatorial":
-            func = radec2topo
-        elif from_coords == "mcmf":
-            func = mcmf2topo
+            raise ValueError(f"m must have 1 or 2 dimensions, not {m.ndim}.")
+        if inplace:
+            m = rotated_m
         else:
-            raise ValueError(
-                "Coordinate transform must be topocentric <-> equatorial or "
-                f"topocentric <-> mcmf, not {from_coords} to {to_coords}."
-            )
-
-        if lonlat:
-            ra = axis1
-            dec = axis2
-        else:
-            dec = 90 - np.rad2deg(axis1)
-            ra = np.rad2deg(axis2)
-        theta, phi = func(ra, dec, time, loc)
-        if lonlat:
-            rot_axis1 = np.rad2deg(phi)
-            rot_axis2 = 90 - np.rad2deg(theta)
-            return rot_axis1, rot_axis2
-        else:
-            return theta, phi
-
-
-def get_euler(from_coords="galactic", to_coords="mcmf", time=None):
-    """
-    Compute the (ZYX) Euler angles needed to describe a rotation between MCMF,
-    galactic and equatorial coordinates.
-
-    Parameters
-    ----------
-    time : str or astropy.timing.Time instance
-        The time of the coordinate transform.
-
-    from_coords : str (optional)
-        Coordinate system to convert from.
-
-    to_coords : str (optional)
-        Coordinate system to convert to.
-
-    Returns
-    -------
-    euler_angles : tup
-        The ZYX Euler angles in radians that describe the coordinate
-        transformation.
-
-    """
-    fc = from_coords.lower()
-    tc = to_coords.lower()
-    coords = {"galactic": "GALACTIC", "equatorial": "J2000", "mcmf": "MOON_ME"}
-    if fc not in coords or tc not in coords:
-        raise ValueError(
-            f"Invalid coordinate system name, must be in {list(coords.keys())}"
-        )
-    if time is None:
-        et = 0
-    else:  # get epoch time
-        et = Time(time) - Time("J2000", scale="tt")
-        et = et.sec
-    # rotation matrix
-    rot_mat = pxform(coords[fc], coords[tc], et)
-    # get euler angles
-    beta = -np.arcsin(rot_mat[0, 2])
-    alpha = np.arctan2(
-        rot_mat[1, 2] / np.cos(beta), rot_mat[2, 2] / np.cos(beta)
-    )
-    gamma = np.arctan2(
-        rot_mat[0, 1] / np.cos(beta), rot_mat[0, 0] / np.cos(beta)
-    )
-    euler_angles = (gamma, -beta, alpha)
-    return euler_angles
-
-
-def hp_rotate(from_coords, to_coords, time=None):
-    """
-    Parameters
-    ----------
-    time : str or astropy.timing.Time instance
-        The time of the coordinate transform.
-    """
-    hp_coords = {"galactic": "G", "equatorial": "C"}
-    fc = from_coords.lower()
-    tc = to_coords.lower()
-    if "mcmf" in [fc, tc]:
-        euler_angles = get_euler(from_coords=fc, to_coords=tc, time=time)
-        rot = hp.Rotator(rot=euler_angles, deg=False, eulertype="ZYX")
-    elif fc in hp_coords and tc in hp_coords:
-        rot = hp.Rotator(coord=[hp_coords[fc], hp_coords[tc]])
-    else:
-        raise ValueError(
-            f"Invalid coordinate system, must be in {list(hp_coords.keys())}"
-        )
-    return rot
-
-
-def rotate_map(sky_map, from_coords="galactic", to_coords="mcmf"):
-    rot = hp_rotate(from_coords, to_coords)
-    sky_map = np.array(sky_map, copy=True, dtype=np.float64)
-    npix = sky_map.shape[-1]
-    nside = hp.npix2nside(npix)
-    use_pix_weights = nside in PIX_WEIGHTS_NSIDE
-    if sky_map.ndim == 1:
-        rotated_map = rot.rotate_map_alms(
-            sky_map, use_pixel_weights=use_pix_weights
-        )
-    elif sky_map.ndim == 2:
-        rotated_map = np.empty_like(sky_map)
-        for i, m in enumerate(sky_map):  # each frequency
-            rm = rotate_map(m, from_coords=from_coords, to_coords=to_coords)
-            rotated_map[i] = rm
-    else:
-        raise ValueError("sky_map must be a 1d map or a (2d) list of maps.")
-    return rotated_map
-
-
-def rotate_alm(alm, from_coords="galactic", to_coords="mcmf"):
-    rot = hp_rotate(from_coords, to_coords)
-    alm = np.array(alm, copy=True, dtype=np.complex128)
-    if alm.ndim == 1:
-        rotated_alm = rot.rotate_alm(alm)
-    elif alm.ndim == 2:
-        rotated_alm = np.empty_like(alm)
-        for i, a in enumerate(alm):  # for each frequency
-            rotated_alm[i] = rotate_alm(
-                a, from_coords=from_coords, to_coords=to_coords
-            )
-    else:
-        raise ValueError(f"alm must have 1 or 2 dimensions, not {alm.ndim}.")
-    return rotated_alm
-
-
-def rot_alm_z(phi, lmax):
-    """
-    Get the coefficients that rotate alms around the z-axis by phi
-    (measured counterclockwise).
-
-    Parameters
-    ----------
-    phi : array-like
-        The angle(s) to rotate the azimuth by in radians.
-    lmax : int
-        The maximum ell of the alm.
-
-    Returns
-    -------
-     phase : np.ndarray
-        The coefficients that rotate the alms by phi. Will have shape
-        (alm.size) if phi is a scalar or (phi.size, alm.size) if phi
-        is an array.
-
-    """
-
-    phi = np.reshape(phi, (-1, 1))
-    emms = hp.Alm.getlm(lmax)[1].reshape(1, -1)
-    phase = np.exp(1j * emms * phi)
-    return np.squeeze(phase)
+            return rotated_m
