@@ -1,6 +1,8 @@
 from astropy import units
+from astropy.coordinates import EarthLocation
+from copy import deepcopy
 import healpy as hp
-from lunarsky import Time
+from lunarsky import MoonLocation, Time
 import numpy as np
 import pytest
 
@@ -46,6 +48,8 @@ def test_time_array():
     # specify ntimes, delta t
     times = time_array(t_start, N_times=N_times, delta_t=step)
     assert np.allclose(delta_t.value, (times - times[0]).sec)
+    times = time_array(N_times=N_times, delta_t=step)
+    assert np.allclose(times, np.arange(N_times) * step)
     # check that we get a UserWarning if delta t does not have units
     delta_t = 2
     with pytest.warns(UserWarning):
@@ -55,18 +59,47 @@ def test_time_array():
 def test_simulator_init():
 
     sim = Simulator(*args, **kwargs)
-    # check that the simulation coords are set properly
+    # check that the simulation attributes are set properly
     assert sim.sim_coord == "M"  # mcmf
+    assert sim.location == MoonLocation(*loc)
     # check sky is in the desired simulation coords
     assert sim.sky.coord == sim.sim_coord
     rot = Rotator(coord="gm")
     sky_alm = rot.rotate_alm(sky.alm, lmax=sky.lmax)
     assert np.allclose(sim.sky.alm, sky_alm)
 
-    # check that init works correcttly on earth
+    # test lmax
+    beam_lmax = 10  # smaller than sky lmax
+    beam2 = deepcopy(beam)
+    beam2.reduce_lmax(beam_lmax)
+    sim = Simulator(beam2, sky, **kwargs)
+    assert sim.lmax == np.min([sky.lmax, beam2.lmax]) == beam_lmax
+    assert sim.beam.lmax == sim.sky.lmax == sim.lmax
+    kwargs["lmax"] = None
+    sim = Simulator(beam2, sky, **kwargs)
+    assert sim.lmax == np.min([sky.lmax, beam2.lmax]) == beam_lmax
+    assert sim.beam.lmax == sim.sky.lmax == sim.lmax
+    kwargs["lmax"] = lmax
+
+    # use a Location object instead of a tuple
+    earth_loc = EarthLocation(*loc)
+    kwargs["location"] = earth_loc
+    with pytest.raises(TypeError):
+        Simulator(*args, **kwargs)  # loc is EarthLocation, world is moon
+    moon_loc = MoonLocation(*loc)
+    kwargs["location"] = moon_loc
+    sim = Simulator(*args, **kwargs)
+    assert sim.location == moon_loc
+
+    # check that init works correctly on earth
     kwargs["world"] = "earth"
+    with pytest.raises(TypeError):
+        Simulator(*args, **kwargs)  # loc is MoonLocation, world is earth
+    kwargs["location"] = earth_loc
     sim = Simulator(*args, **kwargs)
     assert sim.sim_coord == "C"
+    assert sim.location == earth_loc
+    kwargs["location"] = loc
 
     # check that we get a KeyError if world is not "earth" or "moon"
     kwargs["world"] = "mars"
