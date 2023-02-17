@@ -93,6 +93,14 @@ class Simulator:
             self.location = Location(*location)
         except TypeError:  # location is None or already Location
             self.location = location
+            if isinstance(location, EarthLocation) and self.world == "moon":
+                raise TypeError(
+                    "location is an EarthLocation but world is 'moon'."
+                )
+            if isinstance(location, MoonLocation) and self.world == "earth":
+                raise TypeError(
+                    "location is a MoonLocation but world is 'earth'."
+                )
 
         if lmax is None:
             lmax = np.min([beam.lmax, sky.lmax])
