@@ -183,7 +183,6 @@ class HealpixMap:
         """
         if frequencies is None:
             self.frequencies = None
-            nfreq = 1
         else:
             self.frequencies = np.array(frequencies)
             nfreq = self.frequencies.size
@@ -194,7 +193,8 @@ class HealpixMap:
             self.coord = coord_rep(coord)
 
         data = np.array(data, copy=True, dtype=np.float64)
-        data.shape = (nfreq, -1)
+        if frequencies is not None:
+            data.shape = (nfreq, -1)
         npix = data.shape[-1]
         nside = hp.npix2nside(npix)
         hp.pixelfunc.check_nside(nside, nest=nest)
@@ -202,7 +202,7 @@ class HealpixMap:
 
         if nest:
             ix = hp.nest2ring(self.nside, np.arange(self.npix))
-            data = data[:, ix]
+            data = data[..., ix]
 
         self.data = np.squeeze(data)
 
@@ -402,10 +402,7 @@ class Alm(hp.Alm):
         """
         ells, emms = super().getlm(new_lmax)
         ix = self.getidx(ells, emms)
-        if self.alm.ndim == 1:
-            self.alm = self.alm[ix]
-        else:
-            self.alm = self.alm[:, ix]
+        self.alm = self.alm[..., ix]
         self.lmax = new_lmax
 
     @classmethod
