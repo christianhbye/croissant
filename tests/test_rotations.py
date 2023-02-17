@@ -2,8 +2,37 @@ from astropy.coordinates import AltAz, EarthLocation
 import healpy as hp
 from lunarsky import LunarTopo, MCMF, MoonLocation, SkyCoord, Time
 import numpy as np
+import pytest
 
 from croissant import rotations
+
+
+def test_rotator_init():
+    # invalid eulertype
+    with pytest.raises(ValueError):
+        rotations.Rotator(eulertype="foo")
+
+    # too many coords
+    with pytest.raises(ValueError):
+        rotations.Rotator(coord=["G", "C", "M"])
+
+    # invalid coord
+    with pytest.raises(KeyError):
+        rotations.Rotator(coord=["foo", "C"])
+
+    # topocentric without location
+    time = Time("2022-06-16 17:00:00")
+    with pytest.raises(ValueError):
+        rotations.Rotator(coord=["T", "M"], time=time)
+    loc = EarthLocation(lon=0, lat=40)
+    with pytest.raises(ValueError):  # location is EarthLocation
+        rotations.Rotator(coord=["T", "M"], loc=loc, time=time)
+    # should work
+    loc = MoonLocation(lon=0, lat=40)
+    _ = rotations.Rotator(coord=["T", "M"], loc=loc, time=time)
+    # no time:
+    with pytest.raises(ValueError):
+        rotations.Rotator(coord=["T", "M"], loc=loc)
 
 
 def test_get_rot_mat():
