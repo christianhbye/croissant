@@ -1,3 +1,4 @@
+from copy import deepcopy
 import healpy as hp
 import numpy as np
 import pytest
@@ -28,11 +29,27 @@ def test_compute_total_power():
 
 
 def test_horizon_cut():
-    # make a beam that is 1 everywhere so total power is 4pi:
+    # make a beam that is 1 everywhere
     data = np.ones((theta.size, phi.size))
-    beam = Beam.from_grid(data, theta, phi, lmax)
+    beam_base = Beam.from_grid(data, theta, phi, lmax)
+
+    # default horizon (1 frequency)
+    beam = deepcopy(beam_base)
+    beam.horizon_cut()  # doesn't throw error
+
+    # default horizon (multiple frequencies)
+    data_nf = np.ones((frequencies.size, theta.size, phi.size))
+    beam_nf = Beam.from_grid(
+        data_nf, theta, phi, lmax, frequencies=frequencies
+    )
+    beam_nf.horizon_cut()  # doesn't throw error
+    assert np.allclose(
+        beam_nf.alm,
+        np.repeat(np.expand_dims(beam.alm, axis=0), frequencies.size, axis=0),
+    )
 
     # try custom horizon
+    beam = deepcopy(beam_base)
     nside = 64
     npix = hp.nside2npix(nside)
     horizon = np.ones(npix)  # no horizon
@@ -41,6 +58,7 @@ def test_horizon_cut():
     # should be the same before and after since the horizon is all 1s
     assert np.allclose(beam_map, beam.hp_map(nside=nside))
 
+    beam = deepcopy(beam_base)
     horizon = np.zeros(npix)  # full horizon
     beam.horizon_cut(horizon=horizon, nside=nside)
     # should be all zeros since the horizon is all 0s
