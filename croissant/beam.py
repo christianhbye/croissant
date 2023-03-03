@@ -45,7 +45,7 @@ class Beam(Alm):
             horizon = np.ones_like(hp_beam)
             npix = horizon.shape[-1]
             theta = pix2ang(nside, np.arange(npix))[0]
-            horizon[:, theta > np.pi / 2] = 0
+            horizon[..., theta > np.pi / 2] = 0
 
         hp_beam *= horizon
         self.alm = map2alm(hp_beam, lmax=self.lmax)
