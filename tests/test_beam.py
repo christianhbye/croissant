@@ -1,3 +1,4 @@
+from copy import deepcopy
 import healpy as hp
 import numpy as np
 import pytest
@@ -44,7 +45,7 @@ def test_horizon_cut():
     beam_nf.horizon_cut()  # doesn't throw error
     assert np.allclose(
         beam_nf.alm,
-        np.repeat(np.expand_dims(beam.alm, axis=0), frequencies.size, axis=0)
+        np.repeat(np.expand_dims(beam.alm, axis=0), frequencies.size, axis=0),
     )
 
     # try custom horizon
