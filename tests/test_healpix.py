@@ -403,6 +403,10 @@ def test_hp_map():
     hp_map_select = alm.hp_map(nside=nside, frequencies=freqs)
     assert np.allclose(hp_map_select, hp_map[freq_indices])
 
+    # use some frequencies that are not in alm.frequencies
+    with pytest.raises(UserWarning):
+        alm.hp_map(nside=nside, frequencies=[0, 30, 100])
+
 
 def test_rot_alm_z():
     lmax = 10
