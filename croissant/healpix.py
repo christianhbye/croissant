@@ -506,11 +506,31 @@ class Alm(hp.Alm):
         else:
             return self.lmax
 
-    def hp_map(self, nside):
+    def hp_map(self, nside, frequencies=None):
         """
-        Construct a healpy map from the Alm.
+        Construct a healpy map from the Alm for the given frequencies.
+
+        Parameters
+        ----------
+        nside : int
+            The nside of the Healpix map to construct.
+        frequencies : array_like
+            The frequencies to construct the map for. If None, the map will
+            be constructed for all frequencies.
+
+        Returns
+        -------
+        m : np.ndarray
+            The Healpix map(s) (shape = (Nfreq, 12 * nside ** 2)).
+
         """
-        return alm2map(self.alm, nside=nside, lmax=self.lmax)
+        if frequencies is None:
+            alm = self.alm
+        else:
+            indices = np.isin(self.frequencies, frequencies).nonzero()[0]
+            alm = self.alm[indices]
+        m = alm2map(alm, nside=nside, lmax=self.lmax)
+        return m
 
     def rot_alm_z(self, phi=None, times=None, world="moon"):
         """
