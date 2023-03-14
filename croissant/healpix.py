@@ -527,7 +527,15 @@ class Alm(hp.Alm):
         if frequencies is None:
             alm = self.alm
         else:
-            indices = np.isin(self.frequencies, frequencies).nonzero()[0]
+            indices = np.isin(
+                self.frequencies, frequencies, assume_unique=True
+            ).nonzero()[0]
+            if indices.size < frequencies.size:
+                warnings.warn(
+                    "Some of the frequencies specified are not in"
+                    "alm.frequencies.",
+                    UserWarning,
+                )
             alm = self.alm[indices]
         m = alm2map(alm, nside=nside, lmax=self.lmax)
         return m
