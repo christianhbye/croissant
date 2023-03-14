@@ -1,6 +1,7 @@
 import healpy as hp
 import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
+import warnings
 
 from . import constants
 from .rotations import Rotator
