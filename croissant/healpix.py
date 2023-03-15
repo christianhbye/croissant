@@ -531,7 +531,7 @@ class Alm(hp.Alm):
             indices = np.isin(
                 self.frequencies, frequencies, assume_unique=True
             ).nonzero()[0]
-            if indices.size < frequencies.size:
+            if indices.size < np.size(frequencies):
                 warnings.warn(
                     "Some of the frequencies specified are not in"
                     "alm.frequencies.",
