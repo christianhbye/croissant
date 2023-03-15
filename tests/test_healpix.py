@@ -404,7 +404,7 @@ def test_hp_map():
     assert np.allclose(hp_map_select, hp_map[freq_indices])
 
     # use some frequencies that are not in alm.frequencies
-    with pytest.raises(UserWarning):
+    with pytest.warns(UserWarning):
         alm.hp_map(nside=nside, frequencies=[0, 30, 100])
 
 
