@@ -391,6 +391,22 @@ def test_hp_map():
     expected_maps *= frequencies.reshape(-1, 1)
     assert np.allclose(hp_map, expected_maps)
 
+    # use subset of frequencies and compare to full set
+    alm = hp.Alm(alm_arr, lmax=lmax, frequencies=frequencies)
+    # some random map
+    alm[:, 0, 0] = a00 * frequencies
+    alm[:, 1, 1] = 2 * a00 * frequencies
+    alm[::2, 8, 3] = -3 * a00 * frequencies[::2]
+    hp_map = alm.hp_map(nside=nside)
+    freq_indices = [10, 20, 35]  # indices of frequencies to use
+    freqs = frequencies[freq_indices]  # frequencies to use
+    hp_map_select = alm.hp_map(nside=nside, frequencies=freqs)
+    assert np.allclose(hp_map_select, hp_map[freq_indices])
+
+    # use some frequencies that are not in alm.frequencies
+    with pytest.warns(UserWarning):
+        alm.hp_map(nside=nside, frequencies=[0, 30, 100])
+
 
 def test_rot_alm_z():
     lmax = 10
