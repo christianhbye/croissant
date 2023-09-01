@@ -2,7 +2,7 @@ import healpy as hp
 import numpy as np
 
 from croissant.constants import Y00
-from croissant.sphtransform import alm2map, map2alm
+from croissant.core.sphtransform import alm2map, map2alm
 
 
 def test_alm2map():
