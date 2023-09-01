@@ -3,7 +3,7 @@ import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 import warnings
 
-from . import constants
+from .. import constants
 from .rotations import Rotator
 from .sphtransform import alm2map, map2alm
 

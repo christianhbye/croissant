@@ -1,6 +1,6 @@
 import numpy as np
 import healpy as hp
-from .constants import PIX_WEIGHTS_NSIDE
+from ..constants import PIX_WEIGHTS_NSIDE
 
 
 def alm2map(alm, nside, lmax=None):
