@@ -58,21 +58,21 @@ class Alm:
         axis is indexed in the usual numpy way, while the other two indices
         correspond to the values of l and m.
         """
-        fix, ell, emm = key
-        lmix = self.getidx(ell, emm)
-        self.alm.at[fix, lmix].set(value)
+        lix, mix = self.getidx(*key[1:])
+        new_key = (key[0], lix, mix)
+        self.alm = self.alm.at[new_key].set(value)
 
     def __getitem__(self, key):
-        fix, ell, emm = key
-        lmix = self.getidx(ell, emm)
-        return self.alm[fix, lmix]
+        lix, mix = self.getidx(*key[1:])
+        new_key = (key[0], lix, mix)
+        return self.alm[new_key]
 
     @classmethod
     def zeros(cls, lmax, frequencies=None, coord=None):
         """
         Construct an Alm object with all zero coefficients.
         """
-        alm = jnp.zeros(alm_shape(lmax, frequencies=frequencies))
+        alm = jnp.zeros(alm_shape(lmax, nfreq=jnp.size(frequencies)))
         obj = cls(
             alm=alm,
             frequencies=frequencies,
@@ -150,9 +150,11 @@ class Alm:
 
         Returns
         -------
-        ix : tuple
-            The index of the alm array corresponding to the given l and m.
-
+        l_ix : int
+           The l index (which is the same as the input ell).
+        m_ix : int
+            The m index.
+        
         Raises
         ------
         IndexError
@@ -160,8 +162,9 @@ class Alm:
         """
         if not ((jnp.abs(emm) <= ell) & (ell <= self.lmax)).all():
             raise IndexError("l,m must satsify abs(m) <= l <= lmax.")
-        ix = (ell, self.lmax + emm)
-        return ix
+        l_ix = ell
+        m_ix = emm + self.lmax
+        return l_ix, m_ix
 
     def hp_map(self, nside, frequencies=None):
         """
