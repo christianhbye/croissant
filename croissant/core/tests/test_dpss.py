@@ -4,7 +4,6 @@ import pytest
 
 
 def test_dpss_op():
-
     x = np.linspace(1, 50, 50)  # target frequencies
     with pytest.raises(ValueError):  # didn't specify any kwargs
         _ = dpss.dpss_op(x)

@@ -32,7 +32,6 @@ kwargs = {"lmax": lmax, "world": "moon", "location": loc, "times": times}
 
 
 def test_time_array():
-
     # check that the times are set consistently regardless of
     # which parameters that specify it
     delta_t, step = np.linspace(0, sidereal_day_earth, N_times, retstep=True)
@@ -57,7 +56,6 @@ def test_time_array():
 
 
 def test_simulator_init():
-
     sim = Simulator(*args, **kwargs)
     # check that the simulation attributes are set properly
     assert sim.sim_coord == "M"  # mcmf
