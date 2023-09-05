@@ -1,0 +1,247 @@
+from functools import partial
+import warnings
+import jax
+import jax.numpy as jnp
+import s2fft
+from .. import constants, utils
+
+
+def alm_shape(lmax, nfreq=1):
+    """
+    Get the shape of the alm array for a given lmax and number of frequencies.
+    """
+    return (nfreq, lmax + 1, 2 * lmax + 1)
+
+
+def lmax_from_shape(shape):
+    """
+    Get the lmax from the shape of the alm array.
+    """
+    return shape[1] - 1
+
+
+class Alm:
+    def __init__(self, alm, frequencies=None, coord=None):
+        """
+        Base class for spherical harmonics coefficients.
+
+        Alm can be indexed with [freq_index, ell, emm] to get the
+        coeffiecient corresponding to the given frequency index, and values of
+        ell and emm. The frequencies can be indexed in the usual numpy way and
+        may be 0 if the alms are specified for only one frequency.
+
+        Parameters
+        ----------
+        alm : jnp.ndarray
+            The spherical harmonics coefficients. Must have shape
+            (nfreq, lmax+1, 2*lmax+1).
+        frequencies : jnp.ndarray
+            The frequencies corresponding to the coefficients. Must have shape
+            (nfreq,). If None, then the coefficients are assumed to be for a
+            single frequency and nfreq is set to 1.
+        coord : str
+            The coordinate system of the coefficients.
+
+
+        """
+        self.alm = alm
+        self.frequencies = frequencies
+        self.lmax = lmax_from_shape(alm.shape)
+        if coord is None:
+            self.coord = None
+        else:
+            self.coord = utils.coord_rep(coord)
+
+    def __setitem__(self, key, value):
+        """
+        Set the value of the spherical harmonics coefficient. The frequency
+        axis is indexed in the usual numpy way, while the other two indices
+        correspond to the values of l and m.
+        """
+        fix, ell, emm = key
+        lmix = self.getidx(ell, emm)
+        self.alm.at[fix, lmix].set(value)
+
+    def __getitem__(self, key):
+        fix, ell, emm = key
+        lmix = self.getidx(ell, emm)
+        return self.alm[fix, lmix]
+
+    @classmethod
+    def zeros(cls, lmax, frequencies=None, coord=None):
+        """
+        Construct an Alm object with all zero coefficients.
+        """
+        alm = jnp.zeros(alm_shape(lmax, frequencies=frequencies))
+        obj = cls(
+            alm=alm,
+            frequencies=frequencies,
+            coord=coord,
+        )
+        return obj
+
+    @property
+    def is_real(self):
+        """
+        Check if the coefficients correspond to a real-valued signal.
+        Mathematically, this means that alm(l, m) = (-1)^m * conj(alm(l, -m)).
+        """
+        emm = jnp.arange(-self.lmax, self.lmax + 1)[None, None, :]
+        neg_m = self.alm[:, :, : self.lmax]  # alms for m < 0
+        pos_m = self.alm[:, :, self.lmax + 1 :]  # alms for m > 0
+        return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m))
+
+    def reduce_lmax(self, new_lmax):
+        """
+        Reduce the maximum l value of the alm.
+
+        Parameters
+        ----------
+        new_lmax : int
+            The new maximum l value.
+
+        Raises
+        ------
+        ValueError
+            If new_lmax is greater than the current lmax.
+        """
+        d = self.lmax - new_lmax  # number of ell values to remove
+        if d < 0:
+            raise ValueError(
+                "new_lmax must be less than or equal to the current lmax"
+            )
+        elif d > 0:
+            self.alm = self.alm[:, :-d, d:-d]
+            self.lmax = new_lmax
+
+    def switch_coords(self, to_coord, loc=None, time=None):
+        raise NotImplementedError
+
+    def getlm(self, ix):
+        """
+        Get the l and m corresponding to the index of the alm array.
+
+        Parameters
+        ----------
+        ix : tuple
+            The index of the alm array.
+
+        Returns
+        -------
+        ell : int
+            The value of l.
+        emm : int
+            The value of m.
+        """
+        ell = ix[0]
+        emm = ix[1] - self.lmax
+        return ell, emm
+
+    def getidx(self, ell, emm):
+        """
+        Get the index of the alm array for a given l and m.
+
+        Parameters
+        ----------
+        ell : int
+            The value of l.
+        emm : int
+            The value of m.
+
+        Returns
+        -------
+        ix : tuple
+            The index of the alm array corresponding to the given l and m.
+
+        Raises
+        ------
+        IndexError
+            If l,m don't satisfy abs(m) <= l <= lmax.
+        """
+        if not ((jnp.abs(emm) <= ell) & (ell <= self.lmax)).all():
+            raise IndexError("l,m must satsify abs(m) <= l <= lmax.")
+        ix = (ell, self.lmax + emm)
+        return ix
+
+    def hp_map(self, nside, frequencies=None):
+        """
+        Construct a Healpix map from the Alm for the given frequencies.
+
+        Parameters
+        ----------
+        nside : int
+            The nside of the Healpix map to construct.
+        frequencies : array_like
+            The frequencies to construct the map for. If None, the map will
+            be constructed for all frequencies.
+
+        Returns
+        -------
+        m : np.ndarray
+            The Healpix map(s) (shape = (Nfreq, 12 * nside ** 2)).
+
+        """
+        if frequencies is None:
+            alm = self.alm
+        else:
+            indices = jnp.isin(
+                self.frequencies, frequencies, assume_unique=True
+            ).nonzero()[0]
+            if indices.size < jnp.size(frequencies):
+                warnings.warn(
+                    "Some of the frequencies specified are not in"
+                    "alm.frequencies.",
+                    UserWarning,
+                )
+            alm = self.alm[indices]
+        alm2map = partial(
+            s2fft.inverse_jax,
+            L=self.lmax + 1,
+            spin=0,
+            nside=nside,
+            reality=self.is_real,
+            precomps=None,
+            spmd=False,
+            L_lower=None,
+        )
+        m = jax.vamp(alm2map(alm))
+        return m
+
+    def rot_alm_z(self, phi=None, times=None, world="moon"):
+        """
+        Get the coefficients that rotate the alms around the z-axis by phi
+        (measured counterclockwise) or in time.
+
+        Parameters
+        ----------
+        phi : jnp.ndarray
+            The angle(s) to rotate the azimuth by in radians.
+        times : jnp.ndarray
+            The times to rotate the azimuth by in seconds. If given, phi will
+            be ignored and the rotation angle will be calculated from the
+            times and the sidereal day of the world.
+        world : str
+            The world to use for the sidereal day. Must be 'moon' or 'earth'.
+
+        Returns
+        -------
+        phase : np.ndarray
+            The coefficients (shape = (phi.size, alm.size) that rotate the
+            alms by phi.
+
+        """
+        if times is not None:
+            if world.lower() == "moon":
+                sidereal_day = constants.sidereal_day_moon
+            elif world.lower() == "earth":
+                sidereal_day = constants.sidereal_day_earth
+            else:
+                raise ValueError(
+                    f"World must be 'moon' or 'earth', not {world}."
+                )
+            phi = 2 * jnp.pi * times / sidereal_day
+            return self.rot_alm_z(phi=phi, times=None)
+
+        emms = jnp.arange(-self.lmax, self.lmax + 1)
+        phase = jnp.exp(-1j * emms[None, :] * phi[:, None])
+        return phase
