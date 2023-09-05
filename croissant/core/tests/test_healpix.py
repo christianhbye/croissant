@@ -4,13 +4,7 @@ import numpy as np
 import pytest
 from croissant import healpix as hp, sphtransform as spht
 from croissant.constants import sidereal_day_earth, sidereal_day_moon, Y00
-
-
-def test_coord_rep():
-    coords = ["galactic", "equatorial", "ecliptic", "mcmf", "topocentric"]
-    short = ["G", "C", "E", "M", "T"]
-    for i in range(len(coords)):
-        assert hp.coord_rep(coords[i]) == short[i]
+from croissant.utils import coord_rep
 
 
 def test_healpix2lonlat():
@@ -301,7 +295,7 @@ def test_from_healpix():
     alm = hp.Alm.from_healpix(hp_map, lmax=lmax)
     assert alm.lmax == lmax
     assert np.allclose(alm.frequencies, freqs)
-    assert alm.coord == hp.coord_rep(coord)
+    assert alm.coord == coord_rep(coord)
     assert np.allclose(alm.alm, spht.map2alm(data, lmax=lmax))
 
 
