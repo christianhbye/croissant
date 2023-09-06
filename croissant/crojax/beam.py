@@ -49,19 +49,20 @@ class Beam(Alm):
         if horizon is None:
             horizon = jnp.ones_like(m)
             theta = s2_samples.thetas(
-                L=self.lmax+1, sampling=sampling, nside=nside
+                L=self.lmax + 1, sampling=sampling, nside=nside
             )
-            horizon.at[..., theta > jnp.pi / 2].set(0.)
+            horizon.at[..., theta > jnp.pi / 2].set(0.0)
 
         m = m * horizon
         self.alm = jax.vmap(
             partial(
                 s2fft.forward_jax,
-                L=self.lmax+1,
+                L=self.lmax + 1,
                 spin=0,
                 nside=nside,
                 reality=self.is_real,
                 precomps=None,
                 spmd=False,
-                L_lower=0
-            )(m)
+                L_lower=0,
+            )
+        )(m)

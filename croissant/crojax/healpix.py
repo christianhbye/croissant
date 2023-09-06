@@ -72,7 +72,9 @@ class Alm:
         """
         Construct an Alm object with all zero coefficients.
         """
-        alm = jnp.zeros(alm_shape(lmax, nfreq=jnp.size(frequencies)))
+        alm = jnp.zeros(
+            alm_shape(lmax, nfreq=jnp.size(frequencies)), dtype=jnp.complex128
+        )
         obj = cls(
             alm=alm,
             frequencies=frequencies,
@@ -86,10 +88,10 @@ class Alm:
         Check if the coefficients correspond to a real-valued signal.
         Mathematically, this means that alm(l, m) = (-1)^m * conj(alm(l, -m)).
         """
-        emm = jnp.arange(-self.lmax, self.lmax + 1)[None, None, :]
+        emm = jnp.arange(1, self.lmax + 1)[None, None, :]  # positive ms
         neg_m = self.alm[:, :, : self.lmax]  # alms for m < 0
         pos_m = self.alm[:, :, self.lmax + 1 :]  # alms for m > 0
-        return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m))
+        return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
 
     def reduce_lmax(self, new_lmax):
         """
@@ -154,7 +156,7 @@ class Alm:
            The l index (which is the same as the input ell).
         m_ix : int
             The m index.
-        
+
         Raises
         ------
         IndexError
@@ -166,22 +168,26 @@ class Alm:
         m_ix = emm + self.lmax
         return l_ix, m_ix
 
-    def hp_map(self, nside, frequencies=None):
+    def alm2map(self, sampling="healpix", nside=None, frequencies=None):
         """
         Construct a Healpix map from the Alm for the given frequencies.
 
         Parameters
         ----------
+        sampling : str
+            Sampling scheme on the sphere. Must be in
+            {"mw", "mwss", "dh", "healpix"}. Gets passed to s2fft.inverse.
         nside : int
-            The nside of the Healpix map to construct.
-        frequencies : array_like
+            The nside of the Healpix map to construct. Required if sampling
+            is "healpix".
+        frequencies : jnp.ndarray
             The frequencies to construct the map for. If None, the map will
             be constructed for all frequencies.
 
         Returns
         -------
-        m : np.ndarray
-            The Healpix map(s) (shape = (Nfreq, 12 * nside ** 2)).
+        m : jnp.ndarray
+            The map(s) corresponding to the alm.
 
         """
         if frequencies is None:
@@ -197,17 +203,19 @@ class Alm:
                     UserWarning,
                 )
             alm = self.alm[indices]
-        alm2map = partial(
-            s2fft.inverse_jax,
-            L=self.lmax + 1,
-            spin=0,
-            nside=nside,
-            reality=self.is_real,
-            precomps=None,
-            spmd=False,
-            L_lower=None,
-        )
-        m = jax.vamp(alm2map(alm))
+        m = jax.vmap(
+            partial(
+                s2fft.inverse_jax,
+                L=self.lmax + 1,
+                spin=0,
+                nside=nside,
+                sampling=sampling,
+                reality=self.is_real,
+                precomps=None,
+                spmd=False,
+                L_lower=0,
+            )
+        )(alm)
         return m
 
     def rot_alm_z(self, phi=None, times=None, world="moon"):
