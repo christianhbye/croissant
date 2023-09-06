@@ -1,5 +1,7 @@
+from functools import partial
+import jax
 import jax.numpy as jnp
-from s2fft.sampling import s2_samples
+import s2fft
 from healpy import get_nside
 
 from ..constants import Y00
@@ -48,10 +50,10 @@ class Beam(Alm):
         m = self.alm2map(sampling=sampling, nside=nside)
         if horizon is None:
             horizon = jnp.ones_like(m)
-            theta = s2_samples.thetas(
+            theta = s2fft.sampling.s2_samples.thetas(
                 L=self.lmax + 1, sampling=sampling, nside=nside
             )
-            horizon.at[..., theta > jnp.pi / 2].set(0.0)
+            horizon.at[:, theta > jnp.pi / 2].set(0.0)
 
         m = m * horizon
         self.alm = jax.vmap(
