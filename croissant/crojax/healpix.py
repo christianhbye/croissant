@@ -6,13 +6,6 @@ import s2fft
 from .. import constants, utils
 
 
-def alm_shape(lmax, nfreq=1):
-    """
-    Get the shape of the alm array for a given lmax and number of frequencies.
-    """
-    return (nfreq, lmax + 1, 2 * lmax + 1)
-
-
 def lmax_from_shape(shape):
     """
     Get the lmax from the shape of the alm array.
@@ -72,9 +65,9 @@ class Alm:
         """
         Construct an Alm object with all zero coefficients.
         """
-        alm = jnp.zeros(
-            alm_shape(lmax, nfreq=jnp.size(frequencies)), dtype=jnp.complex128
-        )
+        s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
+        shape = (jnp.size(frequencies), s1, s2)
+        alm = jnp.zeros(shape, dtype=jnp.complex128)
         obj = cls(
             alm=alm,
             frequencies=frequencies,
