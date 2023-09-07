@@ -53,7 +53,7 @@ class Beam(Alm):
             theta = s2fft.sampling.s2_samples.thetas(
                 L=self.lmax + 1, sampling=sampling, nside=nside
             )
-            horizon.at[:, theta > jnp.pi / 2].set(0.0)
+            horizon = horizon.at[:, theta > jnp.pi / 2].set(0.0)
 
         m = m * horizon
         self.alm = jax.vmap(
