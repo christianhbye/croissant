@@ -1,6 +1,6 @@
 from copy import deepcopy
 import pytest
-from np.random import default_rng
+from numpy.random import default_rng
 import jax.numpy as jnp
 import s2fft
 from croissant.crojax import healpix as hp
@@ -13,7 +13,8 @@ nfreqs = freqs.size
 
 
 def test_lmax_from_shape(lmax):
-    shape = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
+    s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
+    shape = (1, s1, s2)  # add frequency axis
     _lmax = hp.lmax_from_shape(shape)
     assert _lmax == lmax
 
@@ -24,9 +25,13 @@ def test_alm_indexing(lmax):
     # set a00 = 1 for first half of frequencies
     alm[: nfreqs // 2, 0, 0] = 1.0
     # check __setitem__ acted correctly on alm.alm
-    assert jnp.allclose(alm.alm[: nfreqs // 2, 0], 1)
-    assert jnp.allclose(alm.alm[nfreqs // 2 :, 0], 0)
-    assert jnp.allclose(alm.alm[:, 1:], 0)
+    l_ix, m_ix = alm.getidx(0, 0)
+    mask = jnp.zeros_like(alm.alm, dtype=bool)
+    mask = mask.at[:nfreqs//2, l_ix, m_ix].set(True)
+    # first half frequencies of a00, which should be 1
+    assert jnp.allclose(alm.alm[mask], 1)
+    # all other alm should be 0
+    assert jnp.allclose(alm.alm[~mask], 0)
     # check that __getitem__ agrees:
     assert jnp.allclose(alm[: nfreqs // 2, 0, 0], 1)
     assert jnp.allclose(alm[nfreqs // 2 :, 0, 0], 0)
@@ -39,13 +44,13 @@ def test_alm_indexing(lmax):
     alm = hp.Alm.zeros(lmax=lmax, frequencies=freqs)
     # negative indexing
     val = 3.0 + 2.3j
-    alm[-1, 10, 7] = val
-    assert alm[-1, 10, 7] == val
-    l_ix, m_ix = alm.getidx(10, 7)
-    assert alm[-1, 10, 7] == alm.alm[-1, l_ix, m_ix]
+    alm[-1, 6, 3] = val
+    assert alm[-1, 6, 3] == val
+    l_ix, m_ix = alm.getidx(6, 3)
+    assert alm[-1, 6, 3] == alm.alm[-1, l_ix, m_ix]
 
     # frequency index not specified
-    with pytest.raises(IndexError):
+    with pytest.raises(TypeError):
         alm[3, 2] = 5
         alm[7, -1]
 
@@ -54,7 +59,8 @@ def test_zeros(lmax):
     alm = hp.Alm.zeros(lmax=lmax, frequencies=freqs)
     assert alm.lmax == lmax
     assert alm.frequencies is freqs
-    assert alm.alm.shape == s2fft.sampling.s2_samples.flm_shape(lmax + 1)
+    s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)  
+    assert alm.alm.shape == (nfreqs, s1, s2)
     assert jnp.allclose(alm.alm, 0)
 
 
@@ -64,18 +70,18 @@ def test_is_real(lmax):
     val = 1.0 + 2.0j
     alm[0, 2, 1] = val  # set l=2, m=1 mode but not m=-1 mode
     assert not alm.is_real
-    alm[0, 2, -1] = -1 * val.conj()  # set m=-1 mode to complex conjugate
+    alm[0, 2, -1] = -1 * val.conjugate()  # set m=-1 mode to complex conjugate
     assert alm.is_real
 
     # generate a real signal and check that alm.is_real is True
     alm = hp.Alm(
         s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=True)
-    )
+    )[None]  # add freq axis
     assert alm.is_real
     # complex
     alm = hp.Alm(
         s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=False)
-    )
+    )[None]
     assert not alm.is_real
 
 
@@ -122,9 +128,8 @@ def test_getidx(lmax):
 
 
 @pytest.mark.skip(reason="not implemented")
-def test_alm2map():
+def test_alm2map(lmax):
     # make constant map
-    lmax = 10
     alm = hp.Alm.zeros(lmax=lmax)
     a00 = 5
     alm[0, 0, 0] = a00

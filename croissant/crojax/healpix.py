@@ -82,8 +82,10 @@ class Alm:
         Mathematically, this means that alm(l, m) = (-1)^m * conj(alm(l, -m)).
         """
         emm = jnp.arange(1, self.lmax + 1)[None, None, :]  # positive ms
-        neg_m = self.alm[:, :, : self.lmax]  # alms for m < 0
-        pos_m = self.alm[:, :, self.lmax + 1 :]  # alms for m > 0
+        # get alms for negative m, in reverse order (i.e., increasing abs(m))
+        neg_m = self.alm[:, :, :self.lmax][:, :, ::-1]
+        # get alms for positive m
+        pos_m = self.alm[:, :, self.lmax + 1 :]
         return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
 
     def reduce_lmax(self, new_lmax):
