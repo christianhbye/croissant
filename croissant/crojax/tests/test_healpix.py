@@ -27,7 +27,7 @@ def test_alm_indexing(lmax):
     # check __setitem__ acted correctly on alm.alm
     l_ix, m_ix = alm.getidx(0, 0)
     mask = jnp.zeros_like(alm.alm, dtype=bool)
-    mask = mask.at[:nfreqs//2, l_ix, m_ix].set(True)
+    mask = mask.at[: nfreqs // 2, l_ix, m_ix].set(True)
     # first half frequencies of a00, which should be 1
     assert jnp.allclose(alm.alm[mask], 1)
     # all other alm should be 0
@@ -59,7 +59,7 @@ def test_zeros(lmax):
     alm = hp.Alm.zeros(lmax=lmax, frequencies=freqs)
     assert alm.lmax == lmax
     assert alm.frequencies is freqs
-    s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)  
+    s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
     assert alm.alm.shape == (nfreqs, s1, s2)
     assert jnp.allclose(alm.alm, 0)
 
@@ -74,14 +74,12 @@ def test_is_real(lmax):
     assert alm.is_real
 
     # generate a real signal and check that alm.is_real is True
-    alm = hp.Alm(
-        s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=True)
-    )[None]  # add freq axis
+    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=True)
+    alm = hp.Alm(sig[None])
     assert alm.is_real
     # complex
-    alm = hp.Alm(
-        s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=False)
-    )[None]
+    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=False)
+    alm = hp.Alm(sig[None])
     assert not alm.is_real
 
 
