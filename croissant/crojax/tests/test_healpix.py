@@ -74,17 +74,18 @@ def test_is_real(lmax):
     assert alm.is_real
 
     # generate a real signal and check that alm.is_real is True
-    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=True)
+    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax+1, reality=True)
     alm = hp.Alm(sig[None])
     assert alm.is_real
     # complex
-    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax, reality=False)
+    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax+1, reality=False)
     alm = hp.Alm(sig[None])
     assert not alm.is_real
 
 
 def test_reduce_lmax(lmax):
-    alm = hp.Alm(s2fft.utils.signal_generator.generate_flm(rng, lmax))
+    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax+1)
+    alm = hp.Alm(sig[None])
     old_alm = deepcopy(alm)
     # reduce to same lmax, should do nothing
     alm.reduce_lmax(lmax)
@@ -94,7 +95,8 @@ def test_reduce_lmax(lmax):
     new_lmax = 5
     alm.reduce_lmax(new_lmax)
     assert alm.lmax == new_lmax
-    assert alm.alm.shape == s2fft.sampling.s2_samples.flm_shape(new_lmax + 1)
+    s1, s2 = s2fft.sampling.s2_samples.flm_shape(new_lmax + 1)
+    assert alm.alm.shape == (1, s1, s2)
     for ell in range(new_lmax + 1):
         for emm in range(-ell, ell + 1):
             assert alm[:, ell, emm] == old_alm[:, ell, emm]
@@ -105,8 +107,10 @@ def test_reduce_lmax(lmax):
     with pytest.raises(ValueError):
         alm.reduce_lmax(new_lmax)
 
-
 @pytest.mark.skip(reason="not implemented")
+def test_getlm(lmax):
+    pass
+
 def test_getidx(lmax):
     alm = hp.Alm.zeros(lmax=lmax)
     ell = 3
@@ -119,10 +123,12 @@ def test_getidx(lmax):
         alm.getidx(-ell, emm)  # should fail since l < 0
 
     # try convert back and forth ell, emm <-> index
-    ix = alm.getidx(ell, emm)
-    ell_, emm_ = alm.getlm(i=ix)
-    assert ell == ell_
-    assert emm == emm_
+    for ell in lmax // jnp.arange(1, 10):
+        for emm in range(-ell, ell + 1):
+            ix = alm.getidx(ell, emm)
+            ell_, emm_ = alm.getlm(ix)
+            assert ell == ell_
+            assert emm == emm_
 
 
 @pytest.mark.skip(reason="not implemented")
