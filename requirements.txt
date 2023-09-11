@@ -1,5 +1,4 @@
 appdirs==1.4.4
-apturl==0.5.2
 argon2-cffi==21.1.0
 attrs==21.2.0
 Babel==2.8.0
