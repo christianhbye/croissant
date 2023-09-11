@@ -2,7 +2,7 @@ anyio==4.0.0
 argon2-cffi==23.1.0
 argon2-cffi-bindings==21.2.0
 arrow==1.2.3
-astropy==5.3.2
+astropy==5.2.2
 asttokens==2.2.1
 async-lru==2.0.4
 attrs==23.1.0
@@ -45,8 +45,7 @@ ipython-genutils==0.2.0
 ipywidgets==8.1.0
 isoduration==20.11.0
 jaraco.classes==3.3.0
-jax==0.4.14
-jaxlib==0.4.14+cuda12.cudnn89
+jax==0.4.13
 jedi==0.19.0
 jeepney==0.8.0
 Jinja2==3.1.2
