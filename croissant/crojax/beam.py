@@ -56,15 +56,14 @@ class Beam(Alm):
             horizon = horizon.at[:, theta > jnp.pi / 2].set(0.0)
 
         m = m * horizon
-        self.alm = jax.vmap(
-            partial(
-                s2fft.forward_jax,
-                L=self.lmax + 1,
-                spin=0,
-                nside=nside,
-                reality=self.is_real,
-                precomps=None,
-                spmd=False,
-                L_lower=0,
-            )
-        )(m)
+        forward = partial(
+            s2fft.forward_jax,
+            spin=0,
+            nside=nside,
+            reality=self.is_real,
+            precomps=None,
+            spmd=True,
+            L_lower=0,
+        )
+        L = self.lmax.item() + 1
+        self.alm = jax.vmap(forward, in_axes=(0, None))(m, L)
