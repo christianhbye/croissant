@@ -6,11 +6,77 @@ import s2fft
 from .. import constants, utils
 
 
+@jax.jit
 def lmax_from_shape(shape):
     """
     Get the lmax from the shape of the alm array.
     """
     return shape[1] - 1
+
+
+@jax.jit
+def _getlm(ix, lmax):
+    ell = ix[0]
+    emm = ix[1] - lmax
+    return ell, emm
+
+
+@jax.jit
+def _getidx(ell, emm, lmax):
+    l_ix = ell
+    m_ix = emm + lmax
+    return l_ix, m_ix
+
+
+def _is_real(alm):
+    """
+    Check if the alm coefficients correspond to a real-valued signal.
+
+    Parameters
+    ----------
+    alm : jnp.ndarray
+        The spherical harmonics coefficients. Must have shape
+        (nfreq, lmax+1, 2*lmax+1) corresponding to the frequencies, ell, and
+        emm indices.
+
+    Returns
+    -------
+    is_real : bool
+        True if the coefficients correspond to a real-valued signal.
+
+    """
+    lmax = lmax_from_shape(alm.shape)
+    emm = jnp.arange(1, lmax + 1)[None, None, :]  # positive ms
+    # get alms for negative m, in reverse order (i.e., increasing abs(m))
+    neg_m = alm[:, :, :lmax][:, :, ::-1]
+    # get alms for positive m
+    pos_m = alm[:, :, lmax + 1 :]
+    return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
+
+
+def _rot_alm_z(lmax, phi):
+    """
+    Get the coefficients that rotate the alms around the z-axis by phi
+    (measured counterclockwise).
+
+    Parameters
+    ----------
+    lmax : int
+        The maximum l value.
+    phi : jnp.ndarray
+        The angle(s) to rotate the azimuth by in radians. Must have shape
+        (n, 1).
+
+    Returns
+    -------
+    phase : np.ndarray
+        The coefficients that rotate the alms by phi. Has shape (n, 2*lmax+1),
+        where n is the number of phi values and 2*lmax+1 is the number of
+        m values given lmax.
+    """
+    emms = jnp.arange(-lmax, lmax + 1)[None]
+    phase = jnp.exp(-1j * emms * phi)
+    return phase
 
 
 class Alm:
@@ -60,6 +126,53 @@ class Alm:
         new_key = (key[0], lix, mix)
         return self.alm[new_key]
 
+    def getlm(self, ix):
+        """
+        Get the l and m corresponding to the index of the alm array.
+
+        Parameters
+        ----------
+        ix : jnp.ndarray
+            The indices of the alm array. The first row corresponds to the l
+            index, and the second row corresponds to the m index. Multiple
+            indices can be passed in as an array with shape (2, n).
+
+        Returns
+        -------
+        ell : jnp.ndarray
+            The value of l. Has shape (n,).
+        emm : jnp.ndarray
+            The value of m. Has shape (n,).
+        """
+        return _getlm(ix, self.lmax)
+
+    def getidx(self, ell, emm):
+        """
+        Get the index of the alm array for a given l and m.
+
+        Parameters
+        ----------
+        ell : int or jnp.ndarray
+            The value of l.
+        emm : int or jnp.ndarray
+            The value of m.
+
+        Returns
+        -------
+        l_ix : int or jnp.ndarray
+           The l index (which is the same as the input ell).
+        m_ix : int or jnp.ndarray
+            The m index.
+
+        Raises
+        ------
+        IndexError
+            If l,m don't satisfy abs(m) <= l <= lmax.
+        """
+        if not ((jnp.abs(emm) <= ell) & (ell <= self.lmax)).all():
+            raise IndexError("l,m must satsify abs(m) <= l <= lmax.")
+        return _getidx(ell, emm, self.lmax)
+
     @classmethod
     def zeros(cls, lmax, frequencies=None, coord=None):
         """
@@ -81,12 +194,7 @@ class Alm:
         Check if the coefficients correspond to a real-valued signal.
         Mathematically, this means that alm(l, m) = (-1)^m * conj(alm(l, -m)).
         """
-        emm = jnp.arange(1, self.lmax + 1)[None, None, :]  # positive ms
-        # get alms for negative m, in reverse order (i.e., increasing abs(m))
-        neg_m = self.alm[:, :, :self.lmax][:, :, ::-1]
-        # get alms for positive m
-        pos_m = self.alm[:, :, self.lmax + 1 :]
-        return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
+        return _is_real(self.alm)
 
     def reduce_lmax(self, new_lmax):
         """
@@ -113,55 +221,6 @@ class Alm:
 
     def switch_coords(self, to_coord, loc=None, time=None):
         raise NotImplementedError
-
-    def getlm(self, ix):
-        """
-        Get the l and m corresponding to the index of the alm array.
-
-        Parameters
-        ----------
-        ix : tuple
-            The index of the alm array.
-
-        Returns
-        -------
-        ell : int
-            The value of l.
-        emm : int
-            The value of m.
-        """
-        ell = ix[0]
-        emm = ix[1] - self.lmax
-        return ell, emm
-
-    def getidx(self, ell, emm):
-        """
-        Get the index of the alm array for a given l and m.
-
-        Parameters
-        ----------
-        ell : int
-            The value of l.
-        emm : int
-            The value of m.
-
-        Returns
-        -------
-        l_ix : int
-           The l index (which is the same as the input ell).
-        m_ix : int
-            The m index.
-
-        Raises
-        ------
-        IndexError
-            If l,m don't satisfy abs(m) <= l <= lmax.
-        """
-        if not ((jnp.abs(emm) <= ell) & (ell <= self.lmax)).all():
-            raise IndexError("l,m must satsify abs(m) <= l <= lmax.")
-        l_ix = ell
-        m_ix = emm + self.lmax
-        return l_ix, m_ix
 
     def alm2map(self, sampling="healpix", nside=None, frequencies=None):
         """
@@ -247,7 +306,5 @@ class Alm:
                 )
             phi = 2 * jnp.pi * times / sidereal_day
             return self.rot_alm_z(phi=phi, times=None)
-
-        emms = jnp.arange(-self.lmax, self.lmax + 1)
-        phase = jnp.exp(-1j * emms[None, :] * phi[:, None])
-        return phase
+        phi = phi[:, None]  # add axis for broadcasting
+        return _rot_alm_z(self.lmax, phi)
