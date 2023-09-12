@@ -209,7 +209,6 @@ def test_rot_alm_z(lmax):
     # rotate a single angle
     phi = jnp.array([jnp.pi / 2])
     phase = alm.rot_alm_z(phi=phi)
-    ls = jnp.arange(lmax + 1)
     ms = jnp.arange(-lmax, lmax + 1)
     assert phase.shape == (1, ms.size)
     assert jnp.allclose(phase, jnp.exp(-1j * ms * phi))
