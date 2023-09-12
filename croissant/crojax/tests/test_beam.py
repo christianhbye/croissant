@@ -5,11 +5,11 @@ from s2fft.sampling import s2_samples
 from croissant.constants import Y00
 from croissant.crojax import Beam
 
+pytestmark = pytest.mark.parametrize("lmax", [8, 16, 64, 128])
 frequencies = jnp.linspace(1, 50, 50)
-lmax = 32
 
 
-def test_compute_total_power():
+def test_compute_total_power(lmax):
     # make a beam that is 1 everywhere so total power is 4pi:
     beam = Beam.zeros(lmax)
     beam[0, 0, 0] = 1 / Y00
@@ -26,7 +26,7 @@ def test_compute_total_power():
     assert jnp.allclose(power, expected_power.ravel())
 
 
-def test_horizon_cut():
+def test_horizon_cut(lmax):
     # make a beam that is 1 everywhere
     beam_base = Beam.zeros(lmax)
     beam_base[0, 0, 0] = 1 / Y00
@@ -37,7 +37,7 @@ def test_horizon_cut():
 
     # default horizon (multiple frequencies)
     beam_nf = Beam.zeros(lmax, frequencies=frequencies)
-    beam[:, 0, 0] = 1 / Y00
+    beam_nf[:, 0, 0] = 1 / Y00
     beam_nf.horizon_cut()  # doesn't throw error
     assert jnp.allclose(beam_nf.alm, beam.alm)
 
