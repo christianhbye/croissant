@@ -64,8 +64,7 @@ def _rot_alm_z(lmax, phi):
     lmax : int
         The maximum l value.
     phi : jnp.ndarray
-        The angle(s) to rotate the azimuth by in radians. Must have shape
-        (n, 1).
+        The angle(s) to rotate the azimuth by in radians.
 
     Returns
     -------
@@ -74,6 +73,7 @@ def _rot_alm_z(lmax, phi):
         where n is the number of phi values and 2*lmax+1 is the number of
         m values given lmax.
     """
+    phi = jnp.atleast_1d(phi)[:, None]
     emms = jnp.arange(-lmax, lmax + 1)[None]
     phase = jnp.exp(-1j * emms * phi)
     return phase
@@ -257,19 +257,18 @@ class Alm:
                     UserWarning,
                 )
             alm = self.alm[indices]
-        m = jax.vmap(
-            partial(
-                s2fft.inverse_jax,
-                L=self.lmax + 1,
-                spin=0,
-                nside=nside,
-                sampling=sampling,
-                reality=self.is_real,
-                precomps=None,
-                spmd=False,
-                L_lower=0,
-            )
-        )(alm)
+        inverse = partial(
+            s2fft.inverse_jax,
+            spin=0,
+            nside=nside,
+            sampling=sampling,
+            reality=self.is_real,
+            precomps=None,  # XXX
+            spmd=True,  # XXX
+            L_lower=0,
+        )
+        L = self.lmax.item() + 1
+        m = jax.vmap(inverse, in_axes=[0, None])(alm, L)
         return m
 
     def rot_alm_z(self, phi=None, times=None, world="moon"):
@@ -290,7 +289,7 @@ class Alm:
 
         Returns
         -------
-        phase : np.ndarray
+        phase : jnp.ndarray
             The coefficients (shape = (phi.size, alm.size) that rotate the
             alms by phi.
 
@@ -306,5 +305,4 @@ class Alm:
                 )
             phi = 2 * jnp.pi * times / sidereal_day
             return self.rot_alm_z(phi=phi, times=None)
-        phi = phi[:, None]  # add axis for broadcasting
         return _rot_alm_z(self.lmax, phi)
