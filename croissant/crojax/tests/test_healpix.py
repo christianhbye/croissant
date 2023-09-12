@@ -11,7 +11,7 @@ rng = default_rng(1913)
 freqs = jnp.linspace(1, 50, 50)
 nfreqs = freqs.size
 
-@pytest.mark.skip()
+
 def test_lmax_from_shape(lmax):
     s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
     shape = (1, s1, s2)  # add frequency axis
@@ -19,7 +19,6 @@ def test_lmax_from_shape(lmax):
     assert _lmax == lmax
 
 
-@pytest.mark.skip()
 def test_alm_indexing(lmax):
     # initialize all alms to 0
     alm = hp.Alm.zeros(lmax=lmax, frequencies=freqs)
@@ -56,7 +55,6 @@ def test_alm_indexing(lmax):
         alm[7, -1]
 
 
-@pytest.mark.skip()
 def test_getlm(lmax):
     alm = hp.Alm.zeros(lmax=lmax)
     nrows, ncols = alm.alm.shape[1:]
@@ -70,7 +68,7 @@ def test_getlm(lmax):
             assert ell == ls[i]
             assert emm == ms[j]
 
-@pytest.mark.skip()
+
 def test_getidx(lmax):
     # using ints
     ell = 3
@@ -104,7 +102,7 @@ def test_getidx(lmax):
     with pytest.raises(IndexError):
         alm.getidx(bad_ells, emm)
 
-@pytest.mark.skip()
+
 def test_zeros(lmax):
     alm = hp.Alm.zeros(lmax=lmax, frequencies=freqs)
     assert alm.lmax == lmax
@@ -124,19 +122,23 @@ def test_is_real(lmax):
     assert alm.is_real
 
     # generate a real signal and check that alm.is_real is True
-    alm = s2fft.utils.signal_generator.generate_flm(rng, lmax+1, reality=True)
+    alm = s2fft.utils.signal_generator.generate_flm(
+        rng, lmax + 1, reality=True
+    )
     alm = alm[None]  # add frequency dimension
     assert hp._is_real(alm)
     assert hp.Alm(alm).is_real
     # complex
-    alm = s2fft.utils.signal_generator.generate_flm(rng, lmax+1, reality=False)
+    alm = s2fft.utils.signal_generator.generate_flm(
+        rng, lmax + 1, reality=False
+    )
     alm = alm[None]  # add frequency dimension
     assert not hp._is_real(alm)
     assert not hp.Alm(alm).is_real
 
 
 def test_reduce_lmax(lmax):
-    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax+1)
+    sig = s2fft.utils.signal_generator.generate_flm(rng, lmax + 1)
     alm = hp.Alm(sig[None])
     old_alm = deepcopy(alm)
     # reduce to same lmax, should do nothing
@@ -179,7 +181,7 @@ def test_alm2map(lmax, sampling):
     alm[:, 0, 0] = a00 * frequencies
     m = alm.alm2map(sampling=sampling, nside=nside, frequencies=frequencies)
     m_ = a00 * frequencies * Y00
-    for i in range(m.ndim-1):
+    for i in range(m.ndim - 1):
         m_ = m_[:, None]  # match dimensions of m
     assert jnp.allclose(m, m_)
 
@@ -205,7 +207,7 @@ def test_rot_alm_z(lmax):
     alm = hp.Alm.zeros(lmax=lmax)
 
     # rotate a single angle
-    phi = jnp.pi / 2
+    phi = jnp.array([jnp.pi / 2])
     phase = alm.rot_alm_z(phi=phi)
     ls = jnp.arange(lmax + 1)
     ms = jnp.arange(-lmax, lmax + 1)
@@ -224,9 +226,9 @@ def test_rot_alm_z(lmax):
 
     # rotate in time
     alm = hp.Alm.zeros(lmax=lmax)
-    div = [1, 2, 4, 8]
+    div = jnp.array([1, 2, 4, 8])
     for d in div:
-        dphi = 2 * jnp.pi / d
+        dphi = jnp.array([2 * jnp.pi / d])
         # earth
         dt = sidereal_day_earth / d
         assert jnp.allclose(
