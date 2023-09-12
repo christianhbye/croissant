@@ -5,3 +5,4 @@ config.update("jax_enable_x64", True)
 
 from .beam import Beam
 from .healpix import Alm
+from .sky import Sky
