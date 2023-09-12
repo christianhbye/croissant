@@ -1,5 +1,6 @@
 from functools import partial
 import jax
+import jax.numpy as jnp
 import s2fft
 from pygdsm import GlobalSkyModel2016 as GSM16
 from .healpix import Alm
@@ -20,10 +21,12 @@ class Sky(Alm):
         """
         gsm = GSM16(freq_unit="MHz", data_unit="TRJ", resolution="lo")
         sky_map = gsm.generate(freq)
+        sky_map = jnp.atleast_2d(sky_map)
         forward = partial(
             s2fft.forward_jax,
             spin=0,
             nside=gsm.nside,
+            sampling="healpix",
             reality=True,
             precomps=None,
             spmd=True,

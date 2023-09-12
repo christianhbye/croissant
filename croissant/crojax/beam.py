@@ -60,6 +60,7 @@ class Beam(Alm):
             s2fft.forward_jax,
             spin=0,
             nside=nside,
+            sampling=sampling,
             reality=self.is_real,
             precomps=None,
             spmd=True,
