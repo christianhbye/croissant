@@ -1,4 +1,4 @@
-from . import dpss, sphtransform
+from . import sphtransform
 from .healpix import Alm, HealpixMap
 from .beam import Beam
 from .rotations import Rotator
