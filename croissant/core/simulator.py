@@ -1,5 +1,5 @@
 import numpy as np
-from ..simulator import SimulatorBase
+from ..simulatorbase import SimulatorBase
 
 
 class Simulator(SimulatorBase):
