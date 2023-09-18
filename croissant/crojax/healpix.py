@@ -290,7 +290,7 @@ class Alm:
         Returns
         -------
         phase : jnp.ndarray
-            The coefficients (shape = (phi.size, alm.size) that rotate the
+            The coefficients (shape = (phi.size, 2*lmax+1) that rotate the
             alms by phi.
 
         """
@@ -304,5 +304,5 @@ class Alm:
                     f"World must be 'moon' or 'earth', not {world}."
                 )
             phi = 2 * jnp.pi * times / sidereal_day
-            return self.rot_alm_z(phi=phi, times=None)
+            return _rot_alm_z(self.lmax, phi)
         return _rot_alm_z(self.lmax, phi)
