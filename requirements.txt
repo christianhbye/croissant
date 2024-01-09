@@ -26,7 +26,7 @@ ephem==4.1.3
 executing==0.9.1
 fastjsonschema==2.16.1
 flake8==5.0.4
-fonttools==4.34.4
+fonttools==4.43.0
 h5py==3.7.0
 healpy==1.16.1
 hera-filters==0.1.1
