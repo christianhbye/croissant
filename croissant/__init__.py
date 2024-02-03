@@ -3,7 +3,7 @@ __version__ = "4.0.0"
 
 from . import constants
 from . import core
-from . import crojax
+from . import jax
 from . import dpss
 from . import utils
 
