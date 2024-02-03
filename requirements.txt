@@ -19,7 +19,6 @@ click==8.1.7
 comm==0.2.1
 contourpy==1.2.0
 coverage==7.4.1
-croissant-sim @ file:///home/christian/Documents/projects/croissant
 cryptography==42.0.2
 cycler==0.12.1
 debugpy==1.8.0
