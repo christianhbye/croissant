@@ -1,5 +1,5 @@
 import numpy as np
-from pygdsm import GlobalSkyModel2016 as GSM16
+from pygdsm import GlobalSkyModel16 as GSM16
 from .healpix import Alm
 from .sphtransform import map2alm
 
