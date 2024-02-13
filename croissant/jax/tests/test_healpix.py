@@ -3,7 +3,7 @@ import pytest
 from numpy.random import default_rng
 import jax.numpy as jnp
 import s2fft
-from croissant.crojax import healpix as hp
+from croissant.jax import healpix as hp
 from croissant.constants import sidereal_day_earth, sidereal_day_moon, Y00
 
 pytestmark = pytest.mark.parametrize("lmax", [8, 16, 64, 128])

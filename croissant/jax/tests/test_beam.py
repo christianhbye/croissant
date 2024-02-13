@@ -3,7 +3,7 @@ import pytest
 import jax.numpy as jnp
 from s2fft.sampling import s2_samples
 from croissant.constants import Y00
-from croissant.crojax import Beam
+from croissant.jax import Beam
 
 pytestmark = pytest.mark.parametrize("lmax", [8, 16, 64, 128])
 frequencies = jnp.linspace(1, 50, 50)
