@@ -2,7 +2,7 @@ from functools import partial
 import jax
 import jax.numpy as jnp
 import s2fft
-from pygdsm import GlobalSkyModel2016 as GSM16
+from pygdsm import GlobalSkyModel16 as GSM16
 from .healpix import Alm
 
 
