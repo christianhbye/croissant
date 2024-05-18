@@ -341,6 +341,9 @@ class HealpixMap:
 
 
 class Alm(hp.Alm):
+
+    __doc__ = ""
+
     def __init__(self, alm, lmax=None, frequencies=None, coord=None):
         """
         Base class for spherical harmonics coefficients.
