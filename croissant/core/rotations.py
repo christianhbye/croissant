@@ -24,7 +24,10 @@ def get_rot_mat(from_frame, to_frame):
 
     """
     # cannot instantiate a SkyCoord with a gaalctic frame from cartesian
-    from_name = from_frame.name if hasattr(from_frame, "name") else from_frame
+    try:
+        from_name = from_frame.name
+    except AttributeError:
+        from_name = from_frame
     if from_name.lower() == "galactic":
         from_frame = to_frame
         to_frame = "galactic"
