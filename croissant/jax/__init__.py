@@ -3,5 +3,4 @@ from jax import config
 
 config.update("jax_enable_x64", True)
 
-from . import alm, simulator
-from .sky import Sky
+from . import alm, rotations, simulator
