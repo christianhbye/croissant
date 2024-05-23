@@ -1,9 +1,10 @@
+import jax
 import jax.numpy as jnp
 import s2fft
 
 from ..constants import Y00
 
-
+@jax.jit
 def alm2map(
     alm, spin=0, nside=None, sampling="healpix", precomps=None, spmd=True
 ):
@@ -50,7 +51,7 @@ def alm2map(
     )
     return m
 
-
+@jax.jit
 def map2alm(
     m,
     lmax,
@@ -107,6 +108,7 @@ def map2alm(
     )
     return alm
 
+@jax.jit
 def total_power(alm):
     """
     Compute the integral of a signal (such as an antenna beam) given
@@ -132,7 +134,7 @@ def total_power(alm):
     monopole = alm[..., lix, mix]
     return 4 * jnp.pi * jnp.real(monopole) * Y00
 
-
+@jax.jit
 def getidx(lmax, ell, emm):
     """
     Get the index of the alm array for a given l and m.
@@ -158,11 +160,9 @@ def getidx(lmax, ell, emm):
     IndexError
         If l,m don't satisfy abs(m) <= l <= lmax.
     """
-    if not ((jnp.abs(emm) <= ell) & (ell <= lmax)).all():
-        raise IndexError("l,m must satsify abs(m) <= l <= lmax.")
     return ell, emm + lmax
 
-
+@jax.jit
 def getlm(lmax, ix):
     """
     Get the l and m corresponding to the index of the alm array.
@@ -189,7 +189,7 @@ def getlm(lmax, ix):
     emm = ix[1] - lmax
     return ell, emm
 
-
+@jax.jit
 def lmax_from_shape(shape):
     """
     Get the lmax from the shape of the alm array.
@@ -208,7 +208,7 @@ def lmax_from_shape(shape):
     """
     return shape[-2] - 1
 
-
+@jax.jit
 def is_real(alm):
     """
     Check if the coefficients of an array of alms correspond to a real-valued
@@ -237,7 +237,7 @@ def is_real(alm):
     pos_m = alm[..., lmax + 1 :]
     return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
 
-
+@jax.jit
 def reduce_lmax(alm, new_lmax):
     """
     Reduce the maximum l value of the alm.
@@ -263,14 +263,10 @@ def reduce_lmax(alm, new_lmax):
     """
     lmax = lmax_from_shape(alm.shape)
     d = lmax - new_lmax  # number of ell values to remove
-    if d < 0:
-        raise ValueError(
-            "new_lmax must be less than or equal to the current lmax"
-        )
     return alm[..., :-d, d:-d]
 
-
-def zeros(lmax, nfreqs=None):
+@jax.jit
+def zeros(lmax):
     """
     Construct an alm array of zeros.
 
@@ -278,16 +274,12 @@ def zeros(lmax, nfreqs=None):
     ----------
     lmax : int
         The maximum l value.
-    nfreqs : int
-        The number of frequencies. If specified, the array will have an
-        additional dimension corresponding to the frequencies at axis 0.
 
     Returns
     -------
     alm : jnp.ndarray
-        The alm array of zeros. Shape is ([nfreqs,] lmax+1, 2*lmax+1).
+        The alm array of zeros. Shape is (lmax+1, 2*lmax+1).
     """
-    s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
-    shape = (nfreqs, s1, s2)
+    shape = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
     alm = jnp.zeros(shape, dtype=jnp.complex128)
     return alm
