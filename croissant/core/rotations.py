@@ -1,9 +1,9 @@
 from astropy.coordinates import AltAz, EarthLocation
 import healpy as hp
-from lunarsky import LunarTopo, MoonLocation, SkyCoord
+from lunarsky import LunarTopo, MoonLocation
 import numpy as np
 
-from ..coordinates import get_rot_mat, rotmat_to_euler
+from ..utils import get_rot_mat, rotmat_to_euler
 from .sphtransform import map2alm, alm2map
 
 

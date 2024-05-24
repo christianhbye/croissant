@@ -4,7 +4,7 @@ from scipy.interpolate import RectSphereBivariateSpline
 import warnings
 
 from .. import constants
-from ..coordinates import coord_rep
+from ..utils import coord_rep
 from .rotations import Rotator
 from .sphtransform import alm2map, map2alm
 

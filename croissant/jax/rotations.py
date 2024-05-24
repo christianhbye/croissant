@@ -3,7 +3,7 @@ from lunarsky import LunarTopo
 from s2fft import rotate_flms
 import jax
 
-from ..coordinates import get_rot_mat, rotmat_to_euler
+from ..utils import get_rot_mat, rotmat_to_euler
 from .alm import lmax_from_shape
 
 

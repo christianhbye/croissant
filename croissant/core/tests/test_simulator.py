@@ -8,7 +8,7 @@ import pytest
 
 from croissant import Beam, dpss, Rotator, Simulator, Sky
 from croissant.constants import sidereal_day_earth
-from croissant.simulator import time_array
+from croissant.utils import time_array
 
 
 # define default params for simulator

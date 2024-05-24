@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 from croissant import healpix as hp, sphtransform as spht
 from croissant.constants import sidereal_day_earth, sidereal_day_moon, Y00
-from croissant.coordinates import coord_rep
+from croissant.utils import coord_rep
 
 
 def test_healpix2lonlat():
