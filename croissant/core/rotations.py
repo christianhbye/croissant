@@ -3,68 +3,8 @@ import healpy as hp
 from lunarsky import LunarTopo, MoonLocation, SkyCoord
 import numpy as np
 
+from ..coordinates import get_rot_mat, rotmat_to_euler
 from .sphtransform import map2alm, alm2map
-
-
-def get_rot_mat(from_frame, to_frame):
-    """
-    Get the rotation matrix that transforms from one frame to another.
-
-    Parameters
-    ----------
-    from_frame : str or astropy frame
-        The coordinate frame to transform from.
-    to_frame : str or astropy frame
-        The coordinate frame to transform to.
-
-    Returns
-    -------
-    rmat : np.ndarray
-        The rotation matrix.
-
-    """
-    # cannot instantiate a SkyCoord with a gaalctic frame from cartesian
-    try:
-        from_name = from_frame.name
-    except AttributeError:
-        from_name = from_frame
-    if from_name.lower() == "galactic":
-        from_frame = to_frame
-        to_frame = "galactic"
-        return_inv = True
-    else:
-        return_inv = False
-    x, y, z = np.eye(3)  # unit vectors
-    sc = SkyCoord(
-        x=x, y=y, z=z, frame=from_frame, representation_type="cartesian"
-    )
-    rmat = sc.transform_to(to_frame).cartesian.xyz.value
-    if return_inv:
-        rmat = rmat.T
-    return rmat
-
-
-def rotmat_to_euler(mat):
-    """
-    Convert a rotation matrix to Euler angles in the ZYX convention. This is
-    sometimes referred to as Tait-Bryan angles X1-Y2-Z3.
-
-    Parameters
-    ----------
-    mat : np.ndarray
-        The rotation matrix.
-
-    Returns
-    --------
-    eul : tup
-        The Euler angles.
-
-    """
-    beta = np.arcsin(mat[0, 2])
-    alpha = np.arctan2(mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta))
-    gamma = np.arctan2(mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta))
-    eul = (gamma, beta, alpha)
-    return eul
 
 
 class Rotator(hp.Rotator):
