@@ -3,7 +3,8 @@ import numpy as np
 from scipy.interpolate import RectSphereBivariateSpline
 import warnings
 
-from .. import constants, utils
+from .. import constants
+from ..coordinates import coord_rep
 from .rotations import Rotator
 from .sphtransform import alm2map, map2alm
 
@@ -168,7 +169,7 @@ class HealpixMap:
         if coord is None:
             self.coord = None
         else:
-            self.coord = utils.coord_rep(coord)
+            self.coord = coord_rep(coord)
 
         data = np.array(data, copy=True, dtype=np.float64)
         if frequencies is not None:
@@ -283,7 +284,7 @@ class HealpixMap:
             string is given, it must be able to instantiate a Time object.
 
         """
-        to_coord = utils.coord_rep(to_coord)
+        to_coord = coord_rep(to_coord)
         rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
         if rot_pixel:
             self.data = rot.rotate_map_pixel(self.data)
@@ -342,7 +343,7 @@ class Alm(hp.Alm):
         if coord is None:
             self.coord = None
         else:
-            self.coord = utils.coord_rep(coord)
+            self.coord = coord_rep(coord)
 
     def __setitem__(self, key, value):
         """
@@ -447,7 +448,7 @@ class Alm(hp.Alm):
         return obj
 
     def switch_coords(self, to_coord, loc=None, time=None):
-        to_coord = utils.coord_rep(to_coord)
+        to_coord = coord_rep(to_coord)
         rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
         rot.rotate_alm(self.alm, lmax=self.lmax, inplace=True)
         self.coord = to_coord
