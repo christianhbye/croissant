@@ -6,7 +6,7 @@ from ..constants import Y00
 
 @jax.jit
 def alm2map(
-    alm, spin=0, nside=None, sampling="healpix", precomps=None, spmd=True
+    alm, spin=0, nside=None, sampling="mw", precomps=None, spmd=True
 ):
     """
     Construct a map on the sphere from the alm array. This is a wrapper
@@ -57,7 +57,7 @@ def map2alm(
     lmax,
     spin=0,
     nside=None,
-    sampling="healpix",
+    sampling="mw",
     reality=True,
     precomps=None,
     spmd=True,
@@ -211,15 +211,15 @@ def lmax_from_shape(shape):
 @jax.jit
 def is_real(alm):
     """
-    Check if the coefficients of an array of alms correspond to a real-valued
+    Check if the an array of alms correspond to a real-valued
     signal. Mathematically, this is true if the coefficients satisfy
     alm(l, m) = (-1)^m * conj(alm(l, -m)).
 
     Parameters
     ----------
     alm : jnp.ndarray
-        The spherical harmonics coefficients. The last two dimensions must
-        correspond to the ell and emm indices respectively.
+        The spherical harmonics coefficients. The last two dimensions
+        must correspond to the ell and emm indices respectively.
 
     Returns
     -------
@@ -237,7 +237,6 @@ def is_real(alm):
     pos_m = alm[..., lmax + 1 :]
     return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
 
-@jax.jit
 def reduce_lmax(alm, new_lmax):
     """
     Reduce the maximum l value of the alm.
@@ -266,9 +265,9 @@ def reduce_lmax(alm, new_lmax):
     return alm[..., :-d, d:-d]
 
 @jax.jit
-def zeros(lmax):
+def shape_from_lmax(lmax):
     """
-    Construct an alm array of zeros.
+    Get the shape of the alm array given the maximum l value.
 
     Parameters
     ----------
@@ -277,9 +276,7 @@ def zeros(lmax):
 
     Returns
     -------
-    alm : jnp.ndarray
-        The alm array of zeros. Shape is (lmax+1, 2*lmax+1).
+    shape : tup
+
     """
-    shape = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
-    alm = jnp.zeros(shape, dtype=jnp.complex128)
-    return alm
+    return (lmax + 1, 2 * lmax + 1)
