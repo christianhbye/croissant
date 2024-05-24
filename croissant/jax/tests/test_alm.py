@@ -12,6 +12,22 @@ freqs = jnp.linspace(1, 50, 50)
 nfreqs = freqs.size
 
 
+def test_compute_total_power(lmax):
+    # make a beam that is 1 everywhere so total power is 4pi:
+    beam = Beam.zeros(lmax)
+    beam[0, 0, 0] = 1 / Y00
+    beam.compute_total_power()
+    assert jnp.allclose(beam.total_power, 4 * jnp.pi)
+
+    # beam(theta) = cos(theta)**2 * freq**2
+    beam = Beam.zeros(lmax, frequencies=frequencies)
+    beam[:, 0, 0] = 1 / (3 * Y00) * frequencies**2
+    beam[:, 2, 0] = 4 * jnp.sqrt(jnp.pi / 5) * 1 / 3 * frequencies**2
+    beam.compute_total_power()
+    power = beam.total_power
+    expected_power = 4 * jnp.pi / 3 * frequencies**2
+    assert jnp.allclose(power, expected_power.ravel())
+
 def test_lmax_from_shape(lmax):
     s1, s2 = s2fft.sampling.s2_samples.flm_shape(lmax + 1)
     shape = (1, s1, s2)  # add frequency axis
