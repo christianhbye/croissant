@@ -87,6 +87,23 @@ def rotmat_to_euler(mat):
     eul = (gamma, beta, alpha)
     return eul
 
+def hp_npix2nside(npix):
+    """
+    Calculate the nside of a HEALPix map from the number of pixels.
+
+    Parameters
+    ----------
+    npix : int
+        The number of pixels in the map.
+
+    Returns
+    -------
+    nside : int
+        The nside of the map.
+
+    """
+    nside = int(np.sqrt(npix / 12))
+    return nside
 
 def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
     """
@@ -94,9 +111,9 @@ def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
 
     Parameters
     ----------
-    t_start : str or astropy.time.Time
+    t_start : str or astropy.time.Time or lunarsky.Time
         The start time of the simulation.
-    t_end : str or astropy.time.Time
+    t_end : str or astropy.time.Time or lunarsky.Time
         The end time of the simulation.
     N_times : int
         The number of times to run the simulation at.
@@ -105,7 +122,7 @@ def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
 
     Returns
     -------
-    times : astropy.time.Time or astropy.units.Quantity
+    times : astropy.time.Time or lunarsky.Time or astropy.units.Quantity
         The evenly sampled times to run the simulation at.
 
     """
