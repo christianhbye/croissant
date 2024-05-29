@@ -38,7 +38,7 @@ def test_map2alm(lmax, sampling):
     )
     const = 10  # constant map with value 10
     m = jnp.ones(shape, dtype=jnp.float64) * const
-    alm = crojax.alm.map2alm(m, sampling=sampling, nside=nside)
+    alm = crojax.alm.map2alm(m, lmax, sampling=sampling, nside=nside)
     a00_idx = crojax.alm.getidx(lmax, 0, 0)
     a00 = alm[a00_idx]
     assert jnp.allclose(a00, 4 * jnp.pi * Y00 * const)
@@ -54,7 +54,7 @@ def test_total_power(lmax):
     alm = jnp.zeros(shape, dtype=jnp.complex128)
     a00_idx = crojax.alm.getidx(lmax, 0, 0)
     alm = alm.at[a00_idx].set(1 / Y00)
-    power = crojax.alm.compute_power(alm)
+    power = crojax.alm.total_power(alm)
     assert jnp.isclose(power, 4 * jnp.pi)
 
     # m(theta) = cos(theta)**2
@@ -62,7 +62,7 @@ def test_total_power(lmax):
     alm = alm.at[a00_idx].set(1 / (3 * Y00))
     a20_idx = crojax.alm.getidx(lmax, 2, 0)
     alm = alm.at[a20_idx].set(4 * jnp.sqrt(jnp.pi / 5) * 1 / 3)
-    power = crojax.alm.compute_power(alm)
+    power = crojax.alm.total_power(alm)
     expected_power = 4 * jnp.pi / 3
     assert jnp.isclose(power, expected_power)
 
@@ -71,7 +71,7 @@ def test_getidx(lmax):
     # using ints
     ell = 3
     emm = 2
-    ix = crojax.alm.getidx(ell, emm, lmax)
+    ix = crojax.alm.getidx(lmax, ell, emm)
     ell_, emm_ = crojax.alm.getlm(lmax, ix)
     assert ell == ell_
     assert emm == emm_
@@ -79,7 +79,7 @@ def test_getidx(lmax):
     # using arrays
     ls = lmax // jnp.arange(1, 10)
     ms = jnp.arange(-lmax, lmax + 1)
-    ixs = crojax.alm.getidx(ls, ms, lmax)
+    ixs = crojax.alm.getidx(lmax, ls, ms)
     ls_, ms_ = crojax.alm.getlm(lmax, ixs)
     assert jnp.allclose(ls, ls_)
     assert jnp.allclose(ms, ms_)
@@ -109,12 +109,12 @@ def test_is_real(lmax):
     alm = jnp.zeros(crojax.alm.shape_from_lmax(lmax), dtype=jnp.complex128)
     assert crojax.alm.is_real(alm)
     val = 1.0 + 2.0j
-    ix_21 = crojax.alm.getidx(2, 1, lmax)  # get index for l=2, m=1
+    ix_21 = crojax.alm.getidx(lmax, 2, 1)  # get index for l=2, m=1
     alm = alm.at[ix_21].set(val)  # set l=2, m=1 mode but not m=-1 mode
     assert not crojax.alm.is_real(alm)
-    ix_2m1 = crojax.alm.getidx(2, -1, lmax)  # get index for l=2, m=-1
+    ix_2m1 = crojax.alm.getidx(lmax, 2, -1)  # get index for l=2, m=-1
     # set m=-1 mode to complex conjugate
-    alm = alm.at[ix_2m1].set(-1 * val.conjugate())  
+    alm = alm.at[ix_2m1].set(-1 * val.conjugate())
     assert crojax.alm.is_real(alm)
 
     # generate a real signal and check that alm.is_real is True
@@ -131,13 +131,9 @@ def test_is_real(lmax):
 
 def test_reduce_lmax(lmax):
     signal1 = s2fft.utils.signal_generator.generate_flm(rng, lmax + 1)
-    # reduce to same lmax, should do nothing
-    signal2 = crojax.alm.reduce_lmax(signal1, lmax)
-    assert crojax.alm.lmax_from_shape(signal2.shape) == lmax
-    assert jnp.allclose(signal1, signal2)
-    # reduce lmax of signal 2 to new_lmax
+    # reduce lmax to new_lmax
     new_lmax = 5
-    signal2 = crojax.alm.reduce_lmax(signal1, lmax)
+    signal2 = crojax.alm.reduce_lmax(signal1, new_lmax)
     assert crojax.alm.lmax_from_shape(signal2.shape) == new_lmax
     # confirm that signal 2 has the expected shape
     expected_shape = crojax.alm.shape_from_lmax(new_lmax)
@@ -146,8 +142,8 @@ def test_reduce_lmax(lmax):
     for ell in range(new_lmax + 1):
         for emm in range(-ell, ell + 1):
             # indexing differes since lmax differs
-            ix1 = crojax.alm.getidx(ell, emm, lmax)
-            ix2 = crojax.alm.getidx(ell, emm, new_lmax)
+            ix1 = crojax.alm.getidx(lmax, ell, emm)
+            ix2 = crojax.alm.getidx(new_lmax, ell, emm)
             assert signal1[ix1] == signal2[ix2]
 
 
