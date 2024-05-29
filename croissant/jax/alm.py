@@ -228,7 +228,7 @@ def is_real(alm):
     # reshape emm to broadcast with alm by adding 1 or 2 dimensions
     emm = emm.reshape((1,) * (alm.ndim - 1) + emm.shape)
     # get alms for negative m, in reverse order (i.e., increasing abs(m))
-    neg_m = alm[..., :lmax:-1]
+    neg_m = alm[..., :lmax][..., ::-1]
     # get alms for positive m
     pos_m = alm[..., lmax + 1 :]
     return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
