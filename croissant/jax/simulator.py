@@ -213,7 +213,7 @@ def run(
 
     # normalize beam
     if normalize_beam:
-        norm = alm, total_power(beam_alm)
+        norm = alm.total_power(beam_alm)
         beam_alm /= norm
 
     # sky spherical harmonic transform
