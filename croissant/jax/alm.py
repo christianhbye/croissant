@@ -1,13 +1,13 @@
+from functools import partial
 import jax
 import jax.numpy as jnp
 import s2fft
 
 from ..constants import Y00
 
-@jax.jit
-def alm2map(
-    alm, spin=0, nside=None, sampling="mw", precomps=None, spmd=True
-):
+
+@partial(jax.jit, static_argnums=(3,))
+def alm2map(alm, spin=0, nside=None, sampling="mw", precomps=None, spmd=True):
     """
     Construct a map on the sphere from the alm array. This is a wrapper
     around s2fft.inverse provided for convenience.
@@ -51,7 +51,8 @@ def alm2map(
     )
     return m
 
-@jax.jit
+
+@partial(jax.jit, static_argnums=(4,))
 def map2alm(
     m,
     lmax,
@@ -108,6 +109,7 @@ def map2alm(
     )
     return alm
 
+
 @jax.jit
 def total_power(alm):
     """
@@ -133,6 +135,7 @@ def total_power(alm):
     lix, mix = getidx(lmax, 0, 0)
     monopole = alm[..., lix, mix]
     return 4 * jnp.pi * jnp.real(monopole) * Y00
+
 
 @jax.jit
 def getidx(lmax, ell, emm):
@@ -162,6 +165,7 @@ def getidx(lmax, ell, emm):
     """
     return ell, emm + lmax
 
+
 @jax.jit
 def getlm(lmax, ix):
     """
@@ -189,6 +193,7 @@ def getlm(lmax, ix):
     emm = ix[1] - lmax
     return ell, emm
 
+
 @jax.jit
 def lmax_from_shape(shape):
     """
@@ -207,6 +212,7 @@ def lmax_from_shape(shape):
 
     """
     return shape[-2] - 1
+
 
 @jax.jit
 def is_real(alm):
@@ -237,6 +243,7 @@ def is_real(alm):
     pos_m = alm[..., lmax + 1 :]
     return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
 
+
 def reduce_lmax(alm, new_lmax):
     """
     Reduce the maximum l value of the alm.
@@ -263,6 +270,7 @@ def reduce_lmax(alm, new_lmax):
     lmax = lmax_from_shape(alm.shape)
     d = lmax - new_lmax  # number of ell values to remove
     return alm[..., :-d, d:-d]
+
 
 @jax.jit
 def shape_from_lmax(lmax):
