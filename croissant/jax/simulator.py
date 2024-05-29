@@ -7,7 +7,6 @@ from ..utils import hp_npix2nside
 from . import alm, rotations
 
 
-@partial(jax.jit, static_argnums=(0))
 def rot_alm_z(lmax, times, sidereal_day=constants.sidereal_day_moon):
     """
     Compute the complex phases that rotate the sky for a range of times. The
@@ -39,7 +38,6 @@ def rot_alm_z(lmax, times, sidereal_day=constants.sidereal_day_moon):
     return phases
 
 
-@jax.jit
 def convolve(beam_alm, sky_alm, phases):
     """
     Compute the convolution for a range of times in jax. The convolution is

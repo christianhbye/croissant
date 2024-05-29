@@ -1,12 +1,8 @@
-from functools import partial
-import jax
 import jax.numpy as jnp
 import s2fft
-
 from ..constants import Y00
 
 
-@partial(jax.jit, static_argnums=(3,))
 def alm2map(alm, spin=0, nside=None, sampling="mw", precomps=None, spmd=True):
     """
     Construct a map on the sphere from the alm array. This is a wrapper
@@ -52,7 +48,6 @@ def alm2map(alm, spin=0, nside=None, sampling="mw", precomps=None, spmd=True):
     return m
 
 
-@partial(jax.jit, static_argnums=(4,))
 def map2alm(
     m,
     lmax,
@@ -110,7 +105,6 @@ def map2alm(
     return alm
 
 
-@jax.jit
 def total_power(alm):
     """
     Compute the integral of a signal (such as an antenna beam) given
@@ -137,7 +131,6 @@ def total_power(alm):
     return 4 * jnp.pi * jnp.real(monopole) * Y00
 
 
-@jax.jit
 def getidx(lmax, ell, emm):
     """
     Get the index of the alm array for a given l and m.
@@ -166,7 +159,6 @@ def getidx(lmax, ell, emm):
     return ell, emm + lmax
 
 
-@jax.jit
 def getlm(lmax, ix):
     """
     Get the l and m corresponding to the index of the alm array.
@@ -194,7 +186,6 @@ def getlm(lmax, ix):
     return ell, emm
 
 
-@jax.jit
 def lmax_from_shape(shape):
     """
     Get the lmax from the shape of the alm array.
@@ -214,7 +205,6 @@ def lmax_from_shape(shape):
     return shape[-2] - 1
 
 
-@jax.jit
 def is_real(alm):
     """
     Check if the an array of alms correspond to a real-valued
@@ -272,7 +262,6 @@ def reduce_lmax(alm, new_lmax):
     return alm[..., :-d, d:-d]
 
 
-@jax.jit
 def shape_from_lmax(lmax):
     """
     Get the shape of the alm array given the maximum l value.

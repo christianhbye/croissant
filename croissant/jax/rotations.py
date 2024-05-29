@@ -1,13 +1,10 @@
 from astropy.coordinates import AltAz
 from lunarsky import LunarTopo
 from s2fft import rotate_flms
-import jax
-
 from ..utils import get_rot_mat, rotmat_to_euler
 from .alm import lmax_from_shape
 
 
-@jax.jit
 def rotate_alm(alm, from_frame, to_frame, dl_array=None):
     """
     Transform a spherical harmonic decomposition from one coordinate system to
@@ -39,7 +36,6 @@ def rotate_alm(alm, from_frame, to_frame, dl_array=None):
     return alm_rot
 
 
-@jax.jit
 def gal2eq(alm, dl_array=None):
     """
     Transform a spherical harmonic decomposition from Galactic to Equatorial
@@ -62,7 +58,6 @@ def gal2eq(alm, dl_array=None):
     return rotate_alm(alm, "galactic", "fk5", dl_array=dl_array)
 
 
-@jax.jit
 def gal2mcmf(alm, dl_array=None):
     """
     Transform a spherical harmonic decomposition from Galactic to MCMF
@@ -85,7 +80,6 @@ def gal2mcmf(alm, dl_array=None):
     return rotate_alm(alm, "galactic", "mcmf", dl_array=dl_array)
 
 
-@jax.jit
 def topo2eq(alm, loc, time, dl_array=None):
     """
     Transform a spherical harmonic decomposition from topocentric on Earth to
@@ -113,7 +107,6 @@ def topo2eq(alm, loc, time, dl_array=None):
     return rotate_alm(alm, topo, "fk5", loc, time, dl_array=dl_array)
 
 
-@jax.jit
 def topo2mcmf(alm, loc, time, dl_array=None):
     """
     Transform a spherical harmonic decomposition from topocentric on Moon to
