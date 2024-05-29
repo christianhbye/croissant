@@ -244,17 +244,13 @@ def reduce_lmax(alm, new_lmax):
         The alm array. Last two dimensions must correspond to the ell and
         emm indices.
     new_lmax : int
-        The new maximum l value. Must be less than or equal to alm lmax.
+        The new maximum l value. Must be less than the lmax of alm.
 
     Returns
     -------
     new_alm : jnp.ndarray
         The alm array with the new maximum l value.
 
-    Raises
-    ------
-    ValueError
-        If new_lmax is greater than the current lmax.
 
     """
     lmax = lmax_from_shape(alm.shape)
