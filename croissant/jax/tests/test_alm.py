@@ -19,7 +19,7 @@ def test_alm2map(lmax, sampling):
     shape = crojax.alm.shape_from_lmax(lmax)
     alm = jnp.zeros(shape, dtype=jnp.complex128)
     a00 = 5
-    alm[crojax.alm.getidx(lmax, 0, 0)] = a00
+    alm = alm.at[crojax.alm.getidx(lmax, 0, 0)].set(a00)
     m = crojax.alm.alm2map(alm, sampling=sampling, nside=nside)
     assert jnp.allclose(m, a00 * Y00)
 
@@ -53,15 +53,15 @@ def test_total_power(lmax):
     shape = crojax.alm.shape_from_lmax(lmax)
     alm = jnp.zeros(shape, dtype=jnp.complex128)
     a00_idx = crojax.alm.getidx(lmax, 0, 0)
-    alm[a00_idx] = 1 / Y00
+    alm = alm.at[a00_idx].set(1 / Y00)
     power = crojax.alm.compute_power(alm)
     assert jnp.isclose(power, 4 * jnp.pi)
 
     # m(theta) = cos(theta)**2
     alm = jnp.zeros(shape, dtype=jnp.complex128)
-    alm[a00_idx] = 1 / (3 * Y00)
+    alm = alm.at[a00_idx].set(1 / (3 * Y00))
     a20_idx = crojax.alm.getidx(lmax, 2, 0)
-    alm[a20_idx] = 4 * jnp.sqrt(jnp.pi / 5) * 1 / 3
+    alm = alm.at[a20_idx].set(4 * jnp.sqrt(jnp.pi / 5) * 1 / 3)
     power = crojax.alm.compute_power(alm)
     expected_power = 4 * jnp.pi / 3
     assert jnp.isclose(power, expected_power)
@@ -110,26 +110,23 @@ def test_is_real(lmax):
     assert crojax.alm.is_real(alm)
     val = 1.0 + 2.0j
     ix_21 = crojax.alm.getidx(2, 1, lmax)  # get index for l=2, m=1
-    alm[ix_21] = val  # set l=2, m=1 mode but not m=-1 mode
+    alm = alm.at[ix_21].set(val)  # set l=2, m=1 mode but not m=-1 mode
     assert not crojax.alm.is_real(alm)
     ix_2m1 = crojax.alm.getidx(2, -1, lmax)  # get index for l=2, m=-1
-    alm[ix_2m1] = -1 * val.conjugate()  # set m=-1 mode to complex conjugate
+    # set m=-1 mode to complex conjugate
+    alm = alm.at[ix_2m1].set(-1 * val.conjugate())  
     assert crojax.alm.is_real(alm)
 
     # generate a real signal and check that alm.is_real is True
     alm = s2fft.utils.signal_generator.generate_flm(
         rng, lmax + 1, reality=True
     )
-    alm = alm[None]  # add frequency dimension
-    assert hp._is_real(alm)
-    assert hp.Alm(alm).is_real
+    assert crojax.alm.is_real(alm)
     # complex
     alm = s2fft.utils.signal_generator.generate_flm(
         rng, lmax + 1, reality=False
     )
-    alm = alm[None]  # add frequency dimension
-    assert not hp._is_real(alm)
-    assert not hp.Alm(alm).is_real
+    assert not crojax.alm.is_real(alm)
 
 
 def test_reduce_lmax(lmax):
