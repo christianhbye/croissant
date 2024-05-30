@@ -33,7 +33,8 @@ class Rotator(hp.Rotator):
         rot : sequence of floats
             Euler angles in degrees (or radians if deg=False) describing the
             rotation. The order of the angles depends on the value of
-            eulertype.
+            ``eulertype''. When ``eulertype'' is "ZYX", the angles are
+            (yaw, -pitch, roll).
         coord : sequence of strings
             Coordinate systems to rotate between. Supported values are
             "G" (galactic), "C" (equatorial), "E" (ecliptic), "M" (MCMF),

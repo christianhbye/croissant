@@ -65,7 +65,43 @@ def get_rot_mat(from_frame, to_frame):
     return rmat
 
 
-def rotmat_to_euler(mat):
+def rotmat_to_euler(mat, eulertype="ZYX"):
+    """
+    Convert a rotation matrix to Euler angles in the specified convention.
+
+    Parameters
+    ----------
+    mat : np.ndarray
+        The rotation matrix.
+    eulertype : str, either ``ZYX'' or ``ZYZ''.
+        The Euler angle convention to use.
+
+    Returns
+    -------
+    eul : tup
+        The Euler angles in the specified convention.
+
+    Notes
+    -----
+    ``ZYX'' is the default healpy convention, what you would make ``rot''
+    when you call healpy.Rotator(rot, euletype="ZYX"). Wikipedia refers
+    to this as Tait-Bryan angles X1-Y2-Z3.
+
+    ``ZYZ'' is the convention typically used for Wigner D matrices, which
+    s2fft uses. Wkipidia calls it Euler angles Z1-Y2-Z3. This would be
+    used in s2fft.utils.rotation.rotate_flms.
+
+
+    """
+    if eulertype == "ZYX":
+        return rotmat_to_eulerZYX(mat)
+    elif eulertype == "ZYZ":
+        return rotmat_to_eulerZYZ(mat)
+    else:
+        raise ValueError("Invalid Euler angle convention.")
+
+
+def rotmat_to_eulerZYX(mat):
     """
     Convert a rotation matrix to Euler angles in the ZYX convention. This is
     sometimes referred to as Tait-Bryan angles X1-Y2-Z3.
@@ -78,14 +114,49 @@ def rotmat_to_euler(mat):
     Returns
     --------
     eul : tup
-        The Euler angles.
+        The Euler angles in the order yaw, -pitch, roll. This is the input
+        healpy.rotator.Rotator expects when ``eulertype'' is ZYX.
 
     """
-    beta = np.arcsin(mat[0, 2])
-    alpha = np.arctan2(mat[1, 2] / np.cos(beta), mat[2, 2] / np.cos(beta))
-    gamma = np.arctan2(mat[0, 1] / np.cos(beta), mat[0, 0] / np.cos(beta))
-    eul = (gamma, beta, alpha)
+    beta = -np.arcsin(mat[0, 2])  # pitch
+    cb = np.cos(beta)
+    if np.abs(cb) > 1e-10:  # can divide by cos(beta)
+        gamma = np.arctan2(mat[1, 2] / cb, mat[2, 2] / cb)  # roll
+        alpha = np.arctan2(mat[0, 1] / cb, mat[0, 0] / cb)  # yaw
+    # else: cos(beta) = 0, sensitive only to alpha+gamma or alpha-gamma;
+    # this is called gimbal lock. We take gamma = 0.
+    else:
+        gamma = 0
+        alpha = np.arctan2(-mat[1, 0], mat[1, 1])
+
+    eul = (alpha, -beta, gamma)  # healpy convention for ZYX
     return eul
+
+
+def rotmat_to_eulerZYZ(mat):
+    """
+    Convert a rotation matrix to Euler angles in the ZYZ convention. This is
+    sometimes referred to as Euler angles Z1-Y2-Z3.
+
+    Parameters
+    ----------
+    mat : np.ndarray
+        The rotation matrix.
+
+    Returns
+    --------
+    eul : tup
+        The Euler angles in the order alpha, beta, gamma. This is the input
+        s2fft.utils.rotation.rotate_flms expects.
+
+    """
+    alpha = np.arctan2(mat[1, 2], mat[0, 2])
+    cos_beta = mat[2, 2]
+    beta = np.arctan2(np.sqrt(1 - cos_beta**2), cos_beta)
+    gamma = np.arctan2(mat[2, 1], -mat[2, 0])
+    eul = (alpha, beta, gamma)
+    return eul
+
 
 def hp_npix2nside(npix):
     """
@@ -104,6 +175,7 @@ def hp_npix2nside(npix):
     """
     nside = int(np.sqrt(npix / 12))
     return nside
+
 
 def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
     """

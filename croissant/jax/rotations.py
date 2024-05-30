@@ -30,7 +30,7 @@ def rotate_alm(alm, from_frame, to_frame, dl_array=None):
 
     """
     rmat = get_rot_mat(from_frame, to_frame)
-    euler = rotmat_to_euler(rmat)
+    euler = rotmat_to_euler(rmat, eulertype="ZYZ")
     lmax = lmax_from_shape(alm.shape)
     alm_rot = rotate_flms(alm, lmax + 1, euler, dl_array=dl_array)
     return alm_rot
