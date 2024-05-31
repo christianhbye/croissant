@@ -542,14 +542,7 @@ class Alm(hp.Alm):
 
         """
         if times is not None:
-            if world.lower() == "moon":
-                sidereal_day = constants.sidereal_day_moon
-            elif world.lower() == "earth":
-                sidereal_day = constants.sidereal_day_earth
-            else:
-                raise ValueError(
-                    f"World must be 'moon' or 'earth', not {world}."
-                )
+            sidereal_day = constants.sidereal_day[world]
             phi = 2 * np.pi * times / sidereal_day
             return self.rot_alm_z(phi=phi, times=None)
 
