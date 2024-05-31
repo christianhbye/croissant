@@ -1,111 +1,11 @@
+from functools import partial
+import jax
 import jax.numpy as jnp
-import s2fft
 from ..constants import Y00
 
 
-def alm2map(alm, spin=0, nside=None, sampling="mw", precomps=None, spmd=True):
-    """
-    Construct a map on the sphere from the alm array. This is a wrapper
-    around s2fft.inverse provided for convenience.
-
-    Parameters
-    ----------
-    alm : jnp.ndarray
-        The alm array. Must have shape (lmax+1, 2*lmax+1). Use
-        jax.vmap to vectorize over multiple alms.
-    spin : int
-        Harmonic spin of the map. Must be 0 or 1.
-    nside : int
-        The nside of the healpix map to construct. Required if sampling
-        is "healpix".
-    sampling : str
-        Sampling scheme on the sphere. Must be in
-        {"mw", "mwss", "dh", "healpix"}. Passed to s2fft.inverse.
-    precomps : list
-        Precomputed values for the s2fft.inverse function. Passed to
-        s2fft.inverse.
-    spmd : bool
-        Map the computation over all available devices. Passed to
-        s2fft.inverse.
-
-    Returns
-    -------
-    m : jnp.ndarray
-        The map(s) corresponding to the alm.
-
-    """
-    L = lmax_from_shape(alm.shape) + 1
-    m = s2fft.inverse_jax(
-        alm,
-        L,
-        spin=spin,
-        nside=nside,
-        sampling=sampling,
-        reality=is_real(alm),
-        spmd=spmd,
-        L_lower=0,
-    )
-    return m
-
-
-def map2alm(
-    m,
-    lmax,
-    spin=0,
-    nside=None,
-    sampling="mw",
-    reality=True,
-    precomps=None,
-    spmd=True,
-):
-    """
-    Construct the alm array from a map on the sphere. This is a wrapper
-    around s2fft.forward provided for convenience.
-
-    Parameters
-    ----------
-    m : jnp.ndarray
-        The map on the sphere. Use jax.vmap to vectorize over multiple
-        maps.
-    lmax : int
-        The maximum l value. Note that s2fft uses L which is lmax+1.
-    spin : int
-        Harmonic spin of the map. Must be 0 or 1.
-    nside : int
-        The nside of the healpix map. Required if sampling is "healpix".
-    sampling : str
-        Sampling scheme on the sphere. Must be in
-        {"mw", "mwss", "dh", "gl", "healpix"}. Passed to s2fft.forward.
-    reality : bool
-        True if the map is real-valued. Passed to s2fft.forward.
-    precomps : list
-        Precomputed values for the s2fft.forward function. Passed to
-        s2fft.forward.
-    spmd : bool
-        Map the computation over all available devices. Passed to
-        s2fft.forward.
-
-    Returns
-    -------
-    alm : jnp.ndarray
-        The alm array corresponding to the map.
-
-    """
-    L = lmax + 1
-    alm = s2fft.forward_jax(
-        m,
-        L,
-        spin=spin,
-        nside=nside,
-        sampling=sampling,
-        reality=reality,
-        spmd=spmd,
-        L_lower=0,
-    )
-    return alm
-
-
-def total_power(alm):
+@partial(jax.jit, static_argnums=(1,))
+def total_power(alm, lmax):
     """
     Compute the integral of a signal (such as an antenna beam) given
     the spherical harmonic coefficients. This is needed to normalize the
@@ -117,6 +17,8 @@ def total_power(alm):
     alm : jnp.ndarray
         The spherical harmonic coefficients. The last two dimensions must
         correspond to the ell and emm indices respectively.
+    lmax : int
+        The maximum l value.
 
     Returns
     -------
@@ -124,13 +26,13 @@ def total_power(alm):
         The total power of the signal.
 
     """
-    lmax = lmax_from_shape(alm.shape)
     # get the index of the monopole component
     lix, mix = getidx(lmax, 0, 0)
     monopole = alm[..., lix, mix]
     return 4 * jnp.pi * jnp.real(monopole) * Y00
 
 
+@jax.jit
 def getidx(lmax, ell, emm):
     """
     Get the index of the alm array for a given l and m.
@@ -151,14 +53,11 @@ def getidx(lmax, ell, emm):
     m_ix : int or jnp.ndarray
         The m index.
 
-    Raises
-    ------
-    IndexError
-        If l,m don't satisfy abs(m) <= l <= lmax.
     """
     return ell, emm + lmax
 
 
+@jax.jit
 def getlm(lmax, ix):
     """
     Get the l and m corresponding to the index of the alm array.

@@ -8,46 +8,6 @@ import croissant.jax as crojax
 pytestmark = pytest.mark.parametrize("lmax", [8, 16, 64, 128])
 rng = np.random.default_rng(seed=0)
 
-
-@pytest.mark.parametrize("sampling", ["dh", "mw", "healpix"])
-def test_alm2map(lmax, sampling):
-    if sampling == "healpix":
-        nside = lmax // 2
-    else:
-        nside = None
-    # make constant map
-    shape = crojax.alm.shape_from_lmax(lmax)
-    alm = jnp.zeros(shape, dtype=jnp.complex128)
-    a00 = 5
-    alm = alm.at[crojax.alm.getidx(lmax, 0, 0)].set(a00)
-    m = crojax.alm.alm2map(alm, sampling=sampling, nside=nside)
-    assert jnp.allclose(m, a00 * Y00)
-
-    # XXX compare to healpy with more complex alm
-
-
-@pytest.mark.parametrize("sampling", ["dh", "mw", "healpix"])
-def test_map2alm(lmax, sampling):
-    if sampling == "healpix":
-        nside = lmax // 2
-    else:
-        nside = None
-    # make constant map
-    shape = s2fft.sampling.s2_samples.f_shape(
-        lmax + 1, sampling=sampling, nside=nside
-    )
-    const = 10  # constant map with value 10
-    m = jnp.ones(shape, dtype=jnp.float64) * const
-    alm = crojax.alm.map2alm(m, lmax, sampling=sampling, nside=nside)
-    a00_idx = crojax.alm.getidx(lmax, 0, 0)
-    a00 = alm[a00_idx]
-    assert jnp.allclose(a00, 4 * jnp.pi * Y00 * const)
-
-    # XXX compare to healpy with more complex map
-
-    # XXX test that map2alm(alm2map(alm)) == alm
-
-
 def test_total_power(lmax):
     # make a map that is 1 everywhere so total power is 4pi:
     shape = crojax.alm.shape_from_lmax(lmax)
