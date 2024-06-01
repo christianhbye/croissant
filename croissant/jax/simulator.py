@@ -1,4 +1,3 @@
-from functools import partial
 import jax
 import jax.numpy as jnp
 
@@ -37,8 +36,8 @@ def rot_alm_z(lmax, N_times, delta_t, world="moon"):
     return phases
 
 
-@partial(jax.jit, static_argnums=(2, 5))
-def convolve(beam_alm, sky_alm, lmax, N_times, delta_t, world="moon"):
+@jax.jit
+def convolve(beam_alm, sky_alm, phases):
     """
     Compute the convolution for a range of times in jax. The convolution is
     a dot product in l,m space. Axes are in the order: time, freq, ell, emm.
@@ -50,14 +49,9 @@ def convolve(beam_alm, sky_alm, lmax, N_times, delta_t, world="moon"):
         normalized to have total power of unity.
     sky_alm : jnp.ndarray
         The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1).
-    lmax : int
-        The maximum ell value of the alms.
-    N_times : int
-        The number of times to compute the convolution at.
-    delta_t : float
-        The time difference between the times.
-    world : str
-        ``earth'' or ``moon''. Default is ``moon''.
+    phases : jnp.ndarray
+        The phases that rotate the sky, of the form exp(-i*m*phi(t)).
+        Shape (N_times, 2*lmax+1). See the function ``rot_alm_z''.
 
     Returns
     -------
@@ -65,9 +59,8 @@ def convolve(beam_alm, sky_alm, lmax, N_times, delta_t, world="moon"):
         The convolution. Shape (N_times, N_freqs).
 
     """
-    phases = rot_alm_z(lmax, N_times, delta_t, world=world)
     s = sky_alm[None, :, :, :]  # add time axis
     p = phases[:, None, None, :]  # add freq and ell axes
     b = beam_alm.conjugate()[None, :, :, :]  # add time axis and conjugate
-    res = jnp.sum(s * p * b, axes=(2, 3))  # dot product in l,m space
+    res = jnp.sum(s * p * b, axis=(2, 3))  # dot product in l,m space
     return res
