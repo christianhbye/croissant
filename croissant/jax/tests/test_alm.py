@@ -8,6 +8,7 @@ import croissant.jax as crojax
 pytestmark = pytest.mark.parametrize("lmax", [8, 16, 64, 128])
 rng = np.random.default_rng(seed=0)
 
+
 def test_total_power(lmax):
     # make a map that is 1 everywhere so total power is 4pi:
     shape = crojax.alm.shape_from_lmax(lmax)
