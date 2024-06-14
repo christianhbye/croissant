@@ -1,7 +1,7 @@
 from healpy import npix2nside, pix2ang
 import numpy as np
 
-from .constants import Y00
+from ..constants import Y00
 from .healpix import Alm
 from .sphtransform import map2alm
 
