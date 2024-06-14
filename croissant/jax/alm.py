@@ -29,7 +29,7 @@ def total_power(alm, lmax):
     # get the index of the monopole component
     lix, mix = getidx(lmax, 0, 0)
     monopole = alm[..., lix, mix]
-    return 4 * jnp.pi * jnp.real(monopole) * Y00
+    return jnp.real(monopole) / Y00
 
 
 @jax.jit
