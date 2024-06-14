@@ -128,4 +128,5 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
+notebooks/lusee_beam.npy
 notebooks/dpss.ipynb
