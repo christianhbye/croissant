@@ -42,11 +42,14 @@ def convolve(beam_alm, sky_alm, phases):
     Compute the convolution for a range of times in jax. The convolution is
     a dot product in l,m space. Axes are in the order: time, freq, ell, emm.
 
+    Note that normalization is not included in this function. The usual
+    normalization factor can be computed with croissant.jax.alm.total_power
+    of the beam alm.
+
     Parameters
     ----------
     beam_alm : jnp.ndarray
-        The beam alms. Shape (N_freqs, lmax+1, 2*lmax+1). The beam should be
-        normalized to have total power of unity.
+        The beam alms. Shape (N_freqs, lmax+1, 2*lmax+1).
     sky_alm : jnp.ndarray
         The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1).
     phases : jnp.ndarray
