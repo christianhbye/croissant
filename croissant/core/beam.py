@@ -7,7 +7,6 @@ from .sphtransform import map2alm
 
 
 class Beam(Alm):
-
     """
     Antenna beam class. This is a subclass of Alm that adds a few methods
     for computing the total power and applying a horizon cut of an antenna

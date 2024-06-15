@@ -26,5 +26,5 @@ def generate_euler_dl(lmax, from_frame, to_frame):
     """
     rmat = get_rot_mat(from_frame, to_frame)
     euler = rotmat_to_euler(rmat, eulertype="ZYZ")
-    dl_array = generate_rotate_dls(lmax+1, euler[1])
+    dl_array = generate_rotate_dls(lmax + 1, euler[1])
     return euler, dl_array
