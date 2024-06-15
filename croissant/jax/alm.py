@@ -130,7 +130,7 @@ def is_real(alm):
     neg_m = alm[..., :lmax][..., ::-1]
     # get alms for positive m
     pos_m = alm[..., lmax + 1 :]
-    return jnp.all(neg_m == (-1) ** emm * jnp.conj(pos_m)).item()
+    return jnp.allclose(neg_m, (-1) ** emm * jnp.conj(pos_m)).item()
 
 
 def reduce_lmax(alm, new_lmax):
