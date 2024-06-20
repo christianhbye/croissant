@@ -62,8 +62,8 @@ def convolve(beam_alm, sky_alm, phases):
         The convolution. Shape (N_times, N_freqs).
 
     """
-    s = sky_alm[None, :, :, :]  # add time axis
+    s = sky_alm.conjugate()[None, :, :, :]  # add time axis and conjugate
     p = phases[:, None, None, :]  # add freq and ell axes
-    b = beam_alm.conjugate()[None, :, :, :]  # add time axis and conjugate
+    b = beam_alm[None, :, :, :]  # add time axis
     res = jnp.sum(s * p * b, axis=(2, 3))  # dot product in l,m space
     return res
