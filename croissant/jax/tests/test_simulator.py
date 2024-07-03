@@ -87,5 +87,5 @@ def test_convolve():
     # over the multipoles that are in the beam
     for i in range(Ntimes):
         phase = phases[i]
-        expected = jnp.sum(sky * beam.conj() * phase[None])
+        expected = jnp.sum(sky.conj() * beam * phase[None])
         assert jnp.isclose(ant_temp[i], expected)
