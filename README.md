@@ -10,6 +10,9 @@ In frequency domain, CROISSANT uses Discrete Prolate Spheroidal Sequences as a r
 
 Moreover, the time evolution of the simulation is very natural in this representation. In the antenna reference frame, the sky rotates overhead with time. To account for this rotation, it is enough to rotate the spherical harmonics coefficients. In the right choice of coordinates (that is, one where the z-axis is aligned with the rotation axis of the earth or the moon), this rotation is simply achieved by multiplying the spherical coefficient by a phase.
 
+
+> **New in version 4.0.0:** CROISSANT is now fully compatible with JAX, provided in the interfeace croissant.jax. Spherical harmonics transforms (built on [s2ftt](https://github.com/astro-informatics/s2fft/)), coordinate system transforms, rotations, and the simulator itself can now all be differentiated using JAX autograd.
+
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
 ## Installation
