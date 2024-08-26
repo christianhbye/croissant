@@ -127,10 +127,11 @@ class Rotator(hp.Rotator):
         lmax : int
             The maximum ell value to rotate.
         polarized : bool
-            If true, the alm is assumed to be a list of I, Q, U polarizations.
-            I is spin-0 and Q, U are spin-2. In this case, ``alm'' has two
-            dimensions where the first has size 3. Multiple frequency maps
-            are not yet supported in this case.
+            If true, the alm is assumed to be a sequence of TEB alms
+            corresponding to I, Q, U maps, where I is spin-0 and Q, U are 
+            spin-2. In this case, ``alm'' has two dimensions where the first
+            has size 3. Multiple frequency maps are not yet supported in this
+            case.
 
         Returns
         -------
