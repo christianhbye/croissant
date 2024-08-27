@@ -116,7 +116,7 @@ class Rotator(hp.Rotator):
             rot=rot, coord=coord, inv=inv, deg=deg, eulertype=eulertype
         )
 
-    def rotate_alm(self, alm, lmax=None, inplace=False):
+    def rotate_alm(self, alm, lmax=None, polarized=False):
         """
         Rotate an alm or a list of alms.
 
@@ -126,23 +126,22 @@ class Rotator(hp.Rotator):
             The alm or list of alms to rotate.
         lmax : int
             The maximum ell value to rotate.
-        inplace : bool
-            If True, the alm is rotated in place. Otherwise, a copy is
-            rotated and returned.
+        polarized : bool
+            If true, the alm is assumed to be a sequence of TEB alms
+            corresponding to I, Q, U maps, where I is spin-0 and Q, U are 
+            spin-2. In this case, ``alm'' has two dimensions where the first
+            has size 3. Multiple frequency maps are not yet supported in this
+            case.
 
         Returns
         -------
         rotated_alm : array_like
-            The rotated alm or list of alms. This is only returned if
-            inplace=False.
+            The rotated alm or list of alms.
 
         """
-        if inplace:
-            rotated_alm = alm
-        else:
-            rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
+        rotated_alm = np.array(alm, copy=True, dtype=np.complex128)
 
-        if rotated_alm.ndim == 1:
+        if rotated_alm.ndim == 1 or polarized:
             super().rotate_alm(rotated_alm, lmax=lmax, inplace=True)
         elif rotated_alm.ndim == 2:
             # iterate over the list of alms
@@ -153,10 +152,9 @@ class Rotator(hp.Rotator):
                 f"alm must have 1 or 2 dimensions, not {alm.ndim}."
             )
 
-        if not inplace:
-            return rotated_alm
+        return rotated_alm
 
-    def rotate_map_alms(self, m, lmax=None, inplace=False):
+    def rotate_map_alms(self, m, lmax=None, polarized=False):
         """
         Rotate a map or a list of maps in spherical harmonics space.
 
@@ -166,28 +164,26 @@ class Rotator(hp.Rotator):
             The map or list of maps to rotate.
         lmax : int
             The maximum ell value to rotate.
-        inplace : bool
-            If True, the map is rotated in place. Otherwise, a copy is
-            rotated and returned.
+        polarized : bool
+            If true, ``m'' is assumed to be a list of I, Q, U polarizations.
+            I is spin-0 and Q, U are spin-2. In this case, ``m'' has two
+            dimensions where the first has size 3. Multiple frequency maps
+            are not yet supported in this case.
 
         Returns
         -------
         rotated_m : np.ndarray
-            The rotated map or list of maps. This is only returned if
-            inplace=False.
+            The rotated map or list of maps.
 
         """
         npix = m.shape[-1]
         nside = hp.npix2nside(npix)
-        alm = map2alm(m, lmax=lmax)
-        self.rotate_alm(alm, lmax=lmax, inplace=True)
-        rotated_m = alm2map(alm, nside, lmax=lmax)
-        if inplace:
-            m = rotated_m
-        else:
-            return rotated_m
+        alm = map2alm(m, lmax=lmax, polarized=polarized)
+        alm = self.rotate_alm(alm, lmax=lmax, polarized=polarized)
+        rotated_m = alm2map(alm, nside, lmax=lmax, polarized=polarized)
+        return rotated_m
 
-    def rotate_map_pixel(self, m, inplace=False):
+    def rotate_map_pixel(self, m, polarized=False):
         """
         Rotate a map or a list of maps in pixel space.
 
@@ -195,18 +191,19 @@ class Rotator(hp.Rotator):
         -----------
         m : array-like
             The map or list of maps to rotate.
-        inplace : bool
-            If True, the map is rotated in place. Otherwise, a copy is
-            rotated and returned.
+        polarized : bool
+            If true, ``m'' is assumed to be a list of I, Q, U polarizations.
+            I is spin-0 and Q, U are spin-2. In this case, ``m'' has two
+            dimensions where the first has size 3. Multiple frequency maps
+            are not yet supported in this case.
 
         Returns
         -------
         rotated_m : np.ndarray
-            The rotated map or list of maps. This is only returned if
-            inplace=False.
+            The rotated map or list of maps. 
 
         """
-        if m.ndim == 1:
+        if m.ndim == 1 or polarized:
             rotated_m = super().rotate_map_pixel(m)
         elif m.ndim == 2:
             rotated_m = np.empty_like(m)
@@ -214,7 +211,4 @@ class Rotator(hp.Rotator):
                 rotated_m[i] = super().rotate_map_pixel(m[i])
         else:
             raise ValueError(f"m must have 1 or 2 dimensions, not {m.ndim}.")
-        if inplace:
-            m = rotated_m
-        else:
-            return rotated_m
+        return rotated_m

@@ -1,13 +1,15 @@
 import healpy as hp
 import numpy as np
-
+import pytest
 from croissant.constants import Y00
 from croissant.core.sphtransform import alm2map, map2alm
 
+pytestmark = pytest.mark.parametrize("lmax", [16, 32, 64])
+rng = np.random.default_rng(seed=1234)
 
-def test_alm2map():
+
+def test_alm2map(lmax):
     # make constant map
-    lmax = 10
     a00 = 3
     size = hp.Alm.getsize(lmax)
     alm = np.zeros(size, dtype=np.complex128)
@@ -30,20 +32,10 @@ def test_alm2map():
     assert np.allclose(hp_map, expected_maps)
 
     # inverting map2alm
-    lmax = 10
     size = hp.Alm.getsize(lmax)
-    alm = np.zeros(size, dtype=np.complex128)
-    lm_dict = {
-        (0, 0): 5.1,
-        (2, 0): 7.4,
-        (3, 2): 3 + 5j,
-        (4, 1): -4.3 + 1.3j,
-        (7, 7): 11,
-    }
-    for ell, emm in lm_dict:
-        ix = hp.Alm.getidx(lmax, ell, emm)
-        alm[ix] = lm_dict[(ell, emm)]
-
+    alm = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    # m = 0 modes are real
+    alm[: lmax + 1] = alm[: lmax + 1].real
     nside = 64
     m = alm2map(alm, nside, lmax=lmax)
     alm_ = map2alm(m, lmax=lmax)
@@ -51,12 +43,22 @@ def test_alm2map():
     m_ = alm2map(alm_, nside, lmax=lmax)
     assert np.allclose(m, m_)
 
+    # polarized case
+    t_alm = alm.copy()
+    e_alm = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    b_alm = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    alm = np.array([t_alm, e_alm, b_alm])
+    # m = 0 modes are real
+    alm[:, : lmax + 1] = alm[:, : lmax + 1].real
+    m = alm2map(alm, nside, lmax=lmax, polarized=True)
+    hp_map = hp.alm2map(alm, nside, lmax=lmax, pol=True)
+    assert np.allclose(m, hp_map)
 
-def test_map2alm():
+
+def test_map2alm(lmax):
     nside = 32
     npix = hp.nside2npix(nside)
     data = np.ones(npix)
-    lmax = 5
     alm = map2alm(data, lmax=lmax)
     assert np.isclose(alm[0], Y00 * 4 * np.pi)  # a00 = Y00 * 4pi
     assert np.allclose(alm[1:], 0)  # rest of alms should be 0
@@ -75,3 +77,11 @@ def test_map2alm():
     # d1 is d0 + constant value so they should only differ at a00
     assert np.allclose(alm0[1:], alm1[1:])
     assert np.isclose(alm0[0] + c * Y00 * 4 * np.pi, alm1[0])
+
+    # polarized case
+    nside = 64
+    npix = hp.nside2npix(nside)
+    iqu_map = rng.standard_normal((3, npix))
+    alm = map2alm(iqu_map, lmax=lmax, polarized=True)
+    hp_alm = hp.map2alm(iqu_map, lmax=lmax, pol=True, use_pixel_weights=True)
+    assert np.allclose(alm, hp_alm)

@@ -453,7 +453,7 @@ class Alm(hp.Alm):
     def switch_coords(self, to_coord, loc=None, time=None):
         to_coord = coord_rep(to_coord)
         rot = Rotator(coord=[self.coord, to_coord], loc=loc, time=time)
-        rot.rotate_alm(self.alm, lmax=self.lmax, inplace=True)
+        self.alm = rot.rotate_alm(self.alm, lmax=self.lmax)
         self.coord = to_coord
 
     def getlm(self, i=None):
