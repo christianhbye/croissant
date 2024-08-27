@@ -6,6 +6,8 @@ import pytest
 
 from croissant import rotations
 
+rng = np.random.default_rng(1234)
+
 
 def test_rotator_init():
     # invalid eulertype
@@ -35,10 +37,10 @@ def test_rotator_init():
         rotations.Rotator(coord=["T", "M"], loc=loc)
 
 
-def test_rotate_alm():
-    lmax = 10
+@pytest.mark.parametrize("lmax", [8, 16, 32, 64])
+def test_rotate_alm(lmax):
     size = hp.Alm.getsize(lmax)
-    alm = np.arange(size) + 5j * np.arange(size) ** 2
+    alm = rng.standard_normal(size) + 1j * rng.standard_normal(size)
 
     # galactic -> equatorial
     rot = rotations.Rotator(coord=["G", "C"])
@@ -53,6 +55,17 @@ def test_rotate_alm():
     rot_alm = rot.rotate_alm(alm, lmax=lmax)
     hp_rot = hp.Rotator(rot=eul, coord=["G", "C"])
     hp_rot_alm = hp_rot.rotate_alm(alm)
+    assert np.allclose(rot_alm, hp_rot_alm)
+
+    # test polarization maps
+    t = alm.copy()
+    e = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    b = rng.standard_normal(size) + 1j * rng.standard_normal(size)
+    alm_pol = np.array([t, e, b])
+    rot = rotations.Rotator(coord=["G", "C"])
+    rot_alm = rot.rotate_alm(alm_pol, lmax=lmax, polarized=True)
+    hp_rot = hp.Rotator(coord=["G", "C"])
+    hp_rot_alm = hp_rot.rotate_alm(alm_pol, lmax=lmax)
     assert np.allclose(rot_alm, hp_rot_alm)
 
     # multiple sets of alms at once
@@ -86,6 +99,18 @@ def test_rotate_map():
     # rotate in pixel space
     rm = rot.rotate_map_pixel(m)
     hprm = hp_rot.rotate_map_pixel(m)
+    assert np.allclose(rm, hprm)
+
+    # test polarization maps
+    i_map = m.copy()
+    q_map = rng.standard_normal(npix)
+    u_map = rng.standard_normal(npix)
+    map_pol = np.array([i_map, q_map, u_map])
+    rm = rot.rotate_map_alms(map_pol, polarized=True)
+    hprm = hp_rot.rotate_map_alms(map_pol, use_pixel_weights=True)
+    assert np.allclose(rm, hprm)
+    rm = rot.rotate_map_pixel(map_pol, polarized=True)
+    hprm = hp_rot.rotate_map_pixel(map_pol)
     assert np.allclose(rm, hprm)
 
     # several maps at once
