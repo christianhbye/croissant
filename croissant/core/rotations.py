@@ -179,7 +179,7 @@ class Rotator(hp.Rotator):
         npix = m.shape[-1]
         nside = hp.npix2nside(npix)
         alm = map2alm(m, lmax=lmax, polarized=polarized)
-        self.rotate_alm(alm, lmax=lmax, inplace=True, polarized=polarized)
+        alm = self.rotate_alm(alm, lmax=lmax, polarized=polarized)
         rotated_m = alm2map(alm, nside, lmax=lmax, polarized=polarized)
         return rotated_m
 
