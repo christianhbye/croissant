@@ -19,9 +19,25 @@ class Simulator:
         times=None,
     ):
         """
-        BaseSimulator class. Prepares simulations. End users should use the
-        subclasses in core/simulator.py and crojax/simulator.py to
-        instantiate this class and run simulations.
+        Simulator class.
+
+        Parameters
+        ----------
+        beam : Beam
+            Beam object.
+        sky : Sky
+            Sky object.
+        lmax : int
+            Maximum l value to compute simulation to.
+        frequencies : array-like
+            Frequencies to compute the simulation at.
+        world : str
+            World to simulate on (either "moon" or "earth").
+        location : EarthLocation or MoonLocation
+            Location of telescope.
+        times : Time
+            Times to compute the simulation at.
+
         """
         self.world = world.lower()
         # set up frequencies to run the simulation at
