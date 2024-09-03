@@ -1,6 +1,8 @@
 from astropy.coordinates import EarthLocation
+from astropy.time import Time as EarthTime
 from copy import deepcopy
-from lunarsky import MoonLocation, Time
+from lunarsky import MoonLocation
+from lunarsky import Time as LunarTime
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -46,9 +48,11 @@ class Simulator:
         self.frequencies = frequencies
         if self.world == "moon":
             Location = MoonLocation
+            Time = LunarTime
             self.sim_coord = "M"  # mcmf
         elif self.world == "earth":
             Location = EarthLocation
+            Time = EarthTime
             self.sim_coord = "C"  # equatorial
         else:
             raise KeyError('Keyword ``world\'\' must be "earth" or "moon".')
