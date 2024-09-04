@@ -337,7 +337,7 @@ class Alm(hp.Alm):
             self.frequencies = None
             self.alm = alm
         else:
-            self.frequencies = np.array(frequencies)
+            self.frequencies = np.atleast_1d(frequencies)
             self.alm = alm.reshape(self.frequencies.size, -1)
         try:
             self.lmax = np.min([lmax, self.getlmax])

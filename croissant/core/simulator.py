@@ -138,7 +138,7 @@ class Simulator:
         # the rotation phases
         phases = self.sky.rot_alm_z(times=self.dt, world=self.world)
         phases.shape = (self.N_times, 1, -1)  # add freq axis
-        if self.frequencies is None:
+        if self.frequencies is None or self.frequencies.size == 1:
             dpss = False  # no need to compute dpss if no frequencies
             sky_alm = self.sky.alm.reshape(1, 1, -1)  # add time and freq axes
         else:
@@ -162,7 +162,11 @@ class Simulator:
 
         else:
             beam_coeffs = np.expand_dims(self.beam.alm, axis=0)
-            if self.beam.frequencies is None:  # add freq axis
+            # add freq axis if necessary
+            if (
+                self.beam.frequencies is None
+                or self.beam.frequencies.size == 1
+            ):
                 beam_coeffs = beam_coeffs.reshape(1, 1, -1)
             # m = 0 modes (already real)
             waterfall = np.einsum(
