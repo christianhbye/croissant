@@ -23,11 +23,6 @@ class Rotator(hp.Rotator):
         topocentric and moon centric coordinate systems. In addition, it can
         rotate lists of maps or alms.
 
-        The allowed coordinate transforms are:
-        - ecliptic <--> equatorial <--> galactic <--> mcmf
-        - equatorial <--> topocentric (on earth)
-        - mcmf <--> topocentric (on moon)
-
         Parameters
         ----------
         rot : sequence of floats
@@ -38,9 +33,10 @@ class Rotator(hp.Rotator):
         coord : sequence of strings
             Coordinate systems to rotate between. Supported values are
             "G" (galactic), "C" (equatorial), "E" (ecliptic), "M" (MCMF),
-            "T" (topocentric). The order of the strings determines the order
-            of the rotation. For example, coord=['G', 'C'] will rotate from
-            galactic to equatorial coordinates.
+            "L" (topocentric on the moon) and "T" (topocentric on Earth).
+            The order of the strings determines the order of the rotation. For
+            example, coord=['G', 'C'] will rotate from galactic to equatorial
+            coordinates.
         inv : bool
             If True, the inverse rotation is performed.
         deg : bool
@@ -68,38 +64,28 @@ class Rotator(hp.Rotator):
             "C": "fk5",
             "E": "BarycentricMeanEcliptic",
             "M": "mcmf",
+            "T": "topocentric",
+            "L": "lunar",
         }
 
         if coord is not None:
             coord = [c.upper() for c in coord]
             if len(coord) != 2:
                 raise ValueError("coord must be a sequence of length 2")
-            if "T" in coord:  # topocentric
-                if loc is None or time is None:
-                    raise ValueError(
-                        "loc and time must be provided if coord contains 'T'"
-                    )
-                if "M" in coord:  # on moon
-                    if isinstance(loc, tuple):
-                        loc = MoonLocation(*loc)
-                    from_frame = FRAMES["M"]
-                    to_frame = LunarTopo(location=loc, obstime=time)
-                elif "C" in coord:  # on earth
-                    if isinstance(loc, tuple):
-                        loc = EarthLocation(*loc)
-                    from_frame = FRAMES["C"]
-                    to_frame = AltAz(location=loc, obstime=time)
-                else:
-                    raise ValueError(
-                        "Can only transform between topocentric and "
-                        "equatorial/mcmf"
-                    )
-
-                if coord[0] == "T":  # transforming from T
-                    inv = not inv
-            else:
-                from_frame = FRAMES[coord[0]]
-                to_frame = FRAMES[coord[1]]
+            from_frame = FRAMES[coord[0]]
+            to_frame = FRAMES[coord[1]]
+            if from_frame in ["lunar", "topocentric"]:
+                from_frame = FRAMES[coord[1]]
+                to_frame = FRAMES[coord[0]]
+                inv = not inv
+            if to_frame == "lunar":
+                if isinstance(loc, tuple):
+                    loc = MoonLocation(*loc)
+                to_frame = LunarTopo(location=loc, obstime=time)
+            elif to_frame == "topocentric":
+                if isinstance(loc, tuple):
+                    loc = EarthLocation(*loc)
+                to_frame = AltAz(location=loc, obstime=time)
             convmat = get_rot_mat(from_frame, to_frame)
             if rot is None:
                 rot = rotmat_to_euler(convmat)
