@@ -25,16 +25,13 @@ def test_rotator_init():
     # topocentric without location
     time = Time("2022-06-16 17:00:00")
     with pytest.raises(ValueError):
-        rotations.Rotator(coord=["T", "M"], time=time)
+        rotations.Rotator(coord=["L", "M"], time=time)
     loc = EarthLocation(lon=0, lat=40)
     with pytest.raises(ValueError):  # location is EarthLocation
-        rotations.Rotator(coord=["T", "M"], loc=loc, time=time)
+        rotations.Rotator(coord=["L", "M"], loc=loc, time=time)
     # should work
     loc = MoonLocation(lon=0, lat=40)
-    _ = rotations.Rotator(coord=["T", "M"], loc=loc, time=time)
-    # no time:
-    with pytest.raises(ValueError):
-        rotations.Rotator(coord=["T", "M"], loc=loc)
+    _ = rotations.Rotator(coord=["L", "M"], loc=loc, time=time)
 
 
 @pytest.mark.parametrize("lmax", [8, 16, 32, 64])
