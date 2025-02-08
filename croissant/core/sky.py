@@ -16,7 +16,9 @@ class Sky(Alm):
             Frequencies to make map at in MHz.
         """
         freq = np.array(freq)
-        gsm = GSM16(freq_unit="MHz", data_unit="TRJ", resolution="lo")
+        gsm = GSM16(
+            freq_unit="MHz", data_unit="TRJ", resolution="lo", include_cmb=True
+        )
         sky_map = gsm.generate(freq)
         sky_alm = map2alm(sky_map, lmax=lmax)
         obj = cls(
