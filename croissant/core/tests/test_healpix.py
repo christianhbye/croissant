@@ -299,6 +299,35 @@ def test_from_healpix():
     assert np.allclose(alm.alm, spht.map2alm(data, lmax=lmax))
 
 
+def test_from_healpix_lmax_none():
+    """Test Alm.from_healpix with lmax=None for multi-frequency data."""
+    nside = 8
+    npix = healpy.nside2npix(nside)
+    freqs = np.linspace(1, 50, 50)
+    data = np.arange(npix).reshape(1, -1) * freqs.reshape(-1, 1) ** 2
+    coord = "equatorial"
+    hp_map = hp.HealpixMap(data, frequencies=freqs, coord=coord)
+    
+    # Call from_healpix with lmax=None
+    alm = hp.Alm.from_healpix(hp_map, lmax=None)
+    
+    # Expected lmax should be 3 * nside - 1 (default used by HealpixMap.alm())
+    expected_lmax = 3 * nside - 1
+    assert alm.lmax == expected_lmax
+    
+    # Verify the alm array has the expected trailing size
+    expected_size = healpy.Alm.getsize(expected_lmax)
+    assert alm.alm.shape[-1] == expected_size
+    
+    # Verify it matches what we'd get by calling hp_map.alm() with lmax=None
+    expected_alm = hp_map.alm(lmax=None)
+    assert np.allclose(alm.alm, expected_alm)
+    
+    # Verify frequencies and coord are preserved
+    assert np.allclose(alm.frequencies, freqs)
+    assert alm.coord == coord_rep(coord)
+
+
 def test_alm_from_grid():
     lmax = 45
     nside = 32
