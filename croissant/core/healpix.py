@@ -393,7 +393,7 @@ class Alm(hp.Alm):
         """
         alm = hp_obj.alm(lmax=lmax)
         if lmax is None:
-            lmax = hp.Alm.getlmax(alm.size)
+            lmax = hp.Alm.getlmax(alm.shape[-1])
         obj = cls(
             alm=alm,
             lmax=lmax,
