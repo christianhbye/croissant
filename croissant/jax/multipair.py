@@ -15,6 +15,10 @@ import jax.numpy as jnp
 from .simulator import convolve
 from .alm import total_power, lmax_from_shape
 
+# vmap convolve over the pair axis (axis 0 of beam_alm)
+# sky_alm and phases are broadcast (not mapped)
+_multi_convolve = jax.vmap(convolve, in_axes=(0, None, None))
+
 
 def multi_convolve(beam_alm, sky_alm, phases):
     """
@@ -42,12 +46,10 @@ def multi_convolve(beam_alm, sky_alm, phases):
         dtype complex128.
 
     """
-    # vmap convolve over the pair axis (axis 0 of beam_alm)
-    # sky_alm and phases are broadcast (not mapped)
-    _multi_convolve = jax.vmap(convolve, in_axes=(0, None, None))
     return _multi_convolve(beam_alm, sky_alm, phases)
 
 
+@jax.jit
 def compute_visibilities(beam_alm, sky_alm, phases, norm):
     """
     Compute normalized visibilities for multiple antenna pairs.
