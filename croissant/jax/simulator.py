@@ -20,7 +20,9 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
     delta_t : float
         The time difference between the times.
     times : array_like
-        Explicit time array. If provided, `N_times` and `delta_t` are ignored.
+        Explicit time array in seconds. Times are interpreted as absolute values
+        and will be converted to differences relative to the first time. If
+        provided, `N_times` and `delta_t` are ignored.
     world : str
         ``earth'' or ``moon''. Default is ``moon''.
 
