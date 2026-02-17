@@ -1,0 +1,257 @@
+"""
+Multi-pair visibility simulation via vmapped alm dot products.
+
+This module extends CROISSANT to compute visibilities for multiple antenna pairs
+simultaneously. It works with complex-valued pair beams in s2fft alm format,
+handling both auto-correlations (real beams) and cross-correlations (complex beams)
+uniformly.
+
+The core operation is a vmap of the existing convolve function over the pair axis.
+"""
+
+from typing import Sequence, Tuple
+
+import jax
+import jax.numpy as jnp
+
+from .simulator import convolve
+from .alm import total_power, lmax_from_shape
+
+
+def multi_convolve(beam_alm, sky_alm, phases):
+    """
+    Compute the convolution for multiple antenna pairs via vmap.
+
+    This is a thin wrapper around the existing convolve function that
+    vmaps over the pair axis (axis 0) of the beam array.
+
+    Parameters
+    ----------
+    beam_alm : jnp.ndarray
+        The beam alms for all pairs. Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
+        Each slice along axis 0 holds the s2fft alm of one pair beam.
+        dtype complex128.
+    sky_alm : jnp.ndarray
+        The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1). dtype complex128.
+    phases : jnp.ndarray
+        The phases that rotate the sky, of the form exp(-i*m*phi(t)).
+        Shape (N_times, 2*lmax+1). See simulator.rot_alm_z.
+
+    Returns
+    -------
+    vis : jnp.ndarray
+        The unnormalized visibilities. Shape (N_pairs, N_times, N_freqs).
+        dtype complex128.
+
+    """
+    # vmap convolve over the pair axis (axis 0 of beam_alm)
+    # sky_alm and phases are broadcast (not mapped)
+    _multi_convolve = jax.vmap(convolve, in_axes=(0, None, None))
+    return _multi_convolve(beam_alm, sky_alm, phases)
+
+
+def compute_visibilities(beam_alm, sky_alm, phases, norm):
+    """
+    Compute normalized visibilities for multiple antenna pairs.
+
+    Parameters
+    ----------
+    beam_alm : jnp.ndarray
+        The beam alms for all pairs. Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
+        Each slice along axis 0 holds the s2fft alm of one pair beam.
+        dtype complex128.
+    sky_alm : jnp.ndarray
+        The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1). dtype complex128.
+    phases : jnp.ndarray
+        The phases that rotate the sky, of the form exp(-i*m*phi(t)).
+        Shape (N_times, 2*lmax+1). See simulator.rot_alm_z.
+    norm : jnp.ndarray
+        Normalization factors for each pair. Shape (N_pairs,).
+        For pair (p, q), this should be sqrt(total_power_p * total_power_q)
+        computed from the auto-correlation beams.
+
+    Returns
+    -------
+    vis : jnp.ndarray
+        The normalized visibilities. Shape (N_times, N_pairs, N_freqs).
+        dtype complex128. For auto-correlations, the imaginary part will
+        be at numerical noise level.
+
+    """
+    # Compute raw visibilities: shape (N_pairs, N_times, N_freqs)
+    vis_raw = multi_convolve(beam_alm, sky_alm, phases)
+
+    # Normalize: broadcast norm over time and frequency axes
+    # norm shape: (N_pairs,) -> (N_pairs, 1, 1)
+    vis_normalized = vis_raw / norm[:, None, None]
+
+    # Transpose to (N_times, N_pairs, N_freqs)
+    return jnp.transpose(vis_normalized, (1, 0, 2))
+
+
+def compute_normalization(auto_beam_alm):
+    """
+    Compute normalization factors for antenna pairs from auto-correlation beams.
+
+    For pair (p, q), the normalization is sqrt(total_power_p * total_power_q).
+    This function takes the auto-correlation beam alms and computes the
+    total power for each antenna.
+
+    Parameters
+    ----------
+    auto_beam_alm : jnp.ndarray
+        The auto-correlation beam alms. Shape (N_antennas, N_freqs, lmax+1, 2*lmax+1).
+        Entry i holds the beam alm for antenna i (auto-correlation).
+
+    Returns
+    -------
+    antenna_powers : jnp.ndarray
+        The total power for each antenna at each frequency.
+        Shape (N_antennas, N_freqs).
+
+    """
+    lmax = lmax_from_shape(auto_beam_alm.shape)
+    # vmap total_power over antenna and frequency axes
+    # total_power expects last two dims to be (lmax+1, 2*lmax+1)
+    # auto_beam_alm has shape (N_antennas, N_freqs, lmax+1, 2*lmax+1)
+    # We need to apply total_power to each (lmax+1, 2*lmax+1) slice
+    return jax.vmap(jax.vmap(lambda x: total_power(x, lmax)))(auto_beam_alm)
+
+
+def pair_normalization(antenna_powers, pairs):
+    """
+    Compute the normalization for each pair from antenna powers.
+
+    Parameters
+    ----------
+    antenna_powers : jnp.ndarray
+        The total power for each antenna. Shape (N_antennas,) or (N_antennas, N_freqs).
+        If frequency-dependent, normalization will be frequency-dependent.
+    pairs : Sequence[Tuple[int, int]]
+        List of (p, q) tuples indicating antenna pairs.
+
+    Returns
+    -------
+    norm : jnp.ndarray
+        Normalization for each pair. Shape (N_pairs,) or (N_pairs, N_freqs).
+
+    """
+    # For each pair (p, q), compute sqrt(power_p * power_q)
+    norms = []
+    for p, q in pairs:
+        norm_pq = jnp.sqrt(antenna_powers[p] * antenna_powers[q])
+        norms.append(norm_pq)
+    return jnp.stack(norms, axis=0)
+
+
+class MultiPairSimulator:
+    """
+    Simulator for multi-pair visibility computation.
+
+    This class holds the beam alms and metadata for multiple antenna pairs
+    and provides methods to compute visibilities.
+
+    Parameters
+    ----------
+    beam_alm : jnp.ndarray
+        The beam alms for all pairs. Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
+        dtype complex128.
+    norm : jnp.ndarray
+        Normalization factors for each pair. Shape (N_pairs,).
+    pairs : Sequence[Tuple[int, int]]
+        List of (p, q) tuples mapping each index along axis 0 to an antenna pair.
+        This is static metadata.
+
+    Attributes
+    ----------
+    beam_alm : jnp.ndarray
+        The beam alms.
+    norm : jnp.ndarray
+        Normalization factors.
+    pairs : tuple
+        Tuple of (p, q) pairs.
+    n_pairs : int
+        Number of pairs.
+    lmax : int
+        Maximum ell value.
+
+    """
+
+    def __init__(
+        self,
+        beam_alm: jnp.ndarray,
+        norm: jnp.ndarray,
+        pairs: Sequence[Tuple[int, int]],
+    ):
+        self.beam_alm = beam_alm
+        self.norm = norm
+        self.pairs = tuple(pairs)  # Make immutable
+        self.n_pairs = len(pairs)
+        self.lmax = lmax_from_shape(beam_alm.shape)
+
+    def simulate(self, sky_alm, phases):
+        """
+        Compute visibilities for all pairs.
+
+        Parameters
+        ----------
+        sky_alm : jnp.ndarray
+            The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1). dtype complex128.
+        phases : jnp.ndarray
+            The phases that rotate the sky. Shape (N_times, 2*lmax+1).
+
+        Returns
+        -------
+        vis : jnp.ndarray
+            Visibilities. Shape (N_times, N_pairs, N_freqs). dtype complex128.
+
+        """
+        return compute_visibilities(self.beam_alm, sky_alm, phases, self.norm)
+
+    def get_pair_index(self, p, q):
+        """
+        Get the index along the pair axis for antenna pair (p, q).
+
+        Parameters
+        ----------
+        p : int
+            First antenna index.
+        q : int
+            Second antenna index.
+
+        Returns
+        -------
+        idx : int
+            Index along the pair axis.
+
+        Raises
+        ------
+        ValueError
+            If the pair is not found.
+
+        """
+        try:
+            return self.pairs.index((p, q))
+        except ValueError:
+            raise ValueError(f"Pair ({p}, {q}) not found in pairs list")
+
+    def tree_flatten(self):
+        """Flatten for JAX pytree registration."""
+        children = (self.beam_alm, self.norm)
+        aux_data = self.pairs
+        return children, aux_data
+
+    @classmethod
+    def tree_unflatten(cls, aux_data, children):
+        """Unflatten for JAX pytree registration."""
+        beam_alm, norm = children
+        pairs = aux_data
+        return cls(beam_alm, norm, pairs)
+
+
+# Register as a JAX pytree
+jax.tree_util.register_pytree_node(
+    MultiPairSimulator,
+    MultiPairSimulator.tree_flatten,
+    MultiPairSimulator.tree_unflatten,
+)
