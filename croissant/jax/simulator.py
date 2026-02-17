@@ -37,7 +37,6 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
         if N_times is None or delta_t is None:
             raise ValueError("Must specify `times` or both `N_times` and `delta_t`.")
         dt = jnp.arange(N_times) * delta_t
-        
     day = constants.sidereal_day[world]
     phi = 2 * jnp.pi * dt / day  # rotation angle
     emms = jnp.arange(-lmax, lmax + 1)  # m values
