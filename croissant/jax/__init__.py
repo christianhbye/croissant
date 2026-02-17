@@ -3,4 +3,4 @@ from jax import config
 
 config.update("jax_enable_x64", True)
 
-from . import alm, rotations, simulator
+from . import alm, rotations, simulator, multipair
