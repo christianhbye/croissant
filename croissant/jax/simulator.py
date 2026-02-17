@@ -34,6 +34,10 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
 
     """
     if times is not None:
+        # Ensure `times` is a JAX array and at least 1D for consistent handling
+        times = jnp.atleast_1d(jnp.asarray(times))
+        if times.size == 0:
+            raise ValueError("`times` must be a non-empty array-like object.")
         dt = times - times[0]
     else:
         if N_times is None or delta_t is None:
