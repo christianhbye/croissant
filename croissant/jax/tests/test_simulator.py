@@ -153,8 +153,8 @@ def test_rot_alm_z_with_times_parameter(lmax, world):
     # First time should have phase 1 (relative to itself)
     assert jnp.allclose(phases_two[0], jnp.ones_like(phases_two[0]))
     # Second time phases should match expected rotation
-    day_two = sidereal_day[world]
-    phi = 2 * jnp.pi * delta_specific / day_two
+    day = sidereal_day[world]
+    phi = 2 * jnp.pi * delta_specific / day
     for m_index in range(phases_two.shape[1]):
         emm = m_index - lmax
         expected = jnp.exp(-1j * emm * phi)
