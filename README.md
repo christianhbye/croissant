@@ -14,9 +14,89 @@ Moreover, the time evolution of the simulation is very natural in this represent
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
 ## Installation
-For the latest release, do `pip install croissant-sim` (see https://pypi.org/project/croissant-sim). Git clone this repository for the newest changes (this is under activate development, do so at your own risk!).
+To install the package for standard use, you can use your preferred Python package manager:
+
+**Using `uv` (Recommended)**
+```bash
+uv pip install croissant-sim
+
+```
+
+**Using `pip`**
+
+```bash
+pip install croissant-sim
+
+```
 
 Note that croissant is only tested up to Python 3.12. Python 3.13 and newer versions are experimental.
+
+## Development
+
+We recommend using [`uv`](https://github.com/astral-sh/uv) to manage the development environment. It is exceptionally fast and handles virtual environments, dependencies, and lockfiles automatically. However, standard `pip` workflows are also fully supported.
+
+### 1. Set Up the Environment
+
+**Option A: Using `uv` (Recommended)**
+
+`uv` will automatically read the `pyproject.toml`, create a virtual environment (`.venv`), and install all core and development dependencies.
+
+```bash
+# Clone the repository
+git clone git@github.com:christianhbye/croissant.git
+cd croissant
+
+# Sync the project and install all dependencies
+uv sync
+
+```
+
+**Option B: Using `pip`**
+
+If you prefer standard Python tools, you will need to manually create the environment and install the package in editable mode.
+
+```bash
+# Clone the repository
+git clone git@github.com:christianhbye/croissant.git
+cd croissant
+
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate
+
+# Install the package in editable mode with development dependencies
+pip install -e ".[dev]"
+
+```
+
+### 2. Install Pre-commit Hooks
+
+We use `pre-commit` to automatically format and lint code before every commit. This ensures all code follows our style guidelines (enforced by `ruff`).
+
+**With `uv`:**
+
+```bash
+uv run pre-commit install
+
+```
+
+**With `pip`:**
+
+```bash
+pre-commit install
+
+```
+
+### 3. Running Tests and Linters
+
+We use `pytest` for testing and `ruff` for linting and formatting. Prepend this commands with `uv run` if using `uv`.
+
+```bash
+pytest                         # Run the test suite
+ruff format                    # Auto-format code
+ruff check --fix               # Run linter and fix auto-fixable errors
+
+```
 
 ## Demo
 Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb
