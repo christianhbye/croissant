@@ -1,4 +1,4 @@
-from math import pi, sqrt
+import jax.numpy as jnp
 
 # sidereal days in seconds
 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
@@ -8,4 +8,4 @@ sidereal_day_moon = 655.720 * 3600
 
 sidereal_day = {"earth": sidereal_day_earth, "moon": sidereal_day_moon}
 
-Y00 = 1 / sqrt(4 * pi)  # the 0,0 spherical harmonic function
+Y00 = 1 / jnp.sqrt(4 * jnp.pi)  # the 0,0 spherical harmonic function
