@@ -1,7 +1,34 @@
 from functools import partial
+
 import jax
 import jax.numpy as jnp
-from ..constants import Y00
+
+from .constants import Y00
+
+
+@jax.jit
+def getidx(lmax, ell, emm):
+    """
+    Get the index of the alm array for a given l and m.
+
+    Parameters
+    ----------
+    lmax : int
+        The maximum l value.
+    ell : int or jnp.ndarray
+        The value of l.
+    emm : int or jnp.ndarray
+        The value of m.
+
+    Returns
+    -------
+    l_ix : int or jnp.ndarray
+       The l index (which is the same as the input ell).
+    m_ix : int or jnp.ndarray
+        The m index.
+
+    """
+    return ell, emm + lmax
 
 
 @partial(jax.jit, static_argnums=(1,))
@@ -30,31 +57,6 @@ def total_power(alm, lmax):
     lix, mix = getidx(lmax, 0, 0)
     monopole = alm[..., lix, mix]
     return jnp.real(monopole) / Y00
-
-
-@jax.jit
-def getidx(lmax, ell, emm):
-    """
-    Get the index of the alm array for a given l and m.
-
-    Parameters
-    ----------
-    lmax : int
-        The maximum l value.
-    ell : int or jnp.ndarray
-        The value of l.
-    emm : int or jnp.ndarray
-        The value of m.
-
-    Returns
-    -------
-    l_ix : int or jnp.ndarray
-       The l index (which is the same as the input ell).
-    m_ix : int or jnp.ndarray
-        The m index.
-
-    """
-    return ell, emm + lmax
 
 
 @jax.jit
