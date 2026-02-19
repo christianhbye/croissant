@@ -1,5 +1,6 @@
 from s2fft import generate_rotate_dls
-from ..utils import get_rot_mat, rotmat_to_euler
+
+from .utils import get_rot_mat, rotmat_to_euler
 
 
 def generate_euler_dl(lmax, from_frame, to_frame):
