@@ -14,6 +14,8 @@ license = {text = "MIT License"}
 authors = [{name = "Christian H. Bye", email = "chbye@berkeley.edu"}]
 dependencies = [
   "astropy",
+  "equinox",
+  "jax",
   "lunarsky",
   "numpy",
   "s2fft",
