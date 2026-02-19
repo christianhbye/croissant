@@ -35,14 +35,6 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/christianhbye/croissant"
 
-[project.optional-dependencies]
-dev = [
-  "pytest",
-  "pytest-cov",
-  "pytest-timeout",
-  "ruff"
-]
-
 [tool.setuptools.packages.find]
 where = ["src"]
 
@@ -64,3 +56,16 @@ line-length = 79
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = []
+
+[dependency-groups]
+dev = [
+  "ipympl>=0.10.0",
+  "jupyterlab>=4.5.4",
+  "jupyterlab-vim>=4.1.4",
+  "matplotlib>=3.10.8",
+  "pre-commit>=4.5.1",
+  "pytest",
+  "pytest-cov",
+  "pytest-timeout",
+  "ruff",
+]
