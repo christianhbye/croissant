@@ -6,23 +6,16 @@ CROISSANT is a rapid visiblity simulator in python based on spherical harmonics.
 
 CROISSANT uses spherical harmonics to decompose the sky and antenna beam to a set of coefficients. Since the spherical harmonics represents a complete, orthormal basis on the sphere, the visibility computation reduces nicely from a convolution to a dot product.
 
-In frequency domain, CROISSANT uses Discrete Prolate Spheroidal Sequences as a rapid linear interpolation scheme. Being linear, this interpolation can be done directly on the spherical harmonics coefficients, avoiding redoing the most expensive part of the computation.
-
 Moreover, the time evolution of the simulation is very natural in this representation. In the antenna reference frame, the sky rotates overhead with time. To account for this rotation, it is enough to rotate the spherical harmonics coefficients. In the right choice of coordinates (that is, one where the z-axis is aligned with the rotation axis of the earth or the moon), this rotation is simply achieved by multiplying the spherical coefficient by a phase.
 
 
-> **New in version 4.0.0:** CROISSANT is now fully compatible with JAX, provided in the interfeace croissant.jax. Spherical harmonics transforms (built on [s2ftt](https://github.com/astro-informatics/s2fft/)), coordinate system transforms, rotations, and the simulator itself can now all be differentiated using JAX autograd.
+> **New in version 5.0.0:** CROISSANT is now fully based on JAX and legacy support for numpy/healpy code is dropped. Spherical harmonics transforms (built on [s2ftt](https://github.com/astro-informatics/s2fft/)), coordinate system transforms, rotations, and the simulator itself can now all be differentiated using JAX autograd.
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
 ## Installation
 
-> [!WARNING]
-> Version 4 is the last major release of CROISSANT that supports the simulator based on numpy/healpy. Version 5.0.0 and beyond are fully JAX-based. Pin your dependency to version 4 if you need this functionality.
-
-For the latest version 4 release, do `pip install "croissant-sim<5"` (see https://pypi.org/project/croissant-sim). Git clone this repository for the newest changes (this is under active development, do so at your own risk!).
-
-Note that croissant is only tested up to Python 3.12. Python 3.13 and newer are not yet supported.
+Note that croissant is only tested up to Python 3.12. Python 3.13 and newer versions are experimental.
 
 ## Demo
 Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb

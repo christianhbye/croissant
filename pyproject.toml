@@ -2,5 +2,63 @@
 requires = ["setuptools >= 65", "setuptools_scm >= 8", "wheel"]
 build-backend = "setuptools.build_meta"
 
-[tool.black]
+[project]
+name = "croissant"
+version = "5.0.0"
+description = """
+CROISSANT: A differentiable visibility simulator based on spherical harmonics
+"""
+readme = "README.md"
+requires-python = ">=3.10, <3.13"
+license = {text = "MIT License"}
+authors = [{name = "Christian H. Bye", email = "chbye@berkeley.edu"}]
+dependencies = [
+  "astropy",
+  "lunarsky",
+  "numpy",
+  "s2fft",
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable", 
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering",
+  "Topic :: Scientific/Engineering :: Astronomy",
+]
+
+[project.urls]
+Homepage = "https://github.com/christianhbye/croissant"
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "pytest-cov",
+  "pytest-timeout",
+  "ruff"
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = [
+  "--cov=src",
+  "--cov-report=term-missing",
+  "--cov-report=xml",
+  "--junitxml=junit.xml",
+  "-o junit_family=legacy",
+  "--timeout=60",
+]
+
+[tool.ruff]
 line-length = 79
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []
