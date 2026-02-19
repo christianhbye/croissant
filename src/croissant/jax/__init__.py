@@ -1,6 +1,9 @@
-# enable double precision
-from jax import config
+import warnings
 
-config.update("jax_enable_x64", True)
+from . import *
 
-from . import alm, rotations, simulator
+warnings.warn(
+    "The croissant.jax interface is deprecated and will be removed in a future release. Please use the croissant interface directly instead.",
+    FutureWarning,
+    stacklevel=2,
+)
