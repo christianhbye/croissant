@@ -82,11 +82,11 @@ pip install croissant-sim
 
 ```
 
-CROISSANT supports Python 3.11 and 3.12. The corrected pinned s2fft
+CROISSANT supports Python 3.11-3.13. The corrected pinned s2fft
 revision required for reliable spin-2 HEALPix transforms requires Python
 3.11 or newer; croissant-sim 5.2.1 remains the last Python 3.10-compatible
 release.
-Python 3.13 and newer versions are experimental.
+Python 3.14 and newer versions are experimental.
 
 ## Development
 
