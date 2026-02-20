@@ -3,4 +3,4 @@ __version__ = "5.0.0"
 
 from . import alm, constants, rotations, simulator, multipair, utils
 from .beam import Beam
-from .simulator import Simulator
+from .sky import Sky

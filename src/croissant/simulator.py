@@ -7,7 +7,9 @@ from astropy.time import Time as EarthTime
 from lunarsky import LunarTopo, MoonLocation
 from lunarsky import Time as LunarTime
 
-from . import Beam, Sky, constants, rotations
+from . import constants, rotations
+from .beam import Beam
+from .sky import Sky
 
 
 def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
