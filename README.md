@@ -20,7 +20,7 @@ For the latest release, do `pip install croissant-sim` (see https://pypi.org/pro
 
 To access the JAX features, JAX must also be installed. See the [installation guide](https://github.com/google/jax#installation).
 
-Note that croissant is only tested up to Python 3.12. Python 3.13 and newer are not yet supported.
+Note that croissant is only tested up to Python 3.13. Python 3.14 and newer are not yet supported.
 
 ## Demo
 Jupyter Notebook: https://nbviewer.org/github/christianhbye/croissant/blob/main/notebooks/example_sim.ipynb
