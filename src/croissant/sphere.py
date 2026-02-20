@@ -40,11 +40,15 @@ def compute_alm(data, lmax, sampling, nside=None):
         (len(data), lmax+1, 2*lmax+1)
 
     """
-    m2alm = jax.vmap(s2fft.forward_jax, in_axes=(0, None))
-    alm = m2alm(
-        data, lmax + 1, spin=0, nside=nside, sampling=sampling, reality=True
+    m2alm = partial(
+        s2fft.forward_jax,
+        L=lmax + 1,
+        spin=0,
+        nside=nside,
+        sampling=sampling,
+        reality=True,
     )
-    return alm
+    return jax.vmap(m2alm)(data)
 
 
 class SphBase(eqx.Module):

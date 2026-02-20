@@ -1,3 +1,5 @@
+from functools import partial
+
 import jax
 import numpy as np
 import s2fft
@@ -201,10 +203,14 @@ def _gal_to_eq_mcmf(alm, eul=None, dl_array=None, world="moon"):
         else:
             raise ValueError("Invalid world. Must be 'moon' or 'earth'.")
         eul, dl_array = generate_euler_dl(lmax, "galactic", frame)
-    ct = jax.vmap(
-        s2fft.utils.rotation.rotate_flms, in_axes=(0, None, None, None)
+    ct = partial(
+        s2fft.utils.rotation.rotate_flms,
+        L=lmax + 1,
+        rotation=eul,
+        dl_array=dl_array,
     )
-    return ct(alm, lmax, eul, dl_array=dl_array)
+    alm_eq = jax.vmap(ct)(alm)
+    return alm_eq
 
 
 def gal2eq(alm, eul=None, dl_array=None):
