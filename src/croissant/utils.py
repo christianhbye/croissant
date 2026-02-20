@@ -225,12 +225,12 @@ def generate_phi(lmax=None, sampling="mw", nside=None):
         An array of phi values for the given lmax and sampling scheme.
 
     """
-    L = lmax + 1
+    if lmax is None:
+        L = None
+    else:
+        L = lmax + 1
+
     if sampling != "healpix":
-        if lmax is None:
-            raise ValueError(
-                "lmax must be provided if sampling is not healpix."
-            )
         phi = s2fft.sampling.s2_samples.phis_equiang(L, sampling=sampling)
     else:
         ntheta = s2fft.sampling.s2_samples.ntheta(
@@ -241,7 +241,53 @@ def generate_phi(lmax=None, sampling="mw", nside=None):
             [s2fft.sampling.s2_samples.phis_ring(t, nside) for t in ts],
             axis=0,
         )
+
     return phi
+
+
+def generate_theta(lmax=None, sampling="mw", nside=None):
+    """
+    Generate an array of theta values for a given lmax and sampling
+    scheme. This is a convenience wrapper around ``thetas'' from
+    s2fft.sampling.s2_samples to match the interface of
+    ``generate_phi''.
+
+    Parameters
+    ----------
+    lmax : int
+        The maximum spherical harmonic degree to support. Required if
+        `sampling`` is not "healpix".
+    sampling : str
+        The type of sampling. Supported schemes are from s2fft and
+        include {"mw", "mwss", "dh", "gl", "healpix"}.
+    nside : int
+        The nside of the HEALPix map. Only required if sampling is
+        "healpix".
+
+    Returns
+    -------
+    theta : np.ndarray
+        An array of theta values for the given lmax and sampling scheme.
+
+    """
+    if lmax is None:
+        L = None
+    else:
+        L = lmax + 1
+
+    theta = s2fft.sampling.s2_samples.thetas(
+        L=L, sampling=sampling, nside=nside
+    )
+
+    # if sampling is healpix we get one theta per ring only
+    if sampling == "healpix":
+        ts = np.arange(len(theta))
+        nring = np.array(
+            [s2fft.sampling.s2_samples.nphi_ring(t, nside) for t in ts],
+        )
+        theta = np.repeat(theta, nring)
+
+    return theta
 
 
 def getidx(lmax, ell, emm):
