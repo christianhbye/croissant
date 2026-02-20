@@ -3,8 +3,8 @@ import numpy as np
 import pytest
 import s2fft
 
+from croissant import simulator, utils
 from croissant.constants import Y00, sidereal_day
-from croissant.jax import alm, simulator
 
 rng = np.random.default_rng(0)
 
@@ -45,16 +45,16 @@ def test_convolve():
     # check that we recover sky temperature for a monopole sky
     T_sky = 1e4 * (freq / 150) ** (-2.5)
     sky_monopole = T_sky / Y00  # monpole component
-    shape = (freq.size, *alm.shape_from_lmax(lmax))
+    shape = (freq.size, *utils.shape_from_lmax(lmax))
     sky = jnp.zeros(shape, dtype=jnp.complex128)
-    l_indx, m_indx = alm.getidx(lmax, 0, 0)
+    l_indx, m_indx = utils.getidx(lmax, 0, 0)
     sky = sky.at[:, l_indx, m_indx].set(sky_monopole)
     # the beam is achromatic, but the details don't matter
     beam = s2fft.utils.signal_generator.generate_flm(
         rng, lmax + 1, reality=True
     )
     # normalization factor
-    norm = alm.total_power(beam, lmax)
+    norm = utils.total_power(beam, lmax)
     # add frequency axis
     beam = jnp.repeat(beam[None, :], freq.size, axis=0)
     # get the phases that rotate the sky
@@ -67,7 +67,7 @@ def test_convolve():
     sky = s2fft.utils.signal_generator.generate_flm(
         rng, lmax + 1, reality=True
     )
-    shape = alm.shape_from_lmax(lmax)
+    shape = utils.shape_from_lmax(lmax)
     beam = jnp.zeros(shape, dtype=jnp.complex128)
     beam = beam.at[l_indx, m_indx].set(1.0)  # monopole component
     # randomly, we choose 5 (l, m) pairs
@@ -76,10 +76,10 @@ def test_convolve():
     # give the (l, m) mode a weight of 1 + 1j
     val = 1.0 + 1j
     for ell, emm in zip(ells, emms):
-        l_indx, m_indx = alm.getidx(lmax, ell, emm)
+        l_indx, m_indx = utils.getidx(lmax, ell, emm)
         beam = beam.at[l_indx, m_indx].set(val)
         # we need to set -m to the conjugate of m since the beam is real
-        neg_m_indx = alm.getidx(lmax, ell, -emm)[1]
+        neg_m_indx = utils.getidx(lmax, ell, -emm)[1]
         neg_val = (-1) ** emm * val.conjugate()
         beam = beam.at[l_indx, neg_m_indx].set(neg_val)
     # add frequency axis, but only one frequency
