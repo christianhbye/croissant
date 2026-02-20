@@ -1,15 +1,24 @@
+from functools import partial
+
+import equinox as eqx
 import jax
 import jax.numpy as jnp
+import s2fft
+from astropy.coordinates import AltAz, EarthLocation
+from astropy.time import Time
 
-from .. import constants
+import croissant.jax as crojax
+
+from . import Beam, constants
 
 
 def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
     """
-    Compute the complex phases that rotate the sky for a range of times. The
-    first time is the reference time and the phases are computed relative to
-    this time. Can either provide `N_times` and `delta_t` for uniform times,
-    or arbitrary time sampling with the `times` argument.
+    Compute the complex phases that rotate the sky for a range of times.
+    The first time is the reference time and the phases are computed
+    relative to this time. Can either provide `N_times` and `delta_t`
+    for uniform times, or arbitrary time sampling with the `times`
+    argument.
 
     Parameters
     ----------
@@ -20,9 +29,10 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
     delta_t : float
         The time difference between the times.
     times : array_like
-        Explicit time array in seconds. Times are interpreted as absolute values
-        and will be converted to differences relative to the first time. If
-        provided, `N_times` and `delta_t` are ignored.
+        Explicit time array in seconds. Times are interpreted as
+        absolute values and will be converted to differences relative
+        to the first time. If provided, `N_times` and `delta_t` are
+        ignored.
     world : str
         ``earth'' or ``moon''. Default is ``moon''.
 
@@ -34,14 +44,15 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
 
     """
     if times is not None:
-        # Ensure `times` is a JAX array and at least 1D for consistent handling
         times = jnp.atleast_1d(jnp.asarray(times))
         if times.size == 0:
             raise ValueError("`times` must be a non-empty array-like object.")
         dt = times - times[0]
     else:
         if N_times is None or delta_t is None:
-            raise ValueError("Must specify `times` or both `N_times` and `delta_t`.")
+            raise ValueError(
+                "Must specify `times` or both `N_times` and `delta_t`."
+            )
         dt = jnp.arange(N_times) * delta_t
     day = constants.sidereal_day[world]
     phi = 2 * jnp.pi * dt / day  # rotation angle
@@ -81,3 +92,172 @@ def convolve(beam_alm, sky_alm, phases):
     b = beam_alm[None, :, :, :]  # add time axis
     res = jnp.sum(s * p * b, axis=(2, 3))  # dot product in l,m space
     return res
+
+
+@jax.jit
+def correct_ground_loss(vis, fgnd, Tgnd):
+    """
+    Correct for ground loss in the simulated visibilities.
+
+    Parameters
+    ----------
+    vis : jax.Array
+       The simulated visibilities that include ground loss.
+    fgnd : jax.Array
+       The assumed ground fraction to use for the correction.
+    Tgnd : jax.Array
+       The assumed ground temperature to use for the correction
+
+    Returns
+    -------
+    corrected_vis : jax.Array
+       The simulated visibilities with the ground loss corrected.
+
+    """
+    fsky = 1 - fgnd
+    corrected_vis = vis - fgnd * Tgnd
+    corrected_vis /= fsky
+    return corrected_vis
+
+
+class Simulator(eqx.Module):
+    beam: Beam
+    sky_alm: jax.Array
+    times_jd: jax.Array  # times in Julian day
+    freqs: jax.Array  # in MHz
+    lon: jax.Array  # longitude of in degrees
+    lat: jax.Array  # latitude in degrees
+    alt: jax.Array  # altitude in meters
+    lmax: int = eqx.field(static=True)
+    L: int = eqx.field(static=True)
+    eul_topo: tuple = eqx.field(static=True)  # euler angles for topo to eq
+    dl_topo: jax.Array  # dl array for topocentric to eq frame
+    Tgnd: jax.Array  # ground temperature in K
+
+    def __init__(
+        self,
+        beam,
+        sky_alm,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        alt=0,
+        Tgnd=300.0,
+    ):
+        """
+        Configure a simulation. This class holds all the relevant
+        parameters for a simulation and provides necessary methods
+        for coordinate transforms and spherical harmonics transforms.
+
+        Note that beam and sky models must be consistent in terms of
+        frequencies and lmax values.
+
+        Parameters
+        ----------
+        beam : Beam
+            The beam model to use for the simulation. Contains
+            information about the beam pattern and any associated
+            parameters, including the horizon.
+        sky_alm : jax.Array
+            The spherical harmonics decomposition of the sky to use for
+            the simulation. This should be in equatorial coordinates.
+            Expected shape is (Nfreqs, lmax+1, 2*lmax+1).
+        times_jd : jax.Array
+            The times in Julian day at which to simulate the
+            observations.
+        freqs : jax.Array
+            The frequencies in MHz for the simulation. Must be
+            consistent with the frequencies used for the beam and the
+            sky models.
+        lon : float
+            The longitude of the observer in degrees.
+        lat : float
+            The latitude of the observer in degrees.
+        alt : float
+            The altitude of the observer in meters.
+        Tgnd : float
+            The ground temperature in Kelvin. Only a constant
+            temperature is supported for now.
+
+        """
+        if not jnp.all(beam.freqs == freqs):
+            raise ValueError("Beam and simulation frequencies do not match.")
+        self.freqs = freqs
+        self.beam = beam
+        self.sky_alm = sky_alm
+        self.times_jd = times_jd
+
+        beam_lmax = beam.lmax
+        sky_lmax = crojax.alm.lmax_from_shape(sky_alm.shape)
+        if beam_lmax != sky_lmax:
+            raise ValueError("Beam and sky alm have different lmax values.")
+        self.lmax = beam_lmax
+        self.L = self.lmax + 1
+
+        self.Tgnd = jnp.array(Tgnd)
+
+        self.lon = jnp.array(lon)
+        self.lat = jnp.array(lat)
+        self.alt = jnp.array(alt)
+        loc = EarthLocation.from_geodetic(lon, lat, height=alt)
+        t0 = Time(times_jd[0], format="jd")
+        topo = AltAz(location=loc, obstime=t0)
+        eul_topo, dl_topo = crojax.rotations.generate_euler_dl(
+            self.lmax, topo, "fk5"
+        )
+        self.eul_topo = tuple(float(angle) for angle in eul_topo)
+        self.dl_topo = jnp.array(dl_topo)
+
+    @jax.jit
+    def compute_beam_eq(self):
+        """
+        Compute the beam alm in equatorial coordinates. This uses the
+        pre-computed Euler angles and dl array for the topocentric to
+        equatorial transformation.
+
+        Returns
+        -------
+        beam_eq_alm : jax.Array
+            The beam alm in equatorial coordinates. Shape is
+            (Nfreqs, lmax+1, 2*lmax+1).
+
+        """
+        beam_alm = self.beam.compute_alm()
+        transform = partial(
+            s2fft.utils.rotation.rotate_flms,
+            L=self.L,
+            rotation=self.eul_topo,
+            dl_array=self.dl_topo,
+        )
+        return jax.vmap(transform)(beam_alm)
+
+    @jax.jit
+    def compute_ground_contribution(self):
+        """
+        Compute the ground contribution to the visibility. This is
+        simply the beam response below the horizon multiplied by the ground
+        temperature.
+
+        Returns
+        -------
+        vis_gnd : jax.Array
+            The ground contribution to the visibility.
+
+        """
+        return self.beam.compute_fgnd() * self.Tgnd
+
+    @jax.jit
+    def sim(self):
+        beam_eq_alm = self.compute_beam_eq()
+        dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
+        phases = crojax.simulator.rot_alm_z(
+            self.lmax, times=dt_sec, world="earth"
+        )
+        # this is the sky contribution, with implict ground loss
+        vis_sky = crojax.simulator.convolve(beam_eq_alm, self.sky_alm, phases)
+        vis_sky /= self.beam.compute_norm()
+        # add the ground contribution
+        vis_gnd = self.compute_ground_contribution()
+        vis = vis_sky + vis_gnd
+        return vis.real

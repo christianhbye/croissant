@@ -1,7 +1,38 @@
-from astropy import units
-from lunarsky import SkyCoord, Time
-import numpy as np
 import warnings
+
+import numpy as np
+import s2fft
+from astropy import units
+from lunarsky import Time
+
+from . import rotations
+
+
+def _future_warning(func):
+    """
+    Decorator to add a FutureWarning to a function.
+
+    Parameters
+    ----------
+    func : callable
+        The function to add the FutureWarning to.
+
+    Returns
+    -------
+    wrapper : callable
+        The wrapped function that raises a FutureWarning when called.
+
+    """
+
+    def wrapper(*args, **kwargs):
+        warnings.warn(
+            f"{func.__name__} is has been moved to the rotations module "
+            "and will be removed from the utils module in a future release.",
+            FutureWarning,
+        )
+        return func(*args, **kwargs)
+
+    return wrapper
 
 
 def coord_rep(coord):
@@ -27,6 +58,7 @@ def coord_rep(coord):
     return rep
 
 
+@_future_warning
 def get_rot_mat(from_frame, to_frame):
     """
     Get the rotation matrix that transforms from one frame to another.
@@ -44,27 +76,10 @@ def get_rot_mat(from_frame, to_frame):
         The rotation matrix.
 
     """
-    try:
-        from_name = from_frame.name
-    except AttributeError:
-        from_name = from_frame
-    # skycoord does not support galactic -> cartesian, do the inverse
-    if from_name.lower() == "galactic":
-        from_frame = to_frame
-        to_frame = "galactic"
-        return_inv = True
-    else:
-        return_inv = False
-    x, y, z = np.eye(3)  # unit vectors
-    sc = SkyCoord(
-        x=x, y=y, z=z, frame=from_frame, representation_type="cartesian"
-    )
-    rmat = sc.transform_to(to_frame).cartesian.xyz.value
-    if return_inv:
-        rmat = rmat.T
-    return rmat
+    return rotations.get_rot_mat(from_frame, to_frame)
 
 
+@_future_warning
 def rotmat_to_euler(mat, eulertype="ZYX"):
     """
     Convert a rotation matrix to Euler angles in the specified convention.
@@ -93,14 +108,10 @@ def rotmat_to_euler(mat, eulertype="ZYX"):
 
 
     """
-    if eulertype == "ZYX":
-        return rotmat_to_eulerZYX(mat)
-    elif eulertype == "ZYZ":
-        return rotmat_to_eulerZYZ(mat)
-    else:
-        raise ValueError("Invalid Euler angle convention.")
+    return rotations.rotmat_to_euler(mat, eulertype=eulertype)
 
 
+@_future_warning
 def rotmat_to_eulerZYX(mat):
     """
     Convert a rotation matrix to Euler angles in the ZYX convention. This is
@@ -118,21 +129,10 @@ def rotmat_to_eulerZYX(mat):
         healpy.rotator.Rotator expects when ``eulertype'' is ZYX.
 
     """
-    beta = -np.arcsin(mat[0, 2])  # pitch
-    cb = np.cos(beta)
-    if np.abs(cb) > 1e-10:  # can divide by cos(beta)
-        gamma = np.arctan2(mat[1, 2] / cb, mat[2, 2] / cb)  # roll
-        alpha = np.arctan2(mat[0, 1] / cb, mat[0, 0] / cb)  # yaw
-    # else: cos(beta) = 0, sensitive only to alpha+gamma or alpha-gamma;
-    # this is called gimbal lock. We take gamma = 0.
-    else:
-        gamma = 0
-        alpha = np.arctan2(-mat[1, 0], mat[1, 1])
-
-    eul = (alpha, -beta, gamma)  # healpy convention for ZYX
-    return eul
+    return rotations.rotmat_to_eulerZYX(mat)
 
 
+@_future_warning
 def rotmat_to_eulerZYZ(mat):
     """
     Convert a rotation matrix to Euler angles in the ZYZ convention. This is
@@ -150,12 +150,7 @@ def rotmat_to_eulerZYZ(mat):
         s2fft.utils.rotation.rotate_flms expects.
 
     """
-    alpha = np.arctan2(mat[1, 2], mat[0, 2])
-    cos_beta = mat[2, 2]
-    beta = np.arctan2(np.sqrt(1 - cos_beta**2), cos_beta)
-    gamma = np.arctan2(mat[2, 1], -mat[2, 0])
-    eul = (alpha, beta, gamma)
-    return eul
+    return rotations.rotmat_to_eulerZYZ(mat)
 
 
 def hp_npix2nside(npix):
@@ -227,3 +222,64 @@ def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
         times = t_start + dt
 
     return times
+
+
+def lmax_range(sampling, data_shape):
+    """
+    Calculate the minimum and maximum supported lmax for a given
+    sampling and data shape.
+
+    Parameters
+    ----------
+    sampling : str
+        The type of sampling. Supported schemes are from s2fft and
+        include {"mw", "mwss", "dh", "gl", "healpix"}.
+    data_shape : tuple
+        The shape of the data. For s2fft sampling schemes, this should
+        be (N_theta, N_phi), unless the sampling is "healpix", in which
+        case it should be (N_pix,).
+
+    Returns
+    -------
+    tup
+        The minimum and maximum supported lmax for the given sampling and
+        data shape.
+
+    """
+    raise NotImplementedError("This function is not yet implemented.")
+
+
+def generate_phi(lmax=None, sampling="mw", nside=None):
+    """
+    Generate an array of phi values for a given lmax and sampling scheme.
+
+    Parameters
+    ----------
+    lmax : int
+        The maximum spherical harmonic degree to support. Required if
+        `sampling`` is not "healpix".
+    sampling : str
+        The type of sampling. Supported schemes are from s2fft and
+        include {"mw", "mwss", "dh", "gl", "healpix"}.
+    nside : int
+        The nside of the HEALPix map. Only required if sampling is
+        "healpix".
+
+    Returns
+    -------
+    phi : np.ndarray
+        An array of phi values for the given lmax and sampling scheme.
+
+    """
+    if sampling != "healpix":
+        if lmax is None:
+            raise ValueError(
+                "lmax must be provided if sampling is not healpix."
+            )
+        L = lmax + 1
+        phi = s2fft.sampling.s2_samples.phis_equiang(L, sampling=sampling)
+    else:
+        raise NotImplementedError(
+            "This function is not yet implemented for healpix sampling."
+        )
+    return phi
