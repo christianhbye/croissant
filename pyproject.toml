@@ -70,6 +70,7 @@ dev = [
   "jupyterlab-vim>=4.1.4",
   "matplotlib>=3.10.8",
   "pre-commit>=4.5.1",
+  "pygdsm>=1.6.4",
   "pytest",
   "pytest-cov",
   "pytest-timeout",

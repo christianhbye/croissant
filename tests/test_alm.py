@@ -2,8 +2,9 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 import s2fft
-from croissant.constants import Y00
+
 import croissant.jax as crojax
+from croissant.constants import Y00
 
 pytestmark = pytest.mark.parametrize("lmax", [8, 16, 64, 128])
 rng = np.random.default_rng(seed=0)
