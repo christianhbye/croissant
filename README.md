@@ -89,7 +89,7 @@ pre-commit install
 
 ### 3. Running Tests and Linters
 
-We use `pytest` for testing and `ruff` for linting and formatting. Prepend this commands with `uv run` if using `uv`.
+We use `pytest` for testing and `ruff` for linting and formatting. Prepend these commands with `uv run` if using `uv`.
 
 ```bash
 pytest                         # Run the test suite
