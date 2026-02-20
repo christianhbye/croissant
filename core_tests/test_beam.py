@@ -1,4 +1,5 @@
 from copy import deepcopy
+
 import healpy as hp
 import numpy as np
 import pytest

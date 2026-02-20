@@ -1,8 +1,8 @@
-from astropy.coordinates import EarthLocation
 import healpy as hp
-from lunarsky import MoonLocation, Time
 import numpy as np
 import pytest
+from astropy.coordinates import EarthLocation
+from lunarsky import MoonLocation, Time
 
 from croissant import rotations
 

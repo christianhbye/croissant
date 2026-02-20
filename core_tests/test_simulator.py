@@ -1,15 +1,15 @@
-from astropy import units
-from astropy.coordinates import EarthLocation
 from copy import deepcopy
+
 import healpy as hp
-from lunarsky import MoonLocation, Time
 import numpy as np
 import pytest
+from astropy import units
+from astropy.coordinates import EarthLocation
+from lunarsky import MoonLocation, Time
 
-from croissant import Beam, dpss, Rotator, Simulator, Sky
+from croissant import Beam, Rotator, Simulator, Sky, dpss
 from croissant.constants import sidereal_day_earth
 from croissant.utils import time_array
-
 
 # define default params for simulator
 lmax = 32

@@ -1,8 +1,9 @@
 import healpy as hp
 import numpy as np
 import pytest
-from croissant.constants import Y00
 from croissant.core.sphtransform import alm2map, map2alm
+
+from croissant.constants import Y00
 
 pytestmark = pytest.mark.parametrize("lmax", [16, 32, 64])
 rng = np.random.default_rng(seed=1234)
