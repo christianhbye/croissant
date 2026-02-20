@@ -1,8 +1,9 @@
 import jax.numpy as jnp
 import numpy as np
-import s2fft
 import pytest
-from croissant.constants import sidereal_day, Y00
+import s2fft
+
+from croissant.constants import Y00, sidereal_day
 from croissant.jax import alm, simulator
 
 rng = np.random.default_rng(0)
@@ -95,60 +96,64 @@ def test_convolve():
 @pytest.mark.parametrize("world", ["earth", "moon"])
 def test_rot_alm_z_with_times_parameter(lmax, world):
     """Test rot_alm_z with explicit times parameter."""
-    
+
     # Test 1: Uniform time array should match N_times/delta_t behavior
     N_times = 24
     delta_t = sidereal_day[world] / N_times
-    
+
     # Using N_times and delta_t
     phases_uniform = simulator.rot_alm_z(lmax, N_times, delta_t, world=world)
-    
+
     # Using times parameter with uniform spacing
     times_uniform = jnp.arange(N_times) * delta_t
     phases_times = simulator.rot_alm_z(lmax, times=times_uniform, world=world)
-    
+
     assert jnp.allclose(phases_uniform, phases_times)
-    
+
     # Test 2: Non-uniformly spaced times
     # Create a non-uniform time array (e.g., logarithmic spacing)
-    times_nonuniform = jnp.logspace(0, 3, 10) * 60  # 1 to 1000 minutes in seconds
-    phases_nonuniform = simulator.rot_alm_z(lmax, times=times_nonuniform, world=world)
-    
+    times_nonuniform = (
+        jnp.logspace(0, 3, 10) * 60
+    )  # 1 to 1000 minutes in seconds
+    phases_nonuniform = simulator.rot_alm_z(
+        lmax, times=times_nonuniform, world=world
+    )
+
     # Verify shape is correct
     assert phases_nonuniform.shape == (10, 2 * lmax + 1)
-    
+
     # Verify that phases are computed correctly for non-uniform times
     dt = times_nonuniform - times_nonuniform[0]
     day = sidereal_day[world]
     expected_phi = 2 * jnp.pi * dt / day
-    
+
     for i, phi in enumerate(expected_phi):
         for m_index in range(phases_nonuniform.shape[1]):
             emm = m_index - lmax
             expected_phase = jnp.exp(-1j * emm * phi)
             assert jnp.isclose(phases_nonuniform[i, m_index], expected_phase)
-    
+
     # Test 3: Times are correctly converted to relative differences
     # Offset all times by a constant - should give same phases
     offset = 10000.0  # 10000 seconds offset
     times_offset = times_uniform + offset
     phases_offset = simulator.rot_alm_z(lmax, times=times_offset, world=world)
-    
+
     assert jnp.allclose(phases_times, phases_offset)
-    
+
     # Test 4: Single time (edge case)
     times_single = jnp.array([0.0])
     phases_single = simulator.rot_alm_z(lmax, times=times_single, world=world)
-    
+
     assert phases_single.shape == (1, 2 * lmax + 1)
     # At t=0, all phases should be 1 (exp(-i*m*0) = 1)
     assert jnp.allclose(phases_single, jnp.ones_like(phases_single))
-    
+
     # Test 5: Two times with specific spacing
     delta_specific = 3600.0  # 1 hour
     times_two = jnp.array([100.0, 100.0 + delta_specific])
     phases_two = simulator.rot_alm_z(lmax, times=times_two, world=world)
-    
+
     assert phases_two.shape == (2, 2 * lmax + 1)
     # First time should have phase 1 (relative to itself)
     assert jnp.allclose(phases_two[0], jnp.ones_like(phases_two[0]))
