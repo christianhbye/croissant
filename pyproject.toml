@@ -62,6 +62,7 @@ ignore = []
 
 [dependency-groups]
 dev = [
+  "healpy>=1.19.0",
   "ipympl>=0.10.0",
   "jupyterlab>=4.5.4",
   "jupyterlab-vim>=4.1.4",

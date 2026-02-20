@@ -535,6 +535,7 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "healpy" },
     { name = "ipympl" },
     { name = "jupyterlab" },
     { name = "jupyterlab-vim" },
@@ -558,6 +559,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "healpy", specifier = ">=1.19.0" },
     { name = "ipympl", specifier = ">=0.10.0" },
     { name = "jupyterlab", specifier = ">=4.5.4" },
     { name = "jupyterlab-vim", specifier = ">=4.1.4" },
@@ -731,6 +733,41 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1", size = 101250, upload-time = "2025-04-24T03:35:25.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
+]
+
+[[package]]
+name = "healpy"
+version = "1.19.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "astropy", version = "6.1.7", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "astropy", version = "7.2.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "numpy", version = "2.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e3/4e/6f5328f375f88c8c38314f24f82b7e1486ec0358c557779500382db1503c/healpy-1.19.0.tar.gz", hash = "sha256:28e839cb885a23d36c77fc3423a3cb9271a07fda94085bd12fc329f941130ec5", size = 4075006, upload-time = "2025-12-02T08:27:19.766Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/da/29/a80e8fc882afc454ded79833fd0c05012a6745890ed013ac03ef0c18e8fe/healpy-1.19.0-cp310-cp310-macosx_13_0_x86_64.whl", hash = "sha256:36f85568670f36f928aba0eb73299ed70a06e58dc32360f13d0f9a443781c7bb", size = 1735790, upload-time = "2025-12-02T08:26:22.521Z" },
+    { url = "https://files.pythonhosted.org/packages/05/01/a85622682fcf4b5510f6f1f697c991fe984acd24502be5360d66562918b3/healpy-1.19.0-cp310-cp310-macosx_14_0_arm64.whl", hash = "sha256:8ec4744f16f1590fe47a685258ba119c0fa49dff74fa6f970b7a16c712302b0d", size = 1868886, upload-time = "2025-12-02T08:26:24.22Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/3d/7395e6c3619eb17604f73585db4583f1eff167e94cd74b6ef58e8137f9bf/healpy-1.19.0-cp310-cp310-macosx_15_0_arm64.whl", hash = "sha256:20225e0312ea37f472a539521824001700afacf486f11a3ec905f85ec8e75f8c", size = 1865183, upload-time = "2025-12-02T08:26:25.727Z" },
+    { url = "https://files.pythonhosted.org/packages/95/f4/43aecae2b5bbb5b70792a27c3606dd9736f59d073f705822b04013143683/healpy-1.19.0-cp310-cp310-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:c187bdab29ba6b9c34e55907b24af6867f2b5d3cd48ba150e696dfa200827ea4", size = 8122811, upload-time = "2025-12-02T08:26:27.012Z" },
+    { url = "https://files.pythonhosted.org/packages/af/f8/6e3b21304529eb3e1fa01691da6742c30535e2dc3c96f1d740b3c6118661/healpy-1.19.0-cp310-cp310-manylinux_2_28_aarch64.whl", hash = "sha256:f62bf1c078787931f226a0550138cad98cf19f2b72e89f1f0bdd4c342dbc1aa1", size = 8151594, upload-time = "2025-12-02T08:26:28.519Z" },
+    { url = "https://files.pythonhosted.org/packages/08/79/031e595d0d347c418b444043c14d7f533e3ac00c12393d1fd9853ac10663/healpy-1.19.0-cp310-cp310-musllinux_1_2_aarch64.whl", hash = "sha256:f05943f632dfe0cad774227038cd4d751525ac5e7c3fb1e47afa7971680facd8", size = 8955190, upload-time = "2025-12-02T08:26:30.317Z" },
+    { url = "https://files.pythonhosted.org/packages/3c/fb/5eb90c8a4eae1c111b57b1ebcd111b908e4763a1158d24f1c3750242c1e5/healpy-1.19.0-cp310-cp310-musllinux_1_2_x86_64.whl", hash = "sha256:c5b60a21effe4af4831e0fda67e38e633ca8bf33a940581186e20654cf2d72ea", size = 9264474, upload-time = "2025-12-02T08:26:32.871Z" },
+    { url = "https://files.pythonhosted.org/packages/2e/1b/3b83729d469af07c12518a4457975c38a90bfbb41c821c5d4efd61e56c11/healpy-1.19.0-cp311-cp311-macosx_13_0_x86_64.whl", hash = "sha256:bb31f28fb15aa7e99725e92d25f458f856ac16542938d8bedd797a74449540b2", size = 1732454, upload-time = "2025-12-02T08:26:34.758Z" },
+    { url = "https://files.pythonhosted.org/packages/4c/9c/9a1a7950c7fe3f1b13c4232f3fe1cdebf3a90c235c2e6bc87f63b8aece2a/healpy-1.19.0-cp311-cp311-macosx_14_0_arm64.whl", hash = "sha256:3262006e70fe9328f7fb6788197186e44ad70b94d2cca2cb61f828c7808e5fe4", size = 1865946, upload-time = "2025-12-02T08:26:36.187Z" },
+    { url = "https://files.pythonhosted.org/packages/32/b3/83e91d7c5a3212413bf3014e1c2bd8e9abe9a852cdcbe312a4c3573a659b/healpy-1.19.0-cp311-cp311-macosx_15_0_arm64.whl", hash = "sha256:8910dd4cd8aec740ab954af5b230d5655caae2d25f55dd8739dde9588257dc85", size = 1862044, upload-time = "2025-12-02T08:26:38.529Z" },
+    { url = "https://files.pythonhosted.org/packages/f2/60/15e142284d0bc722e0c6469423300bd08e47984e5b7775000aad9e70b993/healpy-1.19.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:4894571e46e5604d9b7135b7c6f588b515cc7b91831c5068940d476754660f1e", size = 8190813, upload-time = "2025-12-02T08:26:39.968Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/01/43b047f05ffb822e822382b1ce9ff77f9332a4a34bdffe7d8e42f31d8511/healpy-1.19.0-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:66939e3d4bc436f5b6249b2356ecf6607e24d25e2de2728d26b4f62d1bdfd2c3", size = 8213044, upload-time = "2025-12-02T08:26:43.124Z" },
+    { url = "https://files.pythonhosted.org/packages/8e/a3/95751f1138197ac1b0bb11a4069db098facb0ead5704ae75b02e46e0a1db/healpy-1.19.0-cp311-cp311-musllinux_1_2_aarch64.whl", hash = "sha256:f6b654b6ea825f7fa59b607ccb513fb104976ba78a7d073b5f9db0cbdf2dae66", size = 9013731, upload-time = "2025-12-02T08:26:44.45Z" },
+    { url = "https://files.pythonhosted.org/packages/b5/6c/647d7b2a287009ff55b1c3d3427e7d3da67deb6159d2112b8718a35465ff/healpy-1.19.0-cp311-cp311-musllinux_1_2_x86_64.whl", hash = "sha256:9af09c0655c3e015d9ec55aadcf6628f95f4f534c0a6320716da8319939ee6d3", size = 9323728, upload-time = "2025-12-02T08:26:46.55Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/bf/9a19efa26b48e962bcda0f97443ab62b9a058577665780ec2ce4d78e2705/healpy-1.19.0-cp312-cp312-macosx_13_0_x86_64.whl", hash = "sha256:31496bc2eb9f52c1ea3ea4c7e67771e245a49f1a93937ff73f9056b666cd1f30", size = 1728152, upload-time = "2025-12-02T08:26:48.759Z" },
+    { url = "https://files.pythonhosted.org/packages/4f/6a/b87c279184278ea75fcaa81e2f1207384b232c038a45abc4c3d6999f8f49/healpy-1.19.0-cp312-cp312-macosx_14_0_arm64.whl", hash = "sha256:69987864e318b4e22e2407670bdb2d791fcd9c244bc6c25c7001e14fc34f15a2", size = 1864134, upload-time = "2025-12-02T08:26:50.642Z" },
+    { url = "https://files.pythonhosted.org/packages/ea/7c/9f92228da5c03a9f3c7610210cbc57646e85ee8a8479d7bd94a6fefe736d/healpy-1.19.0-cp312-cp312-macosx_15_0_arm64.whl", hash = "sha256:e8b304fced0dad0a0a41ddd33bb6b057525f9ddd4dada993bf3d6aa830a08e31", size = 1860200, upload-time = "2025-12-02T08:26:51.843Z" },
+    { url = "https://files.pythonhosted.org/packages/17/51/c07439b92bc05966006897762b7291d7d2c83fde8807b8d53a48e140a8b4/healpy-1.19.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:730095eef4bbe3c94039edb330d1800285cf43c7e16a81ce5b87edb31a8ffa42", size = 8239086, upload-time = "2025-12-02T08:26:53.076Z" },
+    { url = "https://files.pythonhosted.org/packages/61/c6/42745aeff172755e55af2487491c7a7475fe1068f152850cc14d64e04f30/healpy-1.19.0-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:89dbe14b270b5479a9652d1ab9f28fc7fce34253549db665f2e91e6cea588883", size = 8255685, upload-time = "2025-12-02T08:26:54.361Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/86/2a223bd92dde578de34f07095c71152c84b158644782c4057ca9b25e53b5/healpy-1.19.0-cp312-cp312-musllinux_1_2_aarch64.whl", hash = "sha256:29bb5f7acde68ca5850c3a59ba33cacf4c3768c9e85f7013a99aa5fbd127ce84", size = 9042629, upload-time = "2025-12-02T08:26:55.773Z" },
+    { url = "https://files.pythonhosted.org/packages/18/6d/037a7bb889c92b3e3f792de6a692e636de0577ea62bdd0038b1eb68270af/healpy-1.19.0-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:126bef3ae6594f461435ac85c6bcb32e427eca43f743881d00186bc3a55da1d8", size = 9376051, upload-time = "2025-12-02T08:26:57.516Z" },
 ]
 
 [[package]]
