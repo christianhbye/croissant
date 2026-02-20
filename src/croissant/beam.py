@@ -92,9 +92,14 @@ class Beam(sphere.SphBase):
             frequency.
 
         """
-        wgts = s2fft.utils.quadrature_jax.quad_weights(
-            L=self._L, sampling=self.sampling, nside=self.nside
-        )
+        if self.sampling == "healpix":
+            npix = 12 * self.nside**2
+            wgts = jnp.ones(npix) * (4 * jnp.pi / npix)
+        else:
+            wgts = s2fft.utils.quadrature_jax.quad_weights(
+                L=self._L, sampling=self.sampling, nside=self.nside
+            )
+
         if use_horizon:
             data = self.data * self.horizon[None]
         else:
@@ -156,7 +161,7 @@ class Beam(sphere.SphBase):
         alm = sphere.compute_alm(
             data, self.lmax, self.sampling, nside=self.nside
         )
-        emms = jnp.arange(-self._lmax, self._lmax + 1)
+        emms = jnp.arange(-self.lmax, self.lmax + 1)
         phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
         alm = alm * phase[None, None, :]  # add freq/ell axes
         return alm
