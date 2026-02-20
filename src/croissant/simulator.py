@@ -220,10 +220,7 @@ class Simulator(eqx.Module):
 
         # precompute beam and sky alms in equatorial coordinates
         self.beam_eq_alm = self.compute_beam_eq()
-        if self.world == "earth":
-            self.sky_eq_alm = self.sky.compute_alm_eq()
-        else:
-            self.sky_eq_alm = self.sky.compute_alm_mcmf()
+        self.sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
 
         # precompute the phases
         dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
