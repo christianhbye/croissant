@@ -96,9 +96,9 @@ class SphBase(eqx.Module):
         else:
             self.nside = None
 
-        self.theta = s2fft.sampling.s2_samples.thetas(
-            L=self._L, sampling=self.sampling, nside=self.nside
-        )
         self.phi = utils.generate_phi(
+            lmax=self.lmax, sampling=self.sampling, nside=self.nside
+        )
+        self.theta = utils.generate_theta(
             lmax=self.lmax, sampling=self.sampling, nside=self.nside
         )
