@@ -61,6 +61,7 @@ ignore = []
 "__init__.py" = ["E402", "F401"]
 "notebooks/*" = ["E402"]
 "src/croissant/jax/__init__.py" = ["F403"]
+"src/croissant/alm.py" = ["F401"]
 
 [dependency-groups]
 dev = [

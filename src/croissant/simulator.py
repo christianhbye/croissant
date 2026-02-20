@@ -1,3 +1,5 @@
+from functools import partial
+
 import equinox as eqx
 import jax
 import jax.numpy as jnp
@@ -7,7 +9,7 @@ from astropy.time import Time as EarthTime
 from lunarsky import LunarTopo, MoonLocation
 from lunarsky import Time as LunarTime
 
-from . import constants, rotations
+from . import constants, rotations, utils
 from .beam import Beam
 from .sky import Sky
 
@@ -131,8 +133,6 @@ class Simulator(eqx.Module):
     dl_topo: jax.Array  # dl array for topocentric to eq frame
     Tgnd: jax.Array  # ground temperature in K
     world: str = eqx.field(static=True)  # "earth" or "moon"
-    beam_eq_alm: jax.Array  # precomputed beam alm in equatorial coordinates
-    sky_eq_alm: jax.Array  # precomputed sky alm in equatorial coordinates
     phases: jax.Array  # precomputed phases for sky rotation
 
     def __init__(
@@ -144,6 +144,7 @@ class Simulator(eqx.Module):
         lon,
         lat,
         alt=0,
+        lmax=None,
         world="moon",
         Tgnd=300.0,
     ):
@@ -174,6 +175,11 @@ class Simulator(eqx.Module):
             The latitude of the observer in degrees.
         alt : float
             The altitude of the observer in meters.
+        lmax : int or None
+            The maximum ell value to use for the simulation. Must be
+            smaller than or equal to the lmax values of the beam and
+            sky models. If None, the minimum of the beam and sky lmax
+            values is used.
         world : {"moon", "earth"}
             Run the simulations on the moon or the Earth
         Tgnd : float
@@ -192,9 +198,14 @@ class Simulator(eqx.Module):
         self.sky = sky
         self.times_jd = times_jd
 
-        if beam.lmax != sky.lmax:
-            raise ValueError("Beam and sky alm have different lmax values.")
-        self.lmax = beam.lmax
+        if lmax is None:
+            lmax = min(beam.lmax, sky.lmax)
+        elif lmax > beam.lmax or lmax > sky.lmax:
+            raise ValueError(
+                "lmax for the simulation must be smaller than or equal to the "
+                "lmax of the beam and sky models."
+            )
+        self.lmax = lmax
         self._L = self.lmax + 1
 
         self.Tgnd = jnp.array(Tgnd)
@@ -204,25 +215,24 @@ class Simulator(eqx.Module):
         self.alt = jnp.array(alt)
 
         if world == "earth":
-            loc = EarthLocation.from_geodetic(lon, lat, height=alt)
+            loc = EarthLocation(lon, lat, height=alt)
             t0 = EarthTime(times_jd[0], format="jd")
             topo = AltAz(location=loc, obstime=t0)
             sim_frame = "fk5"
         elif world == "moon":
-            loc = MoonLocation.from_geodetic(lon, lat, height=alt)
+            loc = MoonLocation(lon, lat, height=alt)
             t0 = LunarTime(times_jd[0], format="jd")
             topo = LunarTopo(location=loc, obstime=t0)
             sim_frame = "mcmf"
+        else:
+            raise ValueError("`world` must be either 'earth' or 'moon'.")
+        self.world = world
 
         eul_topo, dl_topo = rotations.generate_euler_dl(
-            self.lmax, topo, sim_frame
+            self.beam.lmax, topo, sim_frame
         )
         self.eul_topo = tuple(float(angle) for angle in eul_topo)
         self.dl_topo = jnp.array(dl_topo)
-
-        # precompute beam and sky alms in equatorial coordinates
-        self.beam_eq_alm = self.compute_beam_eq()
-        self.sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
 
         # precompute the phases
         dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
@@ -243,13 +253,13 @@ class Simulator(eqx.Module):
 
         """
         beam_alm = self.beam.compute_alm()
-        eq2topo = jax.vmap(
+        eq2topo = partial(
             s2fft.utils.rotation.rotate_flms,
-            in_axes=(0, None, None, None),
+            L=self.beam._L,
+            rotation=self.eul_topo,
+            dl_array=self.dl_topo,
         )
-        beam_eq_alm = eq2topo(
-            beam_alm, self._L, self.eul_topo, dl_array=self.dl_topo
-        )
+        beam_eq_alm = jax.vmap(eq2topo)(beam_alm)
         return beam_eq_alm
 
     @jax.jit
@@ -269,9 +279,16 @@ class Simulator(eqx.Module):
 
     @jax.jit
     def sim(self):
+        # compute beam and sky alms in equatorial coordinates
+        beam_eq_alm = self.compute_beam_eq()
+        sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
+        # resize to the simulation lmax
+        beam_eq_alm = utils.reduce_lmax(beam_eq_alm, self.lmax)
+        sky_eq_alm = utils.reduce_lmax(sky_eq_alm, self.lmax)
+
         # this is the sky contribution, with implict ground loss
-        vis_sky = convolve(self.beam_eq_alm, self.sky_eq_alm, self.phases)
-        vis_sky /= self.beam.compute_norm()
+        vis_sky = convolve(beam_eq_alm, sky_eq_alm, self.phases)
+        vis_sky /= self.beam.compute_norm()[None, :]
         # add the ground contribution
         vis_gnd = self.compute_ground_contribution()
         vis = vis_sky + vis_gnd

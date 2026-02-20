@@ -15,7 +15,6 @@ class Beam(sphere.SphBase):
         data,
         freqs,
         sampling="mwss",
-        lmax=None,
         horizon=None,
         beam_az_rot=0.0,
         beam_tilt=0.0,
@@ -40,11 +39,6 @@ class Beam(sphere.SphBase):
             {"mw", "mwss", "dh", "gl", "healpix"}. The default is
             "mwss", which is a 1 deg equiangular sampling in theta and
             phi and includes the poles.
-        lmax : int or None
-            Maximum spherical harmonic degree to compute. If None, it
-            is inferred from the data shape and sampling scheme.
-            Note that this value cannot be greater than the natural
-            lmax of the sampling scheme.
         horizon : array_like or None
             The horizon mask: a boolean array specified for each
             (theta, phi) direction (or pixel), with the same shape as
@@ -65,7 +59,7 @@ class Beam(sphere.SphBase):
             pointing direction.
 
         """
-        super().__init__(data, freqs, sampling, lmax=lmax)
+        super().__init__(data, freqs, sampling)
 
         if not jnp.isclose(beam_tilt, 0.0):
             raise NotImplementedError("Beam tilt is not yet implemented.")
@@ -98,9 +92,14 @@ class Beam(sphere.SphBase):
             frequency.
 
         """
-        wgts = s2fft.utils.quadrature_jax.quad_weights(
-            L=self._L, sampling=self.sampling, nside=self.nside
-        )
+        if self.sampling == "healpix":
+            npix = 12 * self.nside**2
+            wgts = jnp.ones(npix) * (4 * jnp.pi / npix)
+        else:
+            wgts = s2fft.utils.quadrature_jax.quad_weights(
+                L=self._L, sampling=self.sampling, nside=self.nside
+            )
+
         if use_horizon:
             data = self.data * self.horizon[None]
         else:
@@ -162,7 +161,7 @@ class Beam(sphere.SphBase):
         alm = sphere.compute_alm(
             data, self.lmax, self.sampling, nside=self.nside
         )
-        emms = jnp.arange(-self._lmax, self._lmax + 1)
+        emms = jnp.arange(-self.lmax, self.lmax + 1)
         phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
         alm = alm * phase[None, None, :]  # add freq/ell axes
         return alm
