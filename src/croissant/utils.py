@@ -225,16 +225,21 @@ def generate_phi(lmax=None, sampling="mw", nside=None):
         An array of phi values for the given lmax and sampling scheme.
 
     """
+    L = lmax + 1
     if sampling != "healpix":
         if lmax is None:
             raise ValueError(
                 "lmax must be provided if sampling is not healpix."
             )
-        L = lmax + 1
         phi = s2fft.sampling.s2_samples.phis_equiang(L, sampling=sampling)
     else:
-        raise NotImplementedError(
-            "This function is not yet implemented for healpix sampling."
+        ntheta = s2fft.sampling.s2_samples.ntheta(
+            L=L, sampling=sampling, nside=nside
+        )
+        ts = np.arange(ntheta).astype(np.float64)
+        phi = np.concatenate(
+            [s2fft.sampling.s2_samples.phis_ring(t, nside) for t in ts],
+            axis=0,
         )
     return phi
 
