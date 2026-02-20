@@ -1,9 +1,9 @@
-import warnings
+import logging
 
-from . import *
-
-warnings.warn(
-    "The croissant.jax interface is deprecated and will be removed in a future release. Please use the croissant interface directly instead.",
-    FutureWarning,
-    stacklevel=2,
+logger = logging.getLogger(__name__)
+logger.warn(
+    "The croissant.jax interface is deprecated and will be removed in a "
+    "future release. Please use the croissant interface directly instead.",
 )
+
+from .. import *
