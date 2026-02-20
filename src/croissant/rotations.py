@@ -1,6 +1,9 @@
+import jax
 import numpy as np
 import s2fft
 from astropy.coordinates import SkyCoord
+
+from .alm import lmax_from_shape
 
 
 def get_rot_mat(from_frame, to_frame):
@@ -162,7 +165,49 @@ def generate_euler_dl(lmax, from_frame, to_frame):
     return euler, dl_array
 
 
-def gal2eq(alm, dl_array=None):
+def _gal_to_eq_mcmf(alm, eul=None, dl_array=None, world="moon"):
+    """
+    Rotate alm from galactic to equatorial or mcmf coordinates.
+
+    Parameters
+    ----------
+    alm : array_like
+        The input alm in galactic coordinates. Last two axes should be
+        the (l, m) indices. Preceding are batch dimensions.
+    eul : tuple
+        The Euler angles for the galactic to equatorial transformation.
+    dl_array : jnp.ndarray
+        Precomputed reduced Wigner d-function values for the galactic
+        to equatorial transformation. If not provided, it will be
+        computed on the fly.
+    world : {"moon", "earth"}
+        Whether to use the galactic to equatorial transformation for
+        the moon or the earth (equatorial coordinates are different for
+        the two worlds). This is ignored if eul and dl_array are
+        provided.
+
+    Returns
+    -------
+    alm_eq : jnp.ndarray
+        The output alm in equatorial coordinates.
+
+    """
+    lmax = lmax_from_shape(alm.shape)
+    if eul is None or dl_array is None:
+        if world == "moon":
+            frame = "mcmf"
+        elif world == "earth":
+            frame = "fk5"
+        else:
+            raise ValueError("Invalid world. Must be 'moon' or 'earth'.")
+        eul, dl_array = generate_euler_dl(lmax, "galactic", frame)
+    ct = jax.vmap(
+        s2fft.utils.rotation.rotate_flms, in_axes=(0, None, None, None)
+    )
+    return ct(alm, lmax, eul, dl_array=dl_array)
+
+
+def gal2eq(alm, eul=None, dl_array=None):
     """
     Rotate alm from galactic to equatorial coordinates.
 
@@ -171,7 +216,9 @@ def gal2eq(alm, dl_array=None):
     alm : array_like
         The input alm in galactic coordinates. Last two axes should be
         the (l, m) indices. Preceding are batch dimensions.
-    dl_array : jnp.ndarray, optional
+    eul : tuple
+        The Euler angles for the galactic to equatorial transformation.
+    dl_array : jnp.ndarray
         Precomputed reduced Wigner d-function values for the galactic
         to equatorial transformation. If not provided, it will be
         computed on the fly.
@@ -182,27 +229,29 @@ def gal2eq(alm, dl_array=None):
         The output alm in equatorial coordinates.
 
     """
-    raise NotImplementedError("This function is not implemented yet.")
+    return _gal_to_eq_mcmf(alm, eul=eul, dl_array=dl_array, world="earth")
 
 
-def gal2mcmf(alm, dl_array=None):
+def gal2mcmf(alm, eul=None, dl_array=None):
     """
-    Rotate alm from galactic to mcmf coordinates.
+    Rotate alm from galactic to equatorial coordinates.
 
     Parameters
     ----------
     alm : array_like
         The input alm in galactic coordinates. Last two axes should be
         the (l, m) indices. Preceding are batch dimensions.
-    dl_array : jnp.ndarray, optional
+    eul : tuple
+        The Euler angles for the galactic to equatorial transformation.
+    dl_array : jnp.ndarray
         Precomputed reduced Wigner d-function values for the galactic
-        to mcmf transformation. If not provided, it will be computed
-        on the fly.
+        to equatorial transformation. If not provided, it will be
+        computed on the fly.
 
     Returns
     -------
-    alm_mcmf : jnp.ndarray
-        The output alm in mcmf coordinates.
+    alm_eq : jnp.ndarray
+        The output alm in equatorial coordinates.
 
     """
-    raise NotImplementedError("This function is not implemented yet.")
+    return _gal_to_eq_mcmf(alm, eul=eul, dl_array=dl_array, world="mcmf")
