@@ -40,11 +40,15 @@ def compute_alm(data, lmax, sampling, nside=None):
         (len(data), lmax+1, 2*lmax+1)
 
     """
-    m2alm = jax.vmap(s2fft.forward_jax, in_axes=(0, None))
-    alm = m2alm(
-        data, lmax + 1, spin=0, nside=nside, sampling=sampling, reality=True
+    m2alm = partial(
+        s2fft.forward_jax,
+        L=lmax + 1,
+        spin=0,
+        nside=nside,
+        sampling=sampling,
+        reality=True,
     )
-    return alm
+    return jax.vmap(m2alm)(data)
 
 
 class SphBase(eqx.Module):
@@ -57,7 +61,7 @@ class SphBase(eqx.Module):
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
 
-    def __init__(self, data, freqs, sampling, lmax=None):
+    def __init__(self, data, freqs, sampling):
         """
         Base class for scalar fields on the sphere. Holds the field
         data and associated metadata. The field must be defined on the
@@ -78,27 +82,13 @@ class SphBase(eqx.Module):
             "dh", "gl", "healpix"}. The default is "mwss", which is a 1
             deg equiangular sampling in theta and phi and includes the
             poles.
-        lmax : int or None
-            Maximum spherical harmonic degree to compute. If None, it is
-            inferred from the data shape and sampling scheme. Note that
-            this value cannot be greater than the natural lmax of the
-            sampling scheme and the data shape.
 
         """
         self.data = jnp.asarray(data)
         self.freqs = jnp.atleast_1d(freqs)
 
-        lmax_range = utils.lmax_range(sampling, self.data.shape[1:])
-        if lmax is None:
-            lmax = lmax_range[1]
-        elif lmax < lmax_range[0] or lmax > lmax_range[1]:
-            raise ValueError(
-                f"Requested lmax {lmax} is not compatible with the data shape "
-                f"{self.data.shape} and sampling scheme {sampling}."
-            )
-
         self.sampling = sampling
-        self.lmax = lmax
+        self.lmax = utils.lmax_from_ntheta(self.data.shape[1], self.sampling)
         self._L = self.lmax + 1  # for s2fft, L = lmax + 1
 
         if self.sampling == "healpix":
