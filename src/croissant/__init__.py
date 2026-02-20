@@ -6,6 +6,6 @@ from jax import config
 
 config.update("jax_enable_x64", True)
 
-from . import constants
-from . import utils
-from . import alm, rotations, simulator
+from . import alm, constants, rotations, simulator, utils
+from .beam import Beam
+from .simulator import Simulator

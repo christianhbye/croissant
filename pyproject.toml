@@ -57,6 +57,9 @@ line-length = 79
 select = ["E", "F", "W", "I"]
 ignore = []
 
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["E402", "F401"]
+
 [dependency-groups]
 dev = [
   "ipympl>=0.10.0",
