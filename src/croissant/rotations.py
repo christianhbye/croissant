@@ -260,4 +260,4 @@ def gal2mcmf(alm, eul=None, dl_array=None):
         The output alm in equatorial coordinates.
 
     """
-    return _gal_to_eq_mcmf(alm, eul=eul, dl_array=dl_array, world="mcmf")
+    return _gal_to_eq_mcmf(alm, eul=eul, dl_array=dl_array, world="moon")
