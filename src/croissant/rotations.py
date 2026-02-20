@@ -3,7 +3,7 @@ import numpy as np
 import s2fft
 from astropy.coordinates import SkyCoord
 
-from .alm import lmax_from_shape
+from .utils import lmax_from_shape
 
 
 def get_rot_mat(from_frame, to_frame):
