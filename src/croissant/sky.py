@@ -7,9 +7,7 @@ from . import rotations, sphere
 class Sky(sphere.SphBase):
     coord: str = eqx.field(static=True)
 
-    def __init__(
-        self, data, freqs, sampling="healpix", lmax=None, coord="galactic"
-    ):
+    def __init__(self, data, freqs, sampling="healpix", coord="galactic"):
         """
         Object that holds the sky model.
 
@@ -27,11 +25,6 @@ class Sky(sphere.SphBase):
             schemes are determined by s2fft and include
             {"mw", "mwss", "dh", "gl", "healpix"}. Default is
             "healpix".
-        lmax : int
-            Maximum harmonic degree to use for spherical harmonic
-            transforms. If None, it will be set to the maximum possible
-            degree based on the sampling scheme and the resolution of
-            the data.
         coord : str
             The coordinate system of the sky model data. Supported
             systems are {"galactic", "equatorial", "mcmf"}. Default is
@@ -44,7 +37,7 @@ class Sky(sphere.SphBase):
                 f"Unsupported coordinate system: {coord}. Supported systems "
                 "are {'galactic', 'equatorial', 'mcmf'}."
             )
-        super().__init__(data, freqs, sampling, lmax=lmax)
+        super().__init__(data, freqs, sampling)
         self.coord = coord
 
     @jax.jit

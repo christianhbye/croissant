@@ -15,7 +15,6 @@ class Beam(sphere.SphBase):
         data,
         freqs,
         sampling="mwss",
-        lmax=None,
         horizon=None,
         beam_az_rot=0.0,
         beam_tilt=0.0,
@@ -40,11 +39,6 @@ class Beam(sphere.SphBase):
             {"mw", "mwss", "dh", "gl", "healpix"}. The default is
             "mwss", which is a 1 deg equiangular sampling in theta and
             phi and includes the poles.
-        lmax : int or None
-            Maximum spherical harmonic degree to compute. If None, it
-            is inferred from the data shape and sampling scheme.
-            Note that this value cannot be greater than the natural
-            lmax of the sampling scheme.
         horizon : array_like or None
             The horizon mask: a boolean array specified for each
             (theta, phi) direction (or pixel), with the same shape as
@@ -65,7 +59,7 @@ class Beam(sphere.SphBase):
             pointing direction.
 
         """
-        super().__init__(data, freqs, sampling, lmax=lmax)
+        super().__init__(data, freqs, sampling)
 
         if not jnp.isclose(beam_tilt, 0.0):
             raise NotImplementedError("Beam tilt is not yet implemented.")

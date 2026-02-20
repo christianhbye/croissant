@@ -7,7 +7,7 @@ from astropy.time import Time as EarthTime
 from lunarsky import LunarTopo, MoonLocation
 from lunarsky import Time as LunarTime
 
-from . import constants, rotations
+from . import constants, rotations, utils
 from .beam import Beam
 from .sky import Sky
 
@@ -144,6 +144,7 @@ class Simulator(eqx.Module):
         lon,
         lat,
         alt=0,
+        lmax=None,
         world="moon",
         Tgnd=300.0,
     ):
@@ -174,6 +175,11 @@ class Simulator(eqx.Module):
             The latitude of the observer in degrees.
         alt : float
             The altitude of the observer in meters.
+        lmax : int or None
+            The maximum ell value to use for the simulation. Must be
+            smaller than or equal to the lmax values of the beam and
+            sky models. If None, the minimum of the beam and sky lmax
+            values is used.
         world : {"moon", "earth"}
             Run the simulations on the moon or the Earth
         Tgnd : float
@@ -192,9 +198,14 @@ class Simulator(eqx.Module):
         self.sky = sky
         self.times_jd = times_jd
 
-        if beam.lmax != sky.lmax:
-            raise ValueError("Beam and sky alm have different lmax values.")
-        self.lmax = beam.lmax
+        if lmax is None:
+            lmax = min(beam.lmax, sky.lmax)
+        elif lmax > beam.lmax or lmax > sky.lmax:
+            raise ValueError(
+                "lmax for the simulation must be smaller than or equal to the "
+                "lmax of the beam and sky models."
+            )
+        self.lmax = lmax
         self._L = self.lmax + 1
 
         self.Tgnd = jnp.array(Tgnd)
@@ -215,14 +226,17 @@ class Simulator(eqx.Module):
             sim_frame = "mcmf"
 
         eul_topo, dl_topo = rotations.generate_euler_dl(
-            self.lmax, topo, sim_frame
+            self.beam.lmax, topo, sim_frame
         )
         self.eul_topo = tuple(float(angle) for angle in eul_topo)
         self.dl_topo = jnp.array(dl_topo)
 
         # precompute beam and sky alms in equatorial coordinates
-        self.beam_eq_alm = self.compute_beam_eq()
-        self.sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
+        beam_eq_alm = self.compute_beam_eq()
+        sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
+        # resize to the simulation lmax
+        self.beam_eq_alm = utils.reduce_lmax(beam_eq_alm, self.lmax)
+        self.sky_eq_alm = utils.reduce_lmax(sky_eq_alm, self.lmax)
 
         # precompute the phases
         dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
@@ -248,7 +262,7 @@ class Simulator(eqx.Module):
             in_axes=(0, None, None, None),
         )
         beam_eq_alm = eq2topo(
-            beam_alm, self._L, self.eul_topo, dl_array=self.dl_topo
+            beam_alm, self.beam._L, self.eul_topo, dl_array=self.dl_topo
         )
         return beam_eq_alm
 
