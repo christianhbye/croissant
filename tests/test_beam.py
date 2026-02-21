@@ -203,7 +203,7 @@ def test_beam_az_rot_phase_formula():
     emms = jnp.arange(-lmax, lmax + 1)
     expected_phases = jnp.exp(-1j * emms * jnp.radians(az_rot))
 
-    # Check that ratio alm_rot / alm0 matches expected phase for non-zero entries
+    # check that alm_rot / alm0 matches expected phase for non-zero entries
     mask = jnp.abs(alm0) > 1e-12
     ratio = alm_rot / jnp.where(mask, alm0, 1.0 + 0j)
     assert jnp.allclose(

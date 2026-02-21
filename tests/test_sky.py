@@ -1,6 +1,5 @@
 """Tests for the Sky class."""
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -71,7 +70,9 @@ def test_sky_alm_monopole_uniform():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("world,coord", [("moon", "mcmf"), ("earth", "equatorial")])
+@pytest.mark.parametrize(
+    "world,coord", [("moon", "mcmf"), ("earth", "equatorial")]
+)
 def test_sky_alm_eq_native_coords_no_rotation(world, coord):
     """Sky already in equatorial/mcmf should not be rotated."""
     sky = _uniform_sky(coord=coord)
@@ -99,14 +100,18 @@ def test_sky_alm_eq_invalid_world():
 def test_sky_alm_eq_coord_world_mismatch_mcmf_earth():
     """mcmf sky + world='earth' should raise ValueError."""
     sky = _uniform_sky(coord="mcmf")
-    with pytest.raises(ValueError, match="Unsupported coordinate transformation"):
+    with pytest.raises(
+        ValueError, match="Unsupported coordinate transformation"
+    ):
         sky.compute_alm_eq(world="earth")
 
 
 def test_sky_alm_eq_coord_world_mismatch_equatorial_moon():
     """equatorial sky + world='moon' should raise ValueError."""
     sky = _uniform_sky(coord="equatorial")
-    with pytest.raises(ValueError, match="Unsupported coordinate transformation"):
+    with pytest.raises(
+        ValueError, match="Unsupported coordinate transformation"
+    ):
         sky.compute_alm_eq(world="moon")
 
 

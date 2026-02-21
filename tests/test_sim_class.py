@@ -1,14 +1,13 @@
 """Tests for the Simulator class."""
 
-import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 from astropy.time import Time as AstroTime
 from lunarsky import Time as LunarTime
 
-from croissant import Beam, Sky, Simulator, utils
-from croissant.constants import Y00, sidereal_day
+from croissant import Beam, Simulator, Sky
+from croissant.constants import sidereal_day
 
 rng = np.random.default_rng(seed=3)
 
@@ -73,7 +72,6 @@ def test_simulator_init(world):
 
 def test_simulator_freq_mismatch():
     """Mismatched frequencies between beam, sky and Simulator should raise."""
-    nside = _NSIDE
     npix = _NPIX
     freqs_beam = jnp.array([50.0, 100.0])
     freqs_sim = jnp.array([50.0, 200.0])  # different
@@ -84,9 +82,7 @@ def test_simulator_freq_mismatch():
     beam = Beam(beam_data, freqs_beam, sampling="healpix")
 
     with pytest.raises(ValueError, match="frequencies"):
-        Simulator(
-            beam, sky, _TIMES_JD_MOON, freqs_sim, 0.0, 0.0, world="moon"
-        )
+        Simulator(beam, sky, _TIMES_JD_MOON, freqs_sim, 0.0, 0.0, world="moon")
 
 
 def test_simulator_lmax_too_large():
@@ -114,9 +110,7 @@ def test_simulator_invalid_world():
     sky = Sky(sim_data, _FREQS, coord="galactic")
     beam = Beam(sim_data, _FREQS, sampling="healpix")
     with pytest.raises(ValueError, match="world"):
-        Simulator(
-            beam, sky, _TIMES_JD_MOON, _FREQS, 0.0, 0.0, world="saturn"
-        )
+        Simulator(beam, sky, _TIMES_JD_MOON, _FREQS, 0.0, 0.0, world="saturn")
 
 
 # ---------------------------------------------------------------------------
