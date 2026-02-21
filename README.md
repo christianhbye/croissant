@@ -65,7 +65,8 @@ python -m venv .venv
 source .venv/bin/activate
 
 # Install the package in editable mode with development dependencies
-pip install -e ".[dev]"
+pip install -e .
+pip install -r requirements-dev.txt
 
 ```
 
