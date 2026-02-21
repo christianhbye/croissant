@@ -1,71 +1,229 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="21" time="3.125" timestamp="2026-02-21T03:07:18.279348+00:00" hostname="runnervmwffz4"><testcase classname="tests.test_sphere" name="test_sphbase_init[mwss-lmax8]" time="0.060" /><testcase classname="tests.test_sphere" name="test_sphbase_init[mw-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_init[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_init[healpix-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[mwss-lmax8]" time="0.012" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[healpix-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[mwss-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[healpix-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[mwss-lmax8]" time="0.026" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[mw-lmax8]" time="0.025" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[dh-lmax8]" time="0.026" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[healpix-lmax8]" time="0.036" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[mwss-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[mw-lmax8]" time="0.026" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[dh-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[healpix-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_compute_alm_shape[True-mwss-lmax8]" time="0.241"><failure message="AttributeError: 'int' object has no attribute 'size'&#10;--------------------&#10;For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.">sampling = 'mwss', lmax = 8, disable_jit = True
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="121" time="252.083" timestamp="2026-02-21T03:16:15.589264+00:00" hostname="runnervmwffz4"><testcase classname="tests.test_alm" name="test_total_power[8]" time="0.315" /><testcase classname="tests.test_alm" name="test_total_power[16]" time="0.095" /><testcase classname="tests.test_alm" name="test_total_power[64]" time="0.089" /><testcase classname="tests.test_alm" name="test_total_power[128]" time="0.096" /><testcase classname="tests.test_alm" name="test_getidx[8]" time="0.302" /><testcase classname="tests.test_alm" name="test_getidx[16]" time="0.163" /><testcase classname="tests.test_alm" name="test_getidx[64]" time="0.172" /><testcase classname="tests.test_alm" name="test_getidx[128]" time="0.181" /><testcase classname="tests.test_alm" name="test_getlm[8]" time="0.145" /><testcase classname="tests.test_alm" name="test_getlm[16]" time="0.270" /><testcase classname="tests.test_alm" name="test_getlm[64]" time="3.737" /><testcase classname="tests.test_alm" name="test_getlm[128]" time="14.439" /><testcase classname="tests.test_alm" name="test_lmax_from_shape[8]" time="0.001" /><testcase classname="tests.test_alm" name="test_lmax_from_shape[16]" time="0.001" /><testcase classname="tests.test_alm" name="test_lmax_from_shape[64]" time="0.001" /><testcase classname="tests.test_alm" name="test_lmax_from_shape[128]" time="0.001" /><testcase classname="tests.test_alm" name="test_is_real[8]" time="0.319" /><testcase classname="tests.test_alm" name="test_is_real[16]" time="0.317" /><testcase classname="tests.test_alm" name="test_is_real[64]" time="0.321" /><testcase classname="tests.test_alm" name="test_is_real[128]" time="0.333" /><testcase classname="tests.test_alm" name="test_reduce_lmax[8]" time="0.001" /><testcase classname="tests.test_alm" name="test_reduce_lmax[16]" time="0.001" /><testcase classname="tests.test_alm" name="test_reduce_lmax[64]" time="0.001" /><testcase classname="tests.test_alm" name="test_reduce_lmax[128]" time="0.001" /><testcase classname="tests.test_alm" name="test_shape_from_lmax[8]" time="0.001" /><testcase classname="tests.test_alm" name="test_shape_from_lmax[16]" time="0.001" /><testcase classname="tests.test_alm" name="test_shape_from_lmax[64]" time="0.001" /><testcase classname="tests.test_alm" name="test_shape_from_lmax[128]" time="0.001" /><testcase classname="tests.test_beam" name="test_beam_init[mwss-8]" time="0.172" /><testcase classname="tests.test_beam" name="test_beam_init[mw-8]" time="0.079" /><testcase classname="tests.test_beam" name="test_beam_init[dh-8]" time="0.081" /><testcase classname="tests.test_beam" name="test_beam_init[healpix-8]" time="0.056" /><testcase classname="tests.test_beam" name="test_beam_tilt_raises" time="0.058" /><testcase classname="tests.test_beam" name="test_beam_default_horizon_shape" time="0.002" /><testcase classname="tests.test_beam" name="test_beam_custom_horizon" time="0.101" /><testcase classname="tests.test_beam" name="test_beam_norm_isotropic[True]" time="0.139" /><testcase classname="tests.test_beam" name="test_beam_norm_isotropic[False]" time="0.033" /><testcase classname="tests.test_beam" name="test_beam_norm_scaling[True]" time="0.068" /><testcase classname="tests.test_beam" name="test_beam_norm_scaling[False]" time="0.004" /><testcase classname="tests.test_beam" name="test_beam_fgnd_no_horizon[True]" time="0.179" /><testcase classname="tests.test_beam" name="test_beam_fgnd_no_horizon[False]" time="0.044" /><testcase classname="tests.test_beam" name="test_beam_fgnd_full_horizon[True]" time="0.006" /><testcase classname="tests.test_beam" name="test_beam_fgnd_full_horizon[False]" time="0.002" /><testcase classname="tests.test_beam" name="test_beam_fgnd_default_horizon[True]" time="0.119" /><testcase classname="tests.test_beam" name="test_beam_fgnd_default_horizon[False]" time="0.052" /><testcase classname="tests.test_beam" name="test_beam_fgnd_plus_fsky_equals_one" time="0.162" /><testcase classname="tests.test_beam" name="test_beam_alm_shape" time="1.520" /><testcase classname="tests.test_beam" name="test_beam_alm_is_real" time="0.051" /><testcase classname="tests.test_beam" name="test_beam_az_rot_preserves_power" time="1.190" /><testcase classname="tests.test_beam" name="test_beam_az_rot_phase_formula" time="0.540" /><testcase classname="tests.test_rotations" name="test_generate_euler_dl[8]" time="0.001" /><testcase classname="tests.test_rotations" name="test_generate_euler_dl[16]" time="0.001" /><testcase classname="tests.test_rotations" name="test_generate_euler_dl[64]" time="0.001" /><testcase classname="tests.test_rotations" name="test_generate_euler_dl[128]" time="0.001" /><testcase classname="tests.test_rotations" name="test_get_rot_mat" time="2.222" /><testcase classname="tests.test_rotations" name="test_rotmat_to_euler" time="0.005" /><testcase classname="tests.test_sim_class" name="test_simulator_init[moon]" time="1.834" /><testcase classname="tests.test_sim_class" name="test_simulator_init[earth]" time="2.026" /><testcase classname="tests.test_sim_class" name="test_simulator_freq_mismatch" time="0.004" /><testcase classname="tests.test_sim_class" name="test_simulator_lmax_too_large" time="0.003" /><testcase classname="tests.test_sim_class" name="test_simulator_invalid_world" time="0.003" /><testcase classname="tests.test_sim_class" name="test_sim_output_shape[moon]" time="2.050" /><testcase classname="tests.test_sim_class" name="test_sim_output_shape[earth]" time="2.889" /><testcase classname="tests.test_sim_class" name="test_sim_monopole_sky_is_constant[moon]" time="0.089" /><testcase classname="tests.test_sim_class" name="test_sim_monopole_sky_is_constant[earth]" time="1.000" /><testcase classname="tests.test_sim_class" name="test_sim_ground_contribution_increases_vis[moon]" time="0.081" /><testcase classname="tests.test_sim_class" name="test_sim_ground_contribution_increases_vis[earth]" time="2.004" /><testcase classname="tests.test_sim_class" name="test_compute_beam_eq_shape" time="1.422" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[1-earth-8]" time="2.153" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[1-earth-32]" time="7.952" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[1-moon-8]" time="0.009" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[1-moon-32]" time="0.024" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[24-earth-8]" time="34.670" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[24-earth-32]" time="63.286"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">lmax = 32, world = 'earth', N_times = 24
 
-    @pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
-    @pytest.mark.parametrize("disable_jit", [True, False])
-    def test_compute_alm_shape(sampling, lmax, disable_jit):
-        """compute_alm should return array of shape (N_freqs, lmax+1, 2*lmax+1)."""
-        N_freqs = 3
-        data = jnp.array(_make_data(lmax, sampling, N_freqs))
-        nside = (lmax // 2) if sampling == "healpix" else None
-        with jax.disable_jit(disable_jit):
-&gt;           alm = compute_alm(data, lmax, sampling, nside=nside)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    @pytest.mark.parametrize("lmax", [8, 32])
+    @pytest.mark.parametrize("world", ["earth", "moon"])
+    @pytest.mark.parametrize("N_times", [1, 24])
+    def test_rot_alm_z(lmax, world, N_times):
+    
+        # do one sidereal day (2pi rotation), split into N_times
+        delta_t = sidereal_day[world] / N_times
+        phases = simulator.rot_alm_z(lmax, N_times, delta_t, world=world)
+        # expected phases
+        dphi = jnp.linspace(0, 2 * jnp.pi, N_times, endpoint=False)
+        # the m-modes range from -lmax to lmax (inclusive)
+        for m_index in range(phases.shape[1]):
+            emm = m_index - lmax  # m = -lmax, -lmax+1, ..., lmax
+            expected = jnp.exp(-1j * emm * dphi)
+            assert jnp.allclose(phases[:, m_index], expected)
+    
+        # check that these phases really rotate the alm
+        alm_arr = s2fft.utils.signal_generator.generate_flm(rng, lmax + 1)
+        for i in range(N_times):
+            phi = dphi[i].item()
+            phase = phases[i]
+            alm_rot = alm_arr * phase[None, :]
+            euler = (phi, 0, 0)  # rotation about z-axis
+&gt;           expected = s2fft.utils.rotation.rotate_flms(alm_arr, lmax + 1, euler)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-tests/test_sphere.py:105: 
+tests/test_simulator.py:35: 
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
-../../../.local/lib/python3.12/site-packages/equinox/_jit.py:55: in fun_wrapped
-    out = fun(*args, **kwargs)
-          ^^^^^^^^^^^^^^^^^^^^
-src/croissant/sphere.py:51: in compute_alm
-    return jax.vmap(m2alm)(data)
+../../../.local/lib/python3.12/site-packages/jax/_src/pjit.py:259: in cache_miss
+    executable, pgle_profiler, const_args) = _run_python_pjit(
+../../../.local/lib/python3.12/site-packages/jax/_src/pjit.py:142: in _run_python_pjit
+    out_flat, compiled, profiler, const_args = _pjit_call_impl_python(
+../../../.local/lib/python3.12/site-packages/jax/_src/pjit.py:1202: in _pjit_call_impl_python
+    compiled = computation.compile()
+               ^^^^^^^^^^^^^^^^^^^^^
+../../../.local/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2510: in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+../../../.local/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:3056: in from_hlo
+    xla_executable = _cached_compilation(
+../../../.local/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2837: in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+../../../.local/lib/python3.12/site-packages/jax/_src/compiler.py:478: in compile_or_get_cached
+    return _compile_and_write_cache(
+../../../.local/lib/python3.12/site-packages/jax/_src/compiler.py:746: in _compile_and_write_cache
+    executable = backend_compile_and_load(
+../../../.local/lib/python3.12/site-packages/jax/_src/profiler.py:359: in wrapper
+    return func(*args, **kwargs)
            ^^^^^^^^^^^^^^^^^^^^^
-../../../.local/lib/python3.12/site-packages/s2fft/transforms/spherical.py:660: in forward_jax
-    f = resampling_jax.upsample_by_two_mwss(f, L, spin)
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-../../../.local/lib/python3.12/site-packages/s2fft/utils/resampling_jax.py:301: in upsample_by_two_mwss
-    f_ext = periodic_extension_spatial_mwss(f, L, spin)
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
 
-f = VmapTracer(aval=float32[1,10,18], batched=float32[3,1,10,18]), L = 9
-spin = 0
+backend = &lt;jaxlib._jax.Client object at 0x7f2ea8cbe670&gt;
+module = &lt;jaxlib.mlir._mlir_libs._mlir.ir.Module object at 0x7f2e437191c0&gt;
+executable_devices = (CpuDevice(id=0),)
+options = &lt;jaxlib._jax.CompileOptions object at 0x3aa52b90&gt;, host_callbacks = ()
 
-    @_partial(_jit, static_argnums=(1))
-    def periodic_extension_spatial_mwss(
-        f: jnp.ndarray, L: int, spin: int = 0
-    ) -&gt; jnp.ndarray:
-        r"""
-        Perform period extension of MWSS signal on the sphere in spatial domain,
-        extending :math:`\theta` domain from :math:`[0,\pi]` to :math:`[0,2\pi]`.
+    @profiler.annotate_function
+    def backend_compile_and_load(
+        backend: xc.Client,
+        module: ir.Module,
+        executable_devices: xc.DeviceList,
+        options: xc.CompileOptions,
+        host_callbacks: Sequence[Any],
+    ) -&gt; xc.LoadedExecutable:
+      sym_name = module.operation.attributes['sym_name']
+      module_name = ir.StringAttr(sym_name).value
     
-        For the MWSS sampling scheme, it is possible to do the period extension in
-        :math:`\theta` in the spatial domain.  This is not possible for the MW sampling
-        scheme.
+      if (options.executable_build_options.fdo_profile is not None
+          and len(options.executable_build_options.fdo_profile)):
+        logger.debug(
+            "Compiling module %s with FDO profile of length %d",
+            module_name,
+            len(options.executable_build_options.fdo_profile),
+        )
     
-        JAX implementation of :func:`~s2fft.resampling.periodic_extension_spatial_mwss`.
-    
-        Args:
-            f (jnp.ndarray): Signal on the sphere sampled with MWSS sampling scheme.
-    
-            L (int): Harmonic band-limit.
-    
-            spin (int, optional): Harmonic spin. Defaults to 0.
-    
-        Returns:
-            jnp.ndarray: Signal on the sphere extended to :math:`\theta` domain
-            :math:`[0,2\pi]`, in MWSS sampling scheme.
-    
-        """
-        ntheta = L + 1
-        nphi = 2 * L
-        ntheta_ext = 2 * L
-    
-        f_ext = jnp.zeros((f.shape[0], ntheta_ext, nphi), dtype=jnp.complex128)
-        f_ext = f_ext.at[:, 0:ntheta, 0:nphi].set(f[:, 0:ntheta, 0:nphi])
-&gt;       if spin.size &gt; 1:
-           ^^^^^^^^^
-E       AttributeError: 'int' object has no attribute 'size'
-E       --------------------
-E       For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+      try:
+        # we use a separate function call to ensure that XLA compilation appears
+        # separately in Python profiling results
+        # TODO(dsuo): Simplify this logic once we delete _jax.CompileOnlyPyClient.
+        if isinstance(backend, _jax.CompileOnlyPyClient):
+          if host_callbacks:
+            return backend.compile(
+                module,
+                executable_devices=executable_devices,  # type: ignore
+                compile_options=options,
+                host_callbacks=host_callbacks,  # type: ignore
+            )
+          # Some backends don't have `host_callbacks` option yet
+          # TODO(sharadmv): remove this fallback when all backends allow `compile`
+          # to take in `host_callbacks`
+          return backend.compile(  # type: ignore
+              module,
+              executable_devices=executable_devices,
+              compile_options=options,
+          )
+        else:
+          if host_callbacks:
+            return backend.compile_and_load(
+                module,
+                executable_devices=executable_devices,
+                compile_options=options,
+                host_callbacks=host_callbacks,
+            )
+          # Some backends don't have `host_callbacks` option yet
+          # TODO(sharadmv): remove this fallback when all backends allow `compile`
+          # to take in `host_callbacks`
+&gt;         return backend.compile_and_load(
+              module,
+              executable_devices=executable_devices,
+              compile_options=options,
+          )
+E         Failed: Timeout (&gt;60.0s) from pytest-timeout.
 
-../../../.local/lib/python3.12/site-packages/s2fft/utils/resampling_jax.py:378: AttributeError</failure></testcase></testsuite></testsuites>
+../../../.local/lib/python3.12/site-packages/jax/_src/compiler.py:362: Failed</failure></testcase><testcase classname="tests.test_simulator" name="test_rot_alm_z[24-moon-8]" time="0.032" /><testcase classname="tests.test_simulator" name="test_rot_alm_z[24-moon-32]" time="62.508"><failure message="Failed: Timeout (&gt;60.0s) from pytest-timeout.">lmax = 32, world = 'moon', N_times = 24
+
+    @pytest.mark.parametrize("lmax", [8, 32])
+    @pytest.mark.parametrize("world", ["earth", "moon"])
+    @pytest.mark.parametrize("N_times", [1, 24])
+    def test_rot_alm_z(lmax, world, N_times):
+    
+        # do one sidereal day (2pi rotation), split into N_times
+        delta_t = sidereal_day[world] / N_times
+        phases = simulator.rot_alm_z(lmax, N_times, delta_t, world=world)
+        # expected phases
+        dphi = jnp.linspace(0, 2 * jnp.pi, N_times, endpoint=False)
+        # the m-modes range from -lmax to lmax (inclusive)
+        for m_index in range(phases.shape[1]):
+            emm = m_index - lmax  # m = -lmax, -lmax+1, ..., lmax
+            expected = jnp.exp(-1j * emm * dphi)
+            assert jnp.allclose(phases[:, m_index], expected)
+    
+        # check that these phases really rotate the alm
+        alm_arr = s2fft.utils.signal_generator.generate_flm(rng, lmax + 1)
+        for i in range(N_times):
+            phi = dphi[i].item()
+            phase = phases[i]
+            alm_rot = alm_arr * phase[None, :]
+            euler = (phi, 0, 0)  # rotation about z-axis
+&gt;           expected = s2fft.utils.rotation.rotate_flms(alm_arr, lmax + 1, euler)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_simulator.py:35: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../.local/lib/python3.12/site-packages/jax/_src/pjit.py:259: in cache_miss
+    executable, pgle_profiler, const_args) = _run_python_pjit(
+../../../.local/lib/python3.12/site-packages/jax/_src/pjit.py:142: in _run_python_pjit
+    out_flat, compiled, profiler, const_args = _pjit_call_impl_python(
+../../../.local/lib/python3.12/site-packages/jax/_src/pjit.py:1202: in _pjit_call_impl_python
+    compiled = computation.compile()
+               ^^^^^^^^^^^^^^^^^^^^^
+../../../.local/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2510: in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+../../../.local/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:3056: in from_hlo
+    xla_executable = _cached_compilation(
+../../../.local/lib/python3.12/site-packages/jax/_src/interpreters/pxla.py:2837: in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+../../../.local/lib/python3.12/site-packages/jax/_src/compiler.py:478: in compile_or_get_cached
+    return _compile_and_write_cache(
+../../../.local/lib/python3.12/site-packages/jax/_src/compiler.py:746: in _compile_and_write_cache
+    executable = backend_compile_and_load(
+../../../.local/lib/python3.12/site-packages/jax/_src/profiler.py:359: in wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+backend = &lt;jaxlib._jax.Client object at 0x7f2ea8cbe670&gt;
+module = &lt;jaxlib.mlir._mlir_libs._mlir.ir.Module object at 0x7f2e2770bec0&gt;
+executable_devices = (CpuDevice(id=0),)
+options = &lt;jaxlib._jax.CompileOptions object at 0x3f441390&gt;, host_callbacks = ()
+
+    @profiler.annotate_function
+    def backend_compile_and_load(
+        backend: xc.Client,
+        module: ir.Module,
+        executable_devices: xc.DeviceList,
+        options: xc.CompileOptions,
+        host_callbacks: Sequence[Any],
+    ) -&gt; xc.LoadedExecutable:
+      sym_name = module.operation.attributes['sym_name']
+      module_name = ir.StringAttr(sym_name).value
+    
+      if (options.executable_build_options.fdo_profile is not None
+          and len(options.executable_build_options.fdo_profile)):
+        logger.debug(
+            "Compiling module %s with FDO profile of length %d",
+            module_name,
+            len(options.executable_build_options.fdo_profile),
+        )
+    
+      try:
+        # we use a separate function call to ensure that XLA compilation appears
+        # separately in Python profiling results
+        # TODO(dsuo): Simplify this logic once we delete _jax.CompileOnlyPyClient.
+        if isinstance(backend, _jax.CompileOnlyPyClient):
+          if host_callbacks:
+            return backend.compile(
+                module,
+                executable_devices=executable_devices,  # type: ignore
+                compile_options=options,
+                host_callbacks=host_callbacks,  # type: ignore
+            )
+          # Some backends don't have `host_callbacks` option yet
+          # TODO(sharadmv): remove this fallback when all backends allow `compile`
+          # to take in `host_callbacks`
+          return backend.compile(  # type: ignore
+              module,
+              executable_devices=executable_devices,
+              compile_options=options,
+          )
+        else:
+          if host_callbacks:
+            return backend.compile_and_load(
+                module,
+                executable_devices=executable_devices,
+                compile_options=options,
+                host_callbacks=host_callbacks,
+            )
+          # Some backends don't have `host_callbacks` option yet
+          # TODO(sharadmv): remove this fallback when all backends allow `compile`
+          # to take in `host_callbacks`
+&gt;         return backend.compile_and_load(
+              module,
+              executable_devices=executable_devices,
+              compile_options=options,
+          )
+E         Failed: Timeout (&gt;60.0s) from pytest-timeout.
+
+../../../.local/lib/python3.12/site-packages/jax/_src/compiler.py:362: Failed</failure></testcase><testcase classname="tests.test_simulator" name="test_convolve" time="1.281" /><testcase classname="tests.test_simulator" name="test_rot_alm_z_with_times_parameter[earth-8]" time="1.295" /><testcase classname="tests.test_simulator" name="test_rot_alm_z_with_times_parameter[earth-32]" time="0.794" /><testcase classname="tests.test_simulator" name="test_rot_alm_z_with_times_parameter[moon-8]" time="0.063" /><testcase classname="tests.test_simulator" name="test_rot_alm_z_with_times_parameter[moon-32]" time="0.208" /><testcase classname="tests.test_sky" name="test_sky_init_defaults" time="0.046" /><testcase classname="tests.test_sky" name="test_sky_invalid_coord" time="0.002" /><testcase classname="tests.test_sky" name="test_sky_alm_shape" time="0.841" /><testcase classname="tests.test_sky" name="test_sky_alm_monopole_uniform" time="0.876" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_native_coords_no_rotation[moon-mcmf]" time="0.768" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_native_coords_no_rotation[earth-equatorial]" time="0.774" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_galactic_preserves_monopole[moon]" time="1.871" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_galactic_preserves_monopole[earth]" time="1.848" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_invalid_world" time="0.003" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_coord_world_mismatch_mcmf_earth" time="0.003" /><testcase classname="tests.test_sky" name="test_sky_alm_eq_coord_world_mismatch_equatorial_moon" time="0.001" /><testcase classname="tests.test_sky" name="test_sky_multifreq_alm_scales_correctly" time="1.426" /><testcase classname="tests.test_sphere" name="test_sphbase_init[mwss-lmax8]" time="0.003" /><testcase classname="tests.test_sphere" name="test_sphbase_init[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_init[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_init[healpix-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[mwss-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[healpix-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[mwss-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[healpix-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[mwss-lmax8]" time="0.028" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[mw-lmax8]" time="0.027" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[dh-lmax8]" time="0.029" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[healpix-lmax8]" time="0.041" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[mwss-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[mw-lmax8]" time="0.028" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[healpix-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_compute_alm_shape[True-dh-lmax8]" time="7.905" /><testcase classname="tests.test_sphere" name="test_compute_alm_shape[True-healpix-lmax8]" time="7.367" /><testcase classname="tests.test_sphere" name="test_compute_alm_shape[False-dh-lmax8]" time="1.358" /><testcase classname="tests.test_sphere" name="test_compute_alm_shape[False-healpix-lmax8]" time="0.823" /><testcase classname="tests.test_sphere" name="test_compute_alm_monopole[True-dh-lmax8]" time="2.326" /><testcase classname="tests.test_sphere" name="test_compute_alm_monopole[True-healpix-lmax8]" time="3.297" /><testcase classname="tests.test_sphere" name="test_compute_alm_monopole[False-dh-lmax8]" time="0.757" /><testcase classname="tests.test_sphere" name="test_compute_alm_monopole[False-healpix-lmax8]" time="0.781" /></testsuite></testsuites>

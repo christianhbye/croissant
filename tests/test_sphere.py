@@ -19,6 +19,13 @@ SAMPLING_PARAMS = [
     pytest.param("healpix", 8, id="healpix-lmax8"),
 ]
 
+# s2fft mw/mwss forward transforms call spin.size which fails on Python ints
+# when jit is disabled; restrict disable_jit alm tests to healpix and dh
+SAMPLING_PARAMS_JIT_SAFE = [
+    pytest.param("dh", 8, id="dh-lmax8"),
+    pytest.param("healpix", 8, id="healpix-lmax8"),
+]
+
 
 def _make_data(lmax, sampling, N_freqs=1):
     """Create uniform data for a given lmax and sampling scheme."""
@@ -94,7 +101,7 @@ def test_sphbase_phi_range(sampling, lmax):
     assert jnp.all(obj.phi < 2 * jnp.pi + 1e-10)
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS_JIT_SAFE)
 @pytest.mark.parametrize("disable_jit", [True, False])
 def test_compute_alm_shape(sampling, lmax, disable_jit):
     """compute_alm should return array of shape (N_freqs, lmax+1, 2*lmax+1)."""
@@ -106,7 +113,7 @@ def test_compute_alm_shape(sampling, lmax, disable_jit):
     assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS_JIT_SAFE)
 @pytest.mark.parametrize("disable_jit", [True, False])
 def test_compute_alm_monopole(sampling, lmax, disable_jit):
     """Uniform map should produce a dominant monopole component."""
