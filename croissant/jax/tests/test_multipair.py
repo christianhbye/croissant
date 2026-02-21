@@ -72,7 +72,16 @@ class TestRegression:
         )
         assert jnp.all(rel_err < 1e-12), f"Max relative error: {rel_err.max()}"
 
-
+        # Check that imaginary parts are at numerical-noise level
+        max_imag_single = jnp.max(jnp.abs(jnp.imag(vis_single)))
+        max_imag_multi = jnp.max(jnp.abs(jnp.imag(vis_multi_squeezed)))
+        imag_tol = 1e-12
+        assert max_imag_single < imag_tol, (
+            f"Single-pair visibility has non-negligible imaginary part: {max_imag_single}"
+        )
+        assert max_imag_multi < imag_tol, (
+            f"Multi-pair visibility has non-negligible imaginary part: {max_imag_multi}"
+        )
 class TestJAXGradient:
     """JAX gradient through vmap."""
 
@@ -159,4 +168,34 @@ class TestComputeNormalization:
                 jnp.sqrt(3.0 * 4.0),  # (2,3)
             ]
         )
+        assert jnp.allclose(norm, expected)
+
+    def test_pair_normalization_freq_dependent(self):
+        """Test pair_normalization with frequency-dependent antenna powers."""
+        n_antennas = 4
+        n_freqs = 3
+
+        # Shape (n_antennas, n_freqs); choose simple values for easy verification.
+        antenna_powers = jnp.array(
+            [
+                [1.0, 2.0, 3.0],   # antenna 0
+                [4.0, 5.0, 6.0],   # antenna 1
+                [7.0, 8.0, 9.0],   # antenna 2
+                [10.0, 11.0, 12.0] # antenna 3
+            ]
+        )
+
+        pairs = [(0, 0), (0, 1), (1, 2), (2, 3)]
+        norm = multipair.pair_normalization(antenna_powers, pairs)
+
+        # Expect shape (n_pairs, n_freqs)
+        assert norm.shape == (len(pairs), n_freqs)
+
+        # Compute expected normalization per pair and frequency:
+        # sqrt(power_i(f) * power_j(f)) for each (i, j) in pairs.
+        expected = []
+        for i, j in pairs:
+            expected.append(jnp.sqrt(antenna_powers[i] * antenna_powers[j]))
+        expected = jnp.stack(expected, axis=0)
+
         assert jnp.allclose(norm, expected)

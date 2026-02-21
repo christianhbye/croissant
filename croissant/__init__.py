@@ -1,6 +1,3 @@
-__author__ = "Christian Hellum Bye"
-__version__ = "4.1.1"
-
 import warnings
 
 warnings.warn(
@@ -18,3 +15,6 @@ from . import dpss
 from . import jax
 from . import utils
 from .core import *  # noqa F403
+
+__author__ = "Christian Hellum Bye"
+__version__ = "4.2.1"
