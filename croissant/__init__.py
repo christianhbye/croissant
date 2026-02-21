@@ -1,5 +1,5 @@
 __author__ = "Christian Hellum Bye"
-__version__ = "4.1.2"
+__version__ = "4.2.1"
 
 from . import constants
 from . import core
