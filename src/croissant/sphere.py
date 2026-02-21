@@ -8,7 +8,7 @@ import s2fft
 from . import utils
 
 
-@partial(jax.jit, static_argnames=["lmax", "sampling", "nside"])
+@eqx.filter_jit
 def compute_alm(data, lmax, sampling, nside=None):
     """
     Compute the spherical harmonic coefficients of a scalar field on
