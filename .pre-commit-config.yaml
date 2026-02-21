@@ -5,3 +5,15 @@ repos:
       - id: ruff
         args: [ --fix ]
       - id: ruff-format
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.10.4
+    hooks:
+      - id: uv-export
+        name: generate-dev-requirements
+        args: [
+          "--group", "dev",
+          "--no-hashes",
+          "--no-annotate",
+          "--no-header",
+          "-o", "requirements-dev.txt"
+        ]
