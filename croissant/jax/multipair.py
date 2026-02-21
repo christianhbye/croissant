@@ -20,6 +20,7 @@ from .alm import total_power, lmax_from_shape
 _multi_convolve = jax.vmap(convolve, in_axes=(0, None, None))
 
 
+@jax.jit
 def multi_convolve(beam_alm, sky_alm, phases):
     """
     Compute the convolution for multiple antenna pairs via vmap.
