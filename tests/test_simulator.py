@@ -18,22 +18,28 @@ def test_rot_alm_z(lmax, world, N_times):
     delta_t = sidereal_day[world] / N_times
     phases = simulator.rot_alm_z(lmax, N_times, delta_t, world=world)
     # expected phases
-    dphi = jnp.linspace(0, 2 * jnp.pi, N_times, endpoint=False)
+    phi = jnp.linspace(0, 2 * jnp.pi, N_times, endpoint=False)
     # the m-modes range from -lmax to lmax (inclusive)
-    for m_index in range(phases.shape[1]):
-        emm = m_index - lmax  # m = -lmax, -lmax+1, ..., lmax
-        expected = jnp.exp(-1j * emm * dphi)
-        assert jnp.allclose(phases[:, m_index], expected)
+    emm = jnp.arange(phases.shape[1]) - lmax  # m = -lmax, -lmax+1, ..., lmax
+    expected = jnp.exp(-1j * emm[None, :] * phi[:, None])
+    assert jnp.allclose(phases, expected)
 
     # check that these phases really rotate the alm
     alm_arr = s2fft.utils.signal_generator.generate_flm(rng, lmax + 1)
+    alm_rot = alm_arr[None, :] * phases[:, None, :]
+
+    dphi = phi[1] - phi[0]  # rotation angle for one time step
+    eul_dphi = (dphi.item(), 0, 0)  # rotation about z-axis
+    # alpha = dphi, beta = 0, gamma = 0
+    dl_beta = s2fft.utils.rotation.generate_rotate_dls(lmax + 1, 0)
+
+    current_alm = alm_arr
     for i in range(N_times):
-        phi = dphi[i].item()
-        phase = phases[i]
-        alm_rot = alm_arr * phase[None, :]
-        euler = (phi, 0, 0)  # rotation about z-axis
-        expected = s2fft.utils.rotation.rotate_flms(alm_arr, lmax + 1, euler)
-        assert jnp.allclose(alm_rot, expected)
+        if i > 0:
+            current_alm = s2fft.utils.rotation.rotate_flms(
+                current_alm, lmax + 1, eul_dphi, dl_beta
+            )
+        assert jnp.allclose(current_alm, alm_rot[i])
 
 
 def test_convolve():
