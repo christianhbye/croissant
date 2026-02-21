@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="21" time="3.125" timestamp="2026-02-21T03:07:18.279348+00:00" hostname="runnervmwffz4"><testcase classname="tests.test_sphere" name="test_sphbase_init[mwss-lmax8]" time="0.060" /><testcase classname="tests.test_sphere" name="test_sphbase_init[mw-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_init[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_init[healpix-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[mwss-lmax8]" time="0.012" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_nside[healpix-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[mwss-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[mw-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[dh-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_phi_shape[healpix-lmax8]" time="0.001" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[mwss-lmax8]" time="0.026" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[mw-lmax8]" time="0.025" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[dh-lmax8]" time="0.026" /><testcase classname="tests.test_sphere" name="test_sphbase_theta_range[healpix-lmax8]" time="0.036" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[mwss-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[mw-lmax8]" time="0.026" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[dh-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_sphbase_phi_range[healpix-lmax8]" time="0.002" /><testcase classname="tests.test_sphere" name="test_compute_alm_shape[True-mwss-lmax8]" time="0.241"><failure message="AttributeError: 'int' object has no attribute 'size'&#10;--------------------&#10;For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.">sampling = 'mwss', lmax = 8, disable_jit = True
+
+    @pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+    @pytest.mark.parametrize("disable_jit", [True, False])
+    def test_compute_alm_shape(sampling, lmax, disable_jit):
+        """compute_alm should return array of shape (N_freqs, lmax+1, 2*lmax+1)."""
+        N_freqs = 3
+        data = jnp.array(_make_data(lmax, sampling, N_freqs))
+        nside = (lmax // 2) if sampling == "healpix" else None
+        with jax.disable_jit(disable_jit):
+&gt;           alm = compute_alm(data, lmax, sampling, nside=nside)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/test_sphere.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../../.local/lib/python3.12/site-packages/equinox/_jit.py:55: in fun_wrapped
+    out = fun(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^
+src/croissant/sphere.py:51: in compute_alm
+    return jax.vmap(m2alm)(data)
+           ^^^^^^^^^^^^^^^^^^^^^
+../../../.local/lib/python3.12/site-packages/s2fft/transforms/spherical.py:660: in forward_jax
+    f = resampling_jax.upsample_by_two_mwss(f, L, spin)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../../.local/lib/python3.12/site-packages/s2fft/utils/resampling_jax.py:301: in upsample_by_two_mwss
+    f_ext = periodic_extension_spatial_mwss(f, L, spin)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+f = VmapTracer(aval=float32[1,10,18], batched=float32[3,1,10,18]), L = 9
+spin = 0
+
+    @_partial(_jit, static_argnums=(1))
+    def periodic_extension_spatial_mwss(
+        f: jnp.ndarray, L: int, spin: int = 0
+    ) -&gt; jnp.ndarray:
+        r"""
+        Perform period extension of MWSS signal on the sphere in spatial domain,
+        extending :math:`\theta` domain from :math:`[0,\pi]` to :math:`[0,2\pi]`.
+    
+        For the MWSS sampling scheme, it is possible to do the period extension in
+        :math:`\theta` in the spatial domain.  This is not possible for the MW sampling
+        scheme.
+    
+        JAX implementation of :func:`~s2fft.resampling.periodic_extension_spatial_mwss`.
+    
+        Args:
+            f (jnp.ndarray): Signal on the sphere sampled with MWSS sampling scheme.
+    
+            L (int): Harmonic band-limit.
+    
+            spin (int, optional): Harmonic spin. Defaults to 0.
+    
+        Returns:
+            jnp.ndarray: Signal on the sphere extended to :math:`\theta` domain
+            :math:`[0,2\pi]`, in MWSS sampling scheme.
+    
+        """
+        ntheta = L + 1
+        nphi = 2 * L
+        ntheta_ext = 2 * L
+    
+        f_ext = jnp.zeros((f.shape[0], ntheta_ext, nphi), dtype=jnp.complex128)
+        f_ext = f_ext.at[:, 0:ntheta, 0:nphi].set(f[:, 0:ntheta, 0:nphi])
+&gt;       if spin.size &gt; 1:
+           ^^^^^^^^^
+E       AttributeError: 'int' object has no attribute 'size'
+E       --------------------
+E       For simplicity, JAX has removed its internal frames from the traceback of the following exception. Set JAX_TRACEBACK_FILTERING=off to include these.
+
+../../../.local/lib/python3.12/site-packages/s2fft/utils/resampling_jax.py:378: AttributeError</failure></testcase></testsuite></testsuites>
