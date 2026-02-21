@@ -67,9 +67,11 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
         The phases that rotate the sky, of the form exp(-i*m*phi(t)).
         Shape (N_times, 2*lmax+1). See simulator.rot_alm_z.
     norm : jnp.ndarray
-        Normalization factors for each pair. Shape (N_pairs,).
-        For pair (p, q), this should be sqrt(total_power_p * total_power_q)
-        computed from the auto-correlation beams.
+        Normalization factors for each pair. Shape (N_pairs,) for scalar
+        normalization or (N_pairs, N_freqs) for frequency-dependent
+        normalization. For pair (p, q), this should be
+        sqrt(total_power_p * total_power_q) computed from the
+        auto-correlation beams.
 
     Returns
     -------
@@ -82,9 +84,11 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
     # Compute raw visibilities: shape (N_pairs, N_times, N_freqs)
     vis_raw = multi_convolve(beam_alm, sky_alm, phases)
 
-    # Normalize: broadcast norm over time and frequency axes
-    # norm shape: (N_pairs,) -> (N_pairs, 1, 1)
-    vis_normalized = vis_raw / norm[:, None, None]
+    # Normalize: broadcast norm over time axis (and freq axis if scalar)
+    # norm shape (N_pairs,) -> (N_pairs, 1, 1)
+    # norm shape (N_pairs, N_freqs) -> (N_pairs, 1, N_freqs)
+    norm_broadcast = norm[:, None, None] if norm.ndim == 1 else norm[:, None, :]
+    vis_normalized = vis_raw / norm_broadcast
 
     # Transpose to (N_times, N_pairs, N_freqs)
     return jnp.transpose(vis_normalized, (1, 0, 2))
