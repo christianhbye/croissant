@@ -96,7 +96,12 @@ def convolve(beam_alm, sky_alm, phases):
 @jax.jit
 def correct_ground_loss(vis, fgnd, Tgnd):
     """
-    Correct for ground loss in the simulated visibilities.
+    Correct for ground loss in the simulated visibilities. This
+    function recovers the true sky temperature if the assumed ground
+    fraction and ground temperature are correct. In simulations, these
+    can be accessed with the `compute_fgnd` method of the beam and the
+    `Tgnd` attribute of the Simulator, respectively. On real data, they
+    have to be estimated or measured.
 
     Parameters
     ----------
@@ -105,7 +110,8 @@ def correct_ground_loss(vis, fgnd, Tgnd):
     fgnd : jax.Array
        The assumed ground fraction to use for the correction.
     Tgnd : jax.Array
-       The assumed ground temperature to use for the correction
+       The assumed ground temperature to use for the correction. Must
+       be spatially uniform in this implementation.
 
     Returns
     -------
@@ -187,7 +193,9 @@ class Simulator(eqx.Module):
             temperature is supported for now.
 
         """
-        if not jnp.all(beam.freqs == freqs) or not jnp.all(sky.freqs == freqs):
+        if not (
+            jnp.allclose(beam.freqs, freqs) and jnp.allclose(sky.freqs, freqs)
+        ):
             raise ValueError(
                 "Beam, sky and simulation frequencies do not match. Check "
                 "beam.freqs, sky.freqs and the freqs argument passed to the "
@@ -266,8 +274,11 @@ class Simulator(eqx.Module):
     def compute_ground_contribution(self):
         """
         Compute the ground contribution to the visibility. This is
-        simply the beam response below the horizon multiplied by the ground
-        temperature.
+        simply the beam response below the horizon multiplied by the
+        ground temperature.
+
+        Note that we do not include scattering of the sky temperature
+        by the ground or non-uniform ground temperature in this model.
 
         Returns
         -------
@@ -279,6 +290,22 @@ class Simulator(eqx.Module):
 
     @jax.jit
     def sim(self):
+        """
+        Compute the antenna temperature as the convolution of the beam
+        and the sky, plus the ground contribution.
+
+        The antenna temperature is reported in the same units as the
+        sky and ground temperatures, which is typically Kelvin. To
+        recover an estimate of the sky temperature, the ground loss can
+        be corrected for with the `correct_ground_loss` function.
+
+        Returns
+        -------
+        vis : jax.Array
+            The simulated antenna temperature as a function of time and
+            frequency. Shape is (N_times, N_freqs).
+
+        """
         # compute beam and sky alms in equatorial coordinates
         beam_eq_alm = self.compute_beam_eq()
         sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
