@@ -28,9 +28,10 @@ def _future_warning(func):
 
     def wrapper(*args, **kwargs):
         warnings.warn(
-            f"{func.__name__} is has been moved to the rotations module "
+            f"{func.__name__} has been moved to the rotations module "
             "and will be removed from the utils module in a future release.",
             FutureWarning,
+            stacklevel=2,
         )
         return func(*args, **kwargs)
 
@@ -236,7 +237,7 @@ def generate_phi(lmax=None, sampling="mw", nside=None):
         ntheta = s2fft.sampling.s2_samples.ntheta(
             L=L, sampling=sampling, nside=nside
         )
-        ts = np.arange(ntheta).astype(np.float64)
+        ts = np.arange(ntheta)
         phi = np.concatenate(
             [s2fft.sampling.s2_samples.phis_ring(t, nside) for t in ts],
             axis=0,

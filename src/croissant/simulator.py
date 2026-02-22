@@ -66,12 +66,12 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
 @jax.jit
 def convolve(beam_alm, sky_alm, phases):
     """
-    Compute the convolution for a range of times in jax. The convolution is
-    a dot product in l,m space. Axes are in the order: time, freq, ell, emm.
+    Compute the convolution for a range of times in jax. The convolution
+    is a dot product in l,m space.
+    Axes are in the order: time, freq, ell, emm.
 
     Note that normalization is not included in this function. The usual
-    normalization factor can be computed with croissant.jax.alm.total_power
-    of the beam alm.
+    normalization factor can be computed with utils.total_power.
 
     Parameters
     ----------
