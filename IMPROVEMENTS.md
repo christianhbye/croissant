@@ -50,64 +50,24 @@ vis_sky /= beam.compute_norm()                 # normalise by full-sphere integr
 vis = vis_sky + vis_gnd                        # add ground
 ```
 
-This has two physical issues:
+This is a simple model with three main limitations:
 
-**2a. Normalization inconsistency.**  `compute_norm()` integrates the beam over
-the *full sphere* (including below-horizon), while `compute_alm()` masks the
-beam to above-horizon only before the SHT.  So the denominator includes the
-ground-spill power that is already being handled separately by `vis_gnd`.  The
-sky component is therefore slightly under-normalized — the beam power that goes
-into the ground is effectively subtracted twice.  The physically correct
-denominator is `compute_norm()` (full sphere), because the beam pattern has
-unit-normalized total power and the ground simply replaces the missing sky
-contribution.  A cleaner formulation is:
-
-```
-vis = (sky_convolution + fgnd * Tgnd * norm_full) / norm_full
-    = sky_convolution / norm_full + fgnd * Tgnd
-```
-
-which is what the code does — but `sky_convolution` uses the *masked* beam
-alm, so the sky power is computed from roughly (1 - fgnd) of the beam, not the
-full beam.  This is inconsistent unless the beam is perfectly zero below the
-horizon (which it is after masking, by construction).  The issue is actually
-subtle and the code is *numerically* self-consistent when the horizon mask is
-sharp, but a docstring clarifying this would prevent future bugs.
-
-**2b. Constant, isotropic, unpolarised ground temperature.**  Real sites have
+**1. Constant, isotropic, unpolarised ground temperature.**  Real sites have
 terrain, and the ground temperature/emissivity depends on both azimuth and
 frequency.  The interface only accepts a scalar `Tgnd` with no spatial
 variation.
 
-**2c. No frequency dependence in `Tgnd`.**  At MHz frequencies relevant to
+**2. No frequency dependence in `Tgnd`.**  At MHz frequencies relevant to
 cosmological 21-cm studies, the ground contribution can have a nontrivial
 spectral dependence (e.g. via soil emissivity ~1 - reflectance).
 
----
-
-## 3. Normalisation of the visibility output
-
-### Human summary
-
-The output of `sim()` is:
-
-```
-T_ant = Σ_{l,m} sky_alm* · beam_alm · exp(-i m φ) / (∫ B dΩ) + fgnd · Tgnd
-```
-
-This is the **antenna temperature** in K, not the radiometric intensity in
-W Hz⁻¹ sr⁻¹.  The conversion between the two involves the Rayleigh-Jeans
-factor `2 k_B ν² / c²`.  The simulator has no `constants` entry for this, and
-no built-in method to convert output to power units.  Users working in the
-cosmological context may want the visibility in mK (for 21-cm) or Jy (for
-calibration).
-
-A `to_power()` or `to_Jy()` helper on `Simulator` — even just a docstring
-clarifying the exact formula and units — would reduce user error.
+**3. No reflection or scattering.**  The model assumes the ground is a perfect
+absorber, but in reality the ground can reflect and scatter radiation, which
+can produce additional contributions to the visibility. The reflected light should show up at a delay set by the path length difference between direct and reflected rays, which can be important for foreground contamination in 21-cm experiments.
 
 ---
 
-## 4. Beam tilt is not implemented
+## 3. Beam tilt is not implemented
 
 ### Human summary
 
@@ -119,7 +79,7 @@ rotation in the beam-to-equatorial transform.
 
 ---
 
-## 5. `sim()` recomputes beam/sky alms on every call
+## 4. `sim()` recomputes beam/sky alms on every call
 
 ### Human summary
 
@@ -135,36 +95,7 @@ the equatorial alms and a lazy-evaluation flag.
 
 ---
 
-## 6. Frequency validation uses exact floating-point equality
-
-### Human summary
-
-```python
-if not jnp.all(beam.freqs == freqs) or not jnp.all(sky.freqs == freqs):
-    raise ValueError(...)
-```
-
-This uses `==` on JAX floats, which will fail if the user constructs beam and
-sky frequencies from separate `np.linspace` calls that produce slightly
-different floating-point values.  A tolerance-based check (`jnp.allclose`)
-would be safer and more user-friendly.
-
----
-
-## 7. `correct_ground_loss` is a public API that inverts the wrong normalisation
-
-### Human summary
-
-`simulator.correct_ground_loss(vis, fgnd, Tgnd)` is exposed as a public
-function but assumes the visibility was produced with `fgnd` exactly matching
-the beam's own `compute_fgnd()`.  If a user passes a different `fgnd`
-(e.g. derived from an external model) the correction will be inconsistent with
-the sky convolution that used `compute_norm()`.  The docstring should spell out
-the exact formula and when it is valid.
-
----
-
-## 8. The topocentric-to-equatorial rotation does not account for the observer's altitude
+## 5. The topocentric-to-equatorial rotation does not account for the observer's altitude
 
 ### Human summary
 
@@ -206,61 +137,7 @@ Please implement the following improvements.  Make minimal, surgical changes to
 the existing code; do not refactor unrelated parts.  After each change, verify
 that the existing tests in tests/ still pass.
 
-### Change 1 – Frequency validation: use tolerance-based comparison
-
-In `Simulator.__init__` (simulator.py line ~190), replace the exact equality
-check:
-
-    if not jnp.all(beam.freqs == freqs) or not jnp.all(sky.freqs == freqs):
-
-with a tolerance-based check:
-
-    if not jnp.allclose(beam.freqs, freqs) or not jnp.allclose(sky.freqs, freqs):
-
-Keep the existing ValueError and message.  Add a test in
-tests/test_sim_class.py that verifies a Simulator can be constructed when the
-frequencies differ by less than 1e-5 MHz (floating-point rounding level) and
-raises ValueError when they differ by more.
-
-### Change 2 – Clarify normalisation in Simulator.sim() docstring
-
-Add a docstring to `Simulator.sim()` that explains:
-
-1. The exact formula for T_ant (see above), including what `compute_norm()`
-   integrates and why the masked beam alm is used in the numerator.
-2. The units of the output (antenna temperature in K, Rayleigh-Jeans
-   approximation).
-3. A note that ground contribution uses `fgnd * Tgnd` where `fgnd =
-   1 - ∫_{above horizon} B dΩ / ∫_{sphere} B dΩ`.
-
-### Change 3 – Add `to_power` helper to Simulator
-
-Add a static method `Simulator.to_power(T_ant, freqs)` that converts antenna
-temperature (K) to spectral power density (W Hz⁻¹) using the Rayleigh-Jeans
-approximation:
-
-    P(ν) = 2 k_B ν² / c² · T_ant · Ω_beam
-
-where `Ω_beam = ∫ B dΩ / max(B)` is the beam solid angle.  The method should
-accept `T_ant` of shape `(N_times, N_freqs)` and `freqs` in MHz, and return
-power in W Hz⁻¹.
-
-Add the physical constants `k_B` (Boltzmann constant, J K⁻¹) and `c` (speed
-of light, m s⁻¹) to `constants.py`.  Add a test in tests/test_sim_class.py
-that verifies dimensional consistency: `to_power` of a blackbody at T=2.73 K
-(CMB) at 100 MHz matches the expected Rayleigh-Jeans value to 1%.
-
-### Change 4 – Clarify `correct_ground_loss` docstring
-
-In `simulator.py`, update the `correct_ground_loss` docstring to state:
-
-* The function assumes `vis` was produced by `Simulator.sim()` with the same
-  `fgnd` and `Tgnd`.
-* It is the inverse of adding `fgnd * Tgnd` and dividing by `fsky = 1 - fgnd`.
-* Warn that passing `fgnd` inconsistent with the beam model will produce
-  incorrect results.
-
-### Change 5 – Implement beam tilt (small-angle rotation)
+### Change 1 – Implement beam tilt (small-angle rotation)
 
 In `Beam.__init__` (beam.py), remove the `NotImplementedError` for `beam_tilt`
 and implement it as a second Wigner rotation applied after `beam_az_rot`.
@@ -269,6 +146,8 @@ The tilt is a rotation about the local *y*-axis (East–West axis in antenna
 frame) by angle `beam_tilt` (in degrees).  In alm space this corresponds to a
 Wigner D rotation with Euler angles `(0, beam_tilt_rad, 0)` in the ZYZ
 convention.
+
+Note that the tilt affects the interaction between the beam and the horizon. In the current implementation of `compute_alm` and `compute_fgnd`, the beam is multiplied with the horizon mask in pixel space before the SHT as `self.data * self.horizon`. The tilt has to act on `self.data` before the horizon mask is applied. This can either be achieved directly in pixel space or by doing the SHT, rotating the alms, and then doing the inverse SHT. The latter is more consistent with the existing code structure and allows us to reuse the Wigner rotation functions from s2fft.
 
 The exact s2fft function signatures (confirmed against the installed library) are:
 
@@ -280,15 +159,20 @@ The exact s2fft function signatures (confirmed against the installed library) ar
         dl_array: jax.Array = None,
     ) -> jax.Array
 
-Steps:
-1. After the azimuthal phase is applied to `alm` in `compute_alm()`, compute
-   the Wigner d-array for the tilt angle using
-   `dl_tilt = s2fft.generate_rotate_dls(self._L, tilt_rad)`.
-2. Apply the rotation with
+Steps (assuming the tilt is applied in alm space):
+In `Beam.compute_alm()`, if `not isclose(self.beam_tilt, 0.0)`, compute the tilt rotation:
+   1. Convert `beam_tilt` to radians: `tilt_rad = jnp.radians(self.beam_tilt)`.
+   2. Generate the Wigner d-array for the tilt: `dl_tilt = s2fft.generate_rotate_dls(self._L, tilt_rad)`.
+   3. Compute the alm using `sphere.compute_alm` on `self.data`. No horizon mask is applied yet.
+   4. Apply the rotation with
    `s2fft.utils.rotation.rotate_flms(alm_freq, L=self._L,
        rotation=(0.0, tilt_rad, 0.0), dl_array=dl_tilt)`.
-3. Use `jax.vmap` to apply over the frequency axis (same pattern as
+   5. Use `jax.vmap` to apply over the frequency axis (same pattern as
    `compute_beam_eq` in `simulator.py`).
+   6. Compute tilted_data by doing an inverse SHT.
+   7. Pass tilted data into the existing code replacing `self.data` (which is the untilted beam pattern) with `tilted_data` (the tilted beam pattern).
+
+A similar fix is needed in `compute_fgnd()` to ensure the horizon mask is applied after the tilt. You are allowed to refactor the code to avoid duplication, e.g. by creating a helper method that applies the tilt to the beam pattern and is called from both `compute_alm` and `compute_fgnd`.
 
 Restrict `beam_tilt` to `[-90, 90]` degrees and raise `ValueError` for values
 outside this range.
@@ -300,7 +184,7 @@ Add tests in tests/test_beam.py:
 - `beam_tilt=±90` does not raise an error (edge case of pointing at horizon).
 - `|beam_tilt| > 90` raises `ValueError`.
 
-### Change 6 – Add `n_jobs` / chunked time evaluation for long observations
+### Change 2 – Add `n_jobs` / chunked time evaluation for long observations
 
 In `Simulator.sim()`, add an optional `chunk_size` integer parameter (default
 `None`).  When provided, split `self.phases` into chunks of `chunk_size` time
@@ -323,8 +207,6 @@ the same result as `sim()` for N=1, N=N_times//2, and N=N_times.
 
 * All new code must pass `ruff check` and `ruff format --check`.
 * Use `jax_enable_x64 = True` (already configured in `tests/conftest.py`).
-* Do not change `core_tests/`; those are legacy and will be removed.
 * After all changes, run `python -m pytest tests/ -q` and confirm all
-  pre-existing tests still pass (2 expected timeouts in
-  `test_rot_alm_z[24-*-32]` are acceptable).
+  pre-existing tests still pass 
 ```
