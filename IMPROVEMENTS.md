@@ -95,22 +95,6 @@ the equatorial alms and a lazy-evaluation flag.
 
 ---
 
-## 6. Frequency validation uses exact floating-point equality
-
-### Human summary
-
-```python
-if not jnp.all(beam.freqs == freqs) or not jnp.all(sky.freqs == freqs):
-    raise ValueError(...)
-```
-
-This uses `==` on JAX floats, which will fail if the user constructs beam and
-sky frequencies from separate `np.linspace` calls that produce slightly
-different floating-point values.  A tolerance-based check (`jnp.allclose`)
-would be safer and more user-friendly.
-
----
-
 ## 7. `correct_ground_loss` is a public API that inverts the wrong normalisation
 
 ### Human summary
@@ -165,22 +149,6 @@ where φ(t) = 2π t / T_sid is the sidereal-rotation angle.
 Please implement the following improvements.  Make minimal, surgical changes to
 the existing code; do not refactor unrelated parts.  After each change, verify
 that the existing tests in tests/ still pass.
-
-### Change 1 – Frequency validation: use tolerance-based comparison
-
-In `Simulator.__init__` (simulator.py line ~190), replace the exact equality
-check:
-
-    if not jnp.all(beam.freqs == freqs) or not jnp.all(sky.freqs == freqs):
-
-with a tolerance-based check:
-
-    if not jnp.allclose(beam.freqs, freqs) or not jnp.allclose(sky.freqs, freqs):
-
-Keep the existing ValueError and message.  Add a test in
-tests/test_sim_class.py that verifies a Simulator can be constructed when the
-frequencies differ by less than 1e-5 MHz (floating-point rounding level) and
-raises ValueError when they differ by more.
 
 ### Change 4 – Clarify `correct_ground_loss` docstring
 

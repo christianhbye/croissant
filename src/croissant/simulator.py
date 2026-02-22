@@ -187,7 +187,9 @@ class Simulator(eqx.Module):
             temperature is supported for now.
 
         """
-        if not jnp.all(beam.freqs == freqs) or not jnp.all(sky.freqs == freqs):
+        if not (
+            jnp.allclose(beam.freqs, freqs) and jnp.allclose(sky.freqs, freqs)
+        ):
             raise ValueError(
                 "Beam, sky and simulation frequencies do not match. Check "
                 "beam.freqs, sky.freqs and the freqs argument passed to the "
