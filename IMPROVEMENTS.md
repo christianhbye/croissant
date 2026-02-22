@@ -170,7 +170,7 @@ In `Beam.compute_alm()`, if `not isclose(self.beam_tilt, 0.0)`, compute the tilt
    5. Use `jax.vmap` to apply over the frequency axis (same pattern as
    `compute_beam_eq` in `simulator.py`).
    6. Compute tilted_data by doing an inverse SHT.
-   7. Pass tilted data into the exisitng code replacing `self.data` (which is the untilted beam pattern) with `tilted_data` (the tilted beam pattern).
+   7. Pass tilted data into the existing code replacing `self.data` (which is the untilted beam pattern) with `tilted_data` (the tilted beam pattern).
 
 A similar fix is needed in `compute_fgnd()` to ensure the horizon mask is applied after the tilt. You are allowed to refactor the code to avoid duplication, e.g. by creating a helper method that applies the tilt to the beam pattern and is called from both `compute_alm` and `compute_fgnd`.
 
