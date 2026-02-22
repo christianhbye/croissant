@@ -50,38 +50,20 @@ vis_sky /= beam.compute_norm()                 # normalise by full-sphere integr
 vis = vis_sky + vis_gnd                        # add ground
 ```
 
-This has two physical issues:
+This is a simple model with three main limitations:
 
-**2a. Normalization inconsistency.**  `compute_norm()` integrates the beam over
-the *full sphere* (including below-horizon), while `compute_alm()` masks the
-beam to above-horizon only before the SHT.  So the denominator includes the
-ground-spill power that is already being handled separately by `vis_gnd`.  The
-sky component is therefore slightly under-normalized — the beam power that goes
-into the ground is effectively subtracted twice.  The physically correct
-denominator is `compute_norm()` (full sphere), because the beam pattern has
-unit-normalized total power and the ground simply replaces the missing sky
-contribution.  A cleaner formulation is:
-
-```
-vis = (sky_convolution + fgnd * Tgnd * norm_full) / norm_full
-    = sky_convolution / norm_full + fgnd * Tgnd
-```
-
-which is what the code does — but `sky_convolution` uses the *masked* beam
-alm, so the sky power is computed from roughly (1 - fgnd) of the beam, not the
-full beam.  This is inconsistent unless the beam is perfectly zero below the
-horizon (which it is after masking, by construction).  The issue is actually
-subtle and the code is *numerically* self-consistent when the horizon mask is
-sharp, but a docstring clarifying this would prevent future bugs.
-
-**2b. Constant, isotropic, unpolarised ground temperature.**  Real sites have
+**1. Constant, isotropic, unpolarised ground temperature.**  Real sites have
 terrain, and the ground temperature/emissivity depends on both azimuth and
 frequency.  The interface only accepts a scalar `Tgnd` with no spatial
 variation.
 
-**2c. No frequency dependence in `Tgnd`.**  At MHz frequencies relevant to
+**2. No frequency dependence in `Tgnd`.**  At MHz frequencies relevant to
 cosmological 21-cm studies, the ground contribution can have a nontrivial
 spectral dependence (e.g. via soil emissivity ~1 - reflectance).
+
+**3. No reflection or scattering.**  The model assumes the ground is a perfect
+absorber, but in reality the ground can reflect and scatter radiation, which
+can produce additional contributions to the visibility. The reflected light should show up at a delay set by the path length difference between direct and reflected rays, which can be important for foreground contamination in 21-cm experiments.
 
 ---
 
@@ -221,17 +203,6 @@ Keep the existing ValueError and message.  Add a test in
 tests/test_sim_class.py that verifies a Simulator can be constructed when the
 frequencies differ by less than 1e-5 MHz (floating-point rounding level) and
 raises ValueError when they differ by more.
-
-### Change 2 – Clarify normalisation in Simulator.sim() docstring
-
-Add a docstring to `Simulator.sim()` that explains:
-
-1. The exact formula for T_ant (see above), including what `compute_norm()`
-   integrates and why the masked beam alm is used in the numerator.
-2. The units of the output (antenna temperature in K, Rayleigh-Jeans
-   approximation).
-3. A note that ground contribution uses `fgnd * Tgnd` where `fgnd =
-   1 - ∫_{above horizon} B dΩ / ∫_{sphere} B dΩ`.
 
 ### Change 3 – Add `to_power` helper to Simulator
 

@@ -266,8 +266,11 @@ class Simulator(eqx.Module):
     def compute_ground_contribution(self):
         """
         Compute the ground contribution to the visibility. This is
-        simply the beam response below the horizon multiplied by the ground
-        temperature.
+        simply the beam response below the horizon multiplied by the
+        ground temperature.
+
+        Note that we do not included scattering of the sky temperature
+        by the ground or non-uniform ground temperature in this model.
 
         Returns
         -------
