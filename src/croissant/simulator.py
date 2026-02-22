@@ -96,7 +96,12 @@ def convolve(beam_alm, sky_alm, phases):
 @jax.jit
 def correct_ground_loss(vis, fgnd, Tgnd):
     """
-    Correct for ground loss in the simulated visibilities.
+    Correct for ground loss in the simulated visibilities. This
+    function recovers the true sky temperature if the assumed ground
+    fraction and ground temperature are correct. In simulations, these
+    can be accessed with the `compute_fgnd` method of the beam and the
+    `Tgnd` attribute of the Simulator, respectively. On real data, they
+    have to be estimated or measured.
 
     Parameters
     ----------
@@ -105,7 +110,8 @@ def correct_ground_loss(vis, fgnd, Tgnd):
     fgnd : jax.Array
        The assumed ground fraction to use for the correction.
     Tgnd : jax.Array
-       The assumed ground temperature to use for the correction
+       The assumed ground temperature to use for the correction. Must
+       be spatially uniform in this implementation.
 
     Returns
     -------

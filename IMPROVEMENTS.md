@@ -95,19 +95,6 @@ the equatorial alms and a lazy-evaluation flag.
 
 ---
 
-## 7. `correct_ground_loss` is a public API that inverts the wrong normalisation
-
-### Human summary
-
-`simulator.correct_ground_loss(vis, fgnd, Tgnd)` is exposed as a public
-function but assumes the visibility was produced with `fgnd` exactly matching
-the beam's own `compute_fgnd()`.  If a user passes a different `fgnd`
-(e.g. derived from an external model) the correction will be inconsistent with
-the sky convolution that used `compute_norm()`.  The docstring should spell out
-the exact formula and when it is valid.
-
----
-
 ## 8. The topocentric-to-equatorial rotation does not account for the observer's altitude
 
 ### Human summary
@@ -149,16 +136,6 @@ where φ(t) = 2π t / T_sid is the sidereal-rotation angle.
 Please implement the following improvements.  Make minimal, surgical changes to
 the existing code; do not refactor unrelated parts.  After each change, verify
 that the existing tests in tests/ still pass.
-
-### Change 4 – Clarify `correct_ground_loss` docstring
-
-In `simulator.py`, update the `correct_ground_loss` docstring to state:
-
-* The function assumes `vis` was produced by `Simulator.sim()` with the same
-  `fgnd` and `Tgnd`.
-* It is the inverse of adding `fgnd * Tgnd` and dividing by `fsky = 1 - fgnd`.
-* Warn that passing `fgnd` inconsistent with the beam model will produce
-  incorrect results.
 
 ### Change 5 – Implement beam tilt (small-angle rotation)
 
