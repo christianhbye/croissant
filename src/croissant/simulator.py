@@ -277,7 +277,7 @@ class Simulator(eqx.Module):
         simply the beam response below the horizon multiplied by the
         ground temperature.
 
-        Note that we do not included scattering of the sky temperature
+        Note that we do not include scattering of the sky temperature
         by the ground or non-uniform ground temperature in this model.
 
         Returns
