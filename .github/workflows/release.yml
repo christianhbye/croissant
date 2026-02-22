@@ -1,0 +1,49 @@
+name: Release to PyPI
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write       # Needed for release-please to create tags/releases
+  pull-requests: write  # Needed for release-please to manage the PR
+  id-token: write       # Needed for PyPI Trusted Publishing
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. Run Release Please
+      - name: Run release-please
+        id: release
+        uses: googleapis/release-please-action@v4
+        with:
+          release-type: python
+
+      # ---------------------------------------------------------
+      # Everything below only runs IF you clicked "Merge" on the 
+      # Release PR, triggering an actual release.
+      # ---------------------------------------------------------
+
+      # 2. Checkout the freshly tagged code
+      - name: Checkout code
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/checkout@v4
+
+      # 3. Install Astral's uv
+      - name: Install uv
+        if: ${{ steps.release.outputs.release_created }}
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # 4. Build the package using uv
+      - name: Build package
+        if: ${{ steps.release.outputs.release_created }}
+        run: uv build
+
+      # 5. Publish to PyPI
+      - name: Publish to PyPI
+        if: ${{ steps.release.outputs.release_created }}
+        uses: pypa/gh-action-pypi-publish@release/v1
