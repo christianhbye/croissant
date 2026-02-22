@@ -164,7 +164,7 @@ In `Beam.compute_alm()`, if `not isclose(self.beam_tilt, 0.0)`, compute the tilt
    1. Convert `beam_tilt` to radians: `tilt_rad = jnp.radians(self.beam_tilt)`.
    2. Generate the Wigner d-array for the tilt: `dl_tilt = s2fft.generate_rotate_dls(self._L, tilt_rad)`.
    3. Compute the alm using `sphere.compute_alm` on `self.data`. No horizon mask is applied yet.
-   4. . Apply the rotation with
+   4. Apply the rotation with
    `s2fft.utils.rotation.rotate_flms(alm_freq, L=self._L,
        rotation=(0.0, tilt_rad, 0.0), dl_array=dl_tilt)`.
    5. Use `jax.vmap` to apply over the frequency axis (same pattern as
