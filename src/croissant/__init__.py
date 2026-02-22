@@ -11,5 +11,5 @@ from . import alm
 __author__ = "Christian Hellum Bye"
 try:
     __version__ = version("croissant")
-except PackageNotFoundError:
+except PackageNotFoundError:  # pragma: no cover
     __version__ = "unknown"
