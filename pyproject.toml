@@ -3,7 +3,7 @@ requires = ["setuptools >= 65", "setuptools_scm >= 8", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "croissant"
+name = "croissant-sim"
 version = "5.0.0"
 description = """
 CROISSANT: A differentiable visibility simulator based on spherical harmonics

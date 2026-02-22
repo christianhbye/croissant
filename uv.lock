@@ -517,7 +517,7 @@ toml = [
 ]
 
 [[package]]
-name = "croissant"
+name = "croissant-sim"
 version = "5.0.0"
 source = { editable = "." }
 dependencies = [
