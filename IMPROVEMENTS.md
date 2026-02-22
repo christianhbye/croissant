@@ -67,7 +67,7 @@ can produce additional contributions to the visibility. The reflected light shou
 
 ---
 
-## 4. Beam tilt is not implemented
+## 3. Beam tilt is not implemented
 
 ### Human summary
 
@@ -79,7 +79,7 @@ rotation in the beam-to-equatorial transform.
 
 ---
 
-## 5. `sim()` recomputes beam/sky alms on every call
+## 4. `sim()` recomputes beam/sky alms on every call
 
 ### Human summary
 
@@ -95,7 +95,7 @@ the equatorial alms and a lazy-evaluation flag.
 
 ---
 
-## 8. The topocentric-to-equatorial rotation does not account for the observer's altitude
+## 5. The topocentric-to-equatorial rotation does not account for the observer's altitude
 
 ### Human summary
 
@@ -137,7 +137,7 @@ Please implement the following improvements.  Make minimal, surgical changes to
 the existing code; do not refactor unrelated parts.  After each change, verify
 that the existing tests in tests/ still pass.
 
-### Change 5 – Implement beam tilt (small-angle rotation)
+### Change 1 – Implement beam tilt (small-angle rotation)
 
 In `Beam.__init__` (beam.py), remove the `NotImplementedError` for `beam_tilt`
 and implement it as a second Wigner rotation applied after `beam_az_rot`.
@@ -146,6 +146,8 @@ The tilt is a rotation about the local *y*-axis (East–West axis in antenna
 frame) by angle `beam_tilt` (in degrees).  In alm space this corresponds to a
 Wigner D rotation with Euler angles `(0, beam_tilt_rad, 0)` in the ZYZ
 convention.
+
+Note that the tilt affects the interaction between the beam and the horizon. In the current implementation of `compute_alm` and `compute_fgnd`, the beam is multiplied with the horizon mask in pixel space before the SHT as `self.data * self.horizon`. The tilt has to act on `self.data` before the horizon mask is applied. This can either be achieved directly in pixel space or by doing the SHT, rotating the alms, and then doing the inverse SHT. The latter is more consistent with the existing code structure and allows us to reuse the Wigner rotation functions from s2fft.
 
 The exact s2fft function signatures (confirmed against the installed library) are:
 
@@ -157,15 +159,20 @@ The exact s2fft function signatures (confirmed against the installed library) ar
         dl_array: jax.Array = None,
     ) -> jax.Array
 
-Steps:
-1. After the azimuthal phase is applied to `alm` in `compute_alm()`, compute
-   the Wigner d-array for the tilt angle using
-   `dl_tilt = s2fft.generate_rotate_dls(self._L, tilt_rad)`.
-2. Apply the rotation with
+Steps (assuming the tilt is applied in alm space):
+In `Beam.compute_alm()`, if `not isclose(self.beam_tilt, 0.0)`, compute the tilt rotation:
+   1. Convert `beam_tilt` to radians: `tilt_rad = jnp.radians(self.beam_tilt)`.
+   2. Generate the Wigner d-array for the tilt: `dl_tilt = s2fft.generate_rotate_dls(self._L, tilt_rad)`.
+   3. Compute the alm using `sphere.compute_alm` on `self.data`. No horizon mask is applied yet.
+   4. . Apply the rotation with
    `s2fft.utils.rotation.rotate_flms(alm_freq, L=self._L,
        rotation=(0.0, tilt_rad, 0.0), dl_array=dl_tilt)`.
-3. Use `jax.vmap` to apply over the frequency axis (same pattern as
+   5. Use `jax.vmap` to apply over the frequency axis (same pattern as
    `compute_beam_eq` in `simulator.py`).
+   6. Compute tilted_data by doing an inverse SHT.
+   7. Pass tilted data into the exisitng code replacing `self.data` (which is the untilted beam pattern) with `tilted_data` (the tilted beam pattern).
+
+A similar fix is needed in `compute_fgnd()` to ensure the horizon mask is applied after the tilt. You are allowed to refactor the code to avoid duplication, e.g. by creating a helper method that applies the tilt to the beam pattern and is called from both `compute_alm` and `compute_fgnd`.
 
 Restrict `beam_tilt` to `[-90, 90]` degrees and raise `ValueError` for values
 outside this range.
@@ -177,7 +184,7 @@ Add tests in tests/test_beam.py:
 - `beam_tilt=±90` does not raise an error (edge case of pointing at horizon).
 - `|beam_tilt| > 90` raises `ValueError`.
 
-### Change 6 – Add `n_jobs` / chunked time evaluation for long observations
+### Change 2 – Add `n_jobs` / chunked time evaluation for long observations
 
 In `Simulator.sim()`, add an optional `chunk_size` integer parameter (default
 `None`).  When provided, split `self.phases` into chunks of `chunk_size` time
@@ -200,8 +207,6 @@ the same result as `sim()` for N=1, N=N_times//2, and N=N_times.
 
 * All new code must pass `ruff check` and `ruff format --check`.
 * Use `jax_enable_x64 = True` (already configured in `tests/conftest.py`).
-* Do not change `core_tests/`; those are legacy and will be removed.
 * After all changes, run `python -m pytest tests/ -q` and confirm all
-  pre-existing tests still pass (2 expected timeouts in
-  `test_rot_alm_z[24-*-32]` are acceptable).
+  pre-existing tests still pass 
 ```
