@@ -161,9 +161,8 @@ class Beam(sphere.SphBase):
         alm = sphere.compute_alm(
             data, self.lmax, self.sampling, nside=self.nside
         )
-        if not jnp.isclose(self.beam_az_rot, 0.0):
-            # apply the azimuthal rotation
-            emms = jnp.arange(-self.lmax, self.lmax + 1)
-            phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
-            alm = alm * phase[None, None, :]  # add freq/ell axes
+        # apply the azimuthal rotation (no-op when beam_az_rot == 0)
+        emms = jnp.arange(-self.lmax, self.lmax + 1)
+        phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
+        alm = alm * phase[None, None, :]  # add freq/ell axes
         return alm
