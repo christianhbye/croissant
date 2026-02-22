@@ -282,6 +282,22 @@ class Simulator(eqx.Module):
 
     @jax.jit
     def sim(self):
+        """
+        Compute the antenna temperature as the convolution of the beam
+        and the sky, plus the ground contribution.
+
+        The antenna temperature is reported in the same units as the
+        sky and ground temperatures, which is typically Kelvin. To
+        recover an estimate of the sky temperature, the ground loss can
+        be corrected for with the `correct_ground_loss` function.
+
+        Returns
+        -------
+        vis : jax.Array
+            The simulated antenna temperature as a function of time and
+            frequency. Shape is (N_times, N_freqs).
+
+        """
         # compute beam and sky alms in equatorial coordinates
         beam_eq_alm = self.compute_beam_eq()
         sky_eq_alm = self.sky.compute_alm_eq(world=self.world)

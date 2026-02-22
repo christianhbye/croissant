@@ -67,28 +67,6 @@ can produce additional contributions to the visibility. The reflected light shou
 
 ---
 
-## 3. Normalisation of the visibility output
-
-### Human summary
-
-The output of `sim()` is:
-
-```
-T_ant = Σ_{l,m} sky_alm* · beam_alm · exp(-i m φ) / (∫ B dΩ) + fgnd · Tgnd
-```
-
-This is the **antenna temperature** in K, not the radiometric intensity in
-W Hz⁻¹ sr⁻¹.  The conversion between the two involves the Rayleigh-Jeans
-factor `2 k_B ν² / c²`.  The simulator has no `constants` entry for this, and
-no built-in method to convert output to power units.  Users working in the
-cosmological context may want the visibility in mK (for 21-cm) or Jy (for
-calibration).
-
-A `to_power()` or `to_Jy()` helper on `Simulator` — even just a docstring
-clarifying the exact formula and units — would reduce user error.
-
----
-
 ## 4. Beam tilt is not implemented
 
 ### Human summary
@@ -203,23 +181,6 @@ Keep the existing ValueError and message.  Add a test in
 tests/test_sim_class.py that verifies a Simulator can be constructed when the
 frequencies differ by less than 1e-5 MHz (floating-point rounding level) and
 raises ValueError when they differ by more.
-
-### Change 3 – Add `to_power` helper to Simulator
-
-Add a static method `Simulator.to_power(T_ant, freqs)` that converts antenna
-temperature (K) to spectral power density (W Hz⁻¹) using the Rayleigh-Jeans
-approximation:
-
-    P(ν) = 2 k_B ν² / c² · T_ant · Ω_beam
-
-where `Ω_beam = ∫ B dΩ / max(B)` is the beam solid angle.  The method should
-accept `T_ant` of shape `(N_times, N_freqs)` and `freqs` in MHz, and return
-power in W Hz⁻¹.
-
-Add the physical constants `k_B` (Boltzmann constant, J K⁻¹) and `c` (speed
-of light, m s⁻¹) to `constants.py`.  Add a test in tests/test_sim_class.py
-that verifies dimensional consistency: `to_power` of a blackbody at T=2.73 K
-(CMB) at 100 MHz matches the expected Rayleigh-Jeans value to 1%.
 
 ### Change 4 – Clarify `correct_ground_loss` docstring
 
