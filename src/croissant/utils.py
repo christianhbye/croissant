@@ -60,7 +60,7 @@ def get_rot_mat(from_frame, to_frame):
 
 
 @_future_warning
-def rotmat_to_euler(mat, eulertype="ZYX"):
+def rotmat_to_euler(mat, eulertype="ZYZ"):
     """
     Convert a rotation matrix to Euler angles in the specified convention.
 
@@ -68,7 +68,7 @@ def rotmat_to_euler(mat, eulertype="ZYX"):
     ----------
     mat : np.ndarray
         The rotation matrix.
-    eulertype : str, either ``ZYX'' or ``ZYZ''.
+    eulertype : {"ZYX", "ZYZ"}
         The Euler angle convention to use.
 
     Returns
