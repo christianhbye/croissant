@@ -35,7 +35,7 @@ class Beam(sphere.SphBase):
             Frequencies corresponding to the beam pattern data.
         sampling : str
             Sampling scheme of the beam pattern data. Supported schemes
-            are determined by s2fft, cuttently they include
+            are determined by s2fft, currently they include
             {"mw", "mwss", "dh", "gl", "healpix"}. The default is
             "mwss", which is a 1 deg equiangular sampling in theta and
             phi and includes the poles.

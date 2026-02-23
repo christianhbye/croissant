@@ -43,7 +43,7 @@ rng = np.random.default_rng(seed=0)
 def test_moved_function(utils_func, rotations_func, func_args, func_kwargs):
     """
     Test that the functions moved from cro.rotations to cro.utils are
-    unchagned and raise a FutureWarning.
+    unchanged and raise a FutureWarning.
     """
     with pytest.warns(FutureWarning):
         result_utils = utils_func(*func_args, **func_kwargs)
