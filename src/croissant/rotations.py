@@ -68,7 +68,7 @@ def rotmat_to_euler(mat, eulertype="ZYZ"):
     for rotations and spherical harmonics.
 
     ``ZYZ'' is the convention typically used for Wigner D matrices, which
-    s2fft uses. Wkipidia calls it Euler angles Z1-Y2-Z3. This would be
+    s2fft uses. Wikipedia calls it Euler angles Z1-Y2-Z3. This would be
     used in s2fft.utils.rotation.rotate_flms.
 
     ``ZYX'' is the default healpy convention, what you would make ``rot''
@@ -242,7 +242,7 @@ def gal2eq(alm, eul=None, dl_array=None):
 
 def gal2mcmf(alm, eul=None, dl_array=None):
     """
-    Rotate alm from galactic to equatorial coordinates.
+    Rotate alm from galactic to MCMF coordinates (moon equatorial).
 
     Parameters
     ----------
@@ -250,10 +250,10 @@ def gal2mcmf(alm, eul=None, dl_array=None):
         The input alm in galactic coordinates. Last two axes should be
         the (l, m) indices. Preceding are batch dimensions.
     eul : tuple
-        The Euler angles for the galactic to equatorial transformation.
+        The Euler angles for the galactic to MCMF transformation.
     dl_array : jnp.ndarray
         Precomputed reduced Wigner d-function values for the galactic
-        to equatorial transformation. If not provided, it will be
+        to MCMF transformation. If not provided, it will be
         computed on the fly.
 
     Returns

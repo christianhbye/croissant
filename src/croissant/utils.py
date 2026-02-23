@@ -83,7 +83,7 @@ def rotmat_to_euler(mat, eulertype="ZYZ"):
     to this as Tait-Bryan angles X1-Y2-Z3.
 
     ``ZYZ'' is the convention typically used for Wigner D matrices, which
-    s2fft uses. Wkipidia calls it Euler angles Z1-Y2-Z3. This would be
+    s2fft uses. Wikipedia calls it Euler angles Z1-Y2-Z3. This would be
     used in s2fft.utils.rotation.rotate_flms.
 
 
@@ -407,7 +407,7 @@ def total_power(alm, lmax):
     """
     Compute the integral of a signal (such as an antenna beam) given
     the spherical harmonic coefficients. This is needed to normalize the
-    visibilities. Only the monoopole component will integrate to
+    visibilities. Only the monopole component will integrate to
     a non-zero value.
 
     Parameters
