@@ -13,15 +13,17 @@ sidereal_day = {"earth": sidereal_day_earth, "moon": sidereal_day_moon}
 Y00 = 1 / np.sqrt(4 * np.pi)  # the 0,0 spherical harmonic function
 
 
-def _get_pix_weigths():
-    warnings.warn(
-        "The constant PIX_WEIGHTS_NSIDE is deprecated and will be removed in "
-        "a future version. It was used for healpy routines which are no "
-        "longer used in croissant",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return (32, 64, 128, 512, 1024, 2048, 4096)
+_PIX_WEIGHTS_NSIDE = (32, 64, 128, 512, 1024, 2048, 4096)
 
 
-PIX_WEIGHTS_NSIDE = _get_pix_weigths()
+def __getattr__(name):
+    if name == "PIX_WEIGHTS_NSIDE":
+        warnings.warn(
+            "The constant PIX_WEIGHTS_NSIDE is deprecated and will be removed "
+            "in a future version of croissant. It was used for healpy "
+            "routines which are no longer used in croissant",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return _PIX_WEIGHTS_NSIDE
+    raise AttributeError(f"module {__name__} has no attribute {name}")
