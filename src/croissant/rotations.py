@@ -46,7 +46,7 @@ def get_rot_mat(from_frame, to_frame):
     return rmat
 
 
-def rotmat_to_euler(mat, eulertype="ZYX"):
+def rotmat_to_euler(mat, eulertype="ZYZ"):
     """
     Convert a rotation matrix to Euler angles in the specified convention.
 
@@ -54,7 +54,7 @@ def rotmat_to_euler(mat, eulertype="ZYX"):
     ----------
     mat : np.ndarray
         The rotation matrix.
-    eulertype : str, either ``ZYX'' or ``ZYZ''.
+    eulertype : {"ZYX", "ZYZ"}
         The Euler angle convention to use.
 
     Returns
@@ -64,14 +64,16 @@ def rotmat_to_euler(mat, eulertype="ZYX"):
 
     Notes
     -----
-    ``ZYX'' is the default healpy convention, what you would make ``rot''
-    when you call healpy.Rotator(rot, euletype="ZYX"). Wikipedia refers
-    to this as Tait-Bryan angles X1-Y2-Z3.
+    The preferred convention for croissant is ZYZ, since it uses s2fft
+    for rotations and spherical harmonics.
 
     ``ZYZ'' is the convention typically used for Wigner D matrices, which
     s2fft uses. Wkipidia calls it Euler angles Z1-Y2-Z3. This would be
     used in s2fft.utils.rotation.rotate_flms.
 
+    ``ZYX'' is the default healpy convention, what you would make ``rot''
+    when you call healpy.Rotator(rot, euletype="ZYX"). Wikipedia refers
+    to this as Tait-Bryan angles X1-Y2-Z3.
 
     """
     if eulertype == "ZYX":
