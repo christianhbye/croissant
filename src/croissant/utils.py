@@ -59,8 +59,7 @@ def get_rot_mat(from_frame, to_frame):
     return rotations.get_rot_mat(from_frame, to_frame)
 
 
-@_future_warning
-def rotmat_to_euler(mat, eulertype="ZYZ"):
+def rotmat_to_euler(mat, eulertype="ZYX"):
     """
     Convert a rotation matrix to Euler angles in the specified convention.
 
@@ -88,6 +87,14 @@ def rotmat_to_euler(mat, eulertype="ZYZ"):
 
 
     """
+    warnings.warn(
+        "`rotmat_to_euler` has been moved to the rotations module and will be "
+        "removed from the utils module in a future release. Also note that "
+        "the eulertype default will be changed to 'ZYZ' in the future for "
+        "consistency with s2fft.",
+        FutureWarning,
+        stacklevel=2,
+    )
     return rotations.rotmat_to_euler(mat, eulertype=eulertype)
 
 
