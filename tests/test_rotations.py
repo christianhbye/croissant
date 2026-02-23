@@ -62,16 +62,16 @@ def test_get_rot_mat():
 def test_rotmat_to_euler():
     # check that rotmat_to_euler is the inverse of euler_matrix_new
     rot_mat = rotations.get_rot_mat("galactic", "fk5")
-    eul = rotations.rotmat_to_euler(rot_mat)
+    eul = rotations.rotmat_to_euler(rot_mat, eulertype="ZYX")
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
 
     rot_mat = rotations.get_rot_mat("galactic", "mcmf")
-    eul = rotations.rotmat_to_euler(rot_mat)
+    eul = rotations.rotmat_to_euler(rot_mat, eulertype="ZYX")
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
 
     rot_mat = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]])
-    eul = rotations.rotmat_to_euler(rot_mat)
+    eul = rotations.rotmat_to_euler(rot_mat, eulertype="ZYX")
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
