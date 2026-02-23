@@ -1,15 +1,9 @@
 import healpy as hp
 import numpy as np
-import pytest
 from astropy.coordinates import AltAz, EarthLocation
 from lunarsky import MCMF, LunarTopo, MoonLocation, SkyCoord, Time
 
 from croissant import rotations
-
-
-@pytest.mark.parametrize("lmax", [8, 16, 64, 128])
-def test_generate_euler_dl(lmax):
-    pass
 
 
 def test_get_rot_mat():
