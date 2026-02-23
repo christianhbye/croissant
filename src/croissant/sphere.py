@@ -71,9 +71,9 @@ class SphBase(eqx.Module):
         ----------
         data : array_like
             Field data. First axis is frequency, second axis is theta
-            (colatitude), and third axis is phi (longitude). If `sampling`
-            is "healpix", the data only has two dimensions: frequency and
-            pixel index.
+            (colatitude), and third axis is phi (longitude). If
+            `sampling` is "healpix", the data only has two dimensions:
+            frequency and pixel index.
         freqs : array_like
             Frequencies corresponding to the field data.
         sampling : str
@@ -83,9 +83,23 @@ class SphBase(eqx.Module):
             deg equiangular sampling in theta and phi and includes the
             poles.
 
+        Raises
+        ------
+        ValueError
+            If `sampling` is "healpix" and the number of pixels in
+            `data` is not valid for healpix sampling.
+
         """
         self.data = jnp.asarray(data)
         self.freqs = jnp.atleast_1d(freqs)
+
+        if sampling == "healpix":
+            npix = self.data.shape[1]
+            if not utils.hp_valid_npix(npix):
+                raise ValueError(
+                    f"Invalid number of pixels {npix} for healpix sampling. "
+                    "Number of pixels must be of the form 12 * nside^2."
+                )
 
         self.sampling = sampling
         self.lmax = utils.lmax_from_ntheta(self.data.shape[1], self.sampling)
