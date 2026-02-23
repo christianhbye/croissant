@@ -1,7 +1,9 @@
+import healpy as hp
 import jax.numpy as jnp
 import numpy as np
 import pytest
 import s2fft
+from lunarsky import Time
 
 import croissant as cro
 from croissant.constants import Y00
@@ -52,6 +54,8 @@ def test_moved_function(utils_func, rotations_func, func_args, func_kwargs):
 
 
 # --- healpix utils ---
+
+
 def test_valid_nside():
     """
     Check that valid_nside returns True for valid nside values (powers
@@ -88,6 +92,106 @@ def test_valid_npix():
     assert all(cro.utils.hp_valid_npix(npix) for npix in valid_npix)
     invalid_npix = [-100, 0, 1, 10, 100, 500, 1000, 5000]
     assert all(not cro.utils.hp_valid_npix(npix) for npix in invalid_npix)
+
+
+# --- time array ---
+def test_time_array():
+    start_time = Time("2023-01-01T00:00:00", format="isot", scale="utc")
+    end_time = Time("2023-01-02T00:00:00", format="isot", scale="utc")
+    n_times = 5
+    times = cro.utils.time_array(
+        t_start=start_time, t_end=end_time, N_times=n_times
+    )
+    assert len(times) == n_times
+    assert times[0] == start_time
+    assert times[-1] == end_time
+    # use dt
+    dt = (end_time - start_time) / (n_times - 1)
+    times2 = cro.utils.time_array(
+        t_start=start_time, t_end=end_time, delta_t=dt
+    )
+    assert jnp.allclose(times.jd, times2.jd)
+    # replace t_end
+    times3 = cro.utils.time_array(
+        t_start=start_time, N_times=n_times, delta_t=dt
+    )
+    assert jnp.allclose(times.jd, times3.jd)
+
+    # no t_start, t_end
+    times4 = cro.utils.time_array(N_times=n_times, delta_t=dt)
+    assert jnp.allclose((times - start_time).jd, times4.jd)
+
+
+# --- generate phi/theta arrays ---
+
+
+@pytest.mark.parametrize("sampling", ["mw", "mwss", "dh", "gl"])
+@pytest.mark.parametrize("lmax", [8, 16, 64, 128])
+def test_equiangular_phi_theta(sampling, lmax):
+    """
+    Test the equiangular phi/theta arrays.
+    """
+    phi = cro.utils.generate_phi(lmax=lmax, sampling=sampling, nside=None)
+    theta = cro.utils.generate_theta(lmax=lmax, sampling=sampling, nside=None)
+    expected_phi = s2fft.sampling.s2_samples.phis_equiang(
+        L=lmax + 1, sampling=sampling
+    )
+    expected_theta = s2fft.sampling.s2_samples.thetas(
+        L=lmax + 1, sampling=sampling, nside=None
+    )
+    assert jnp.allclose(phi, expected_phi)
+    assert jnp.allclose(theta, expected_theta)
+
+
+@pytest.mark.parametrize("nside", [8, 16, 32, 1024])
+def test_healpix_phi_theta(nside):
+    """
+    Test the healpix phi/theta arrays.
+    """
+    phi = cro.utils.generate_phi(lmax=None, sampling="healpix", nside=nside)
+    theta = cro.utils.generate_theta(
+        lmax=None, sampling="healpix", nside=nside
+    )
+    # use healpy since s2fft doesn't have convenient function
+    expected_theta, expected_phi = hp.pix2ang(
+        nside, np.arange(12 * nside**2), nest=False
+    )
+    assert jnp.allclose(phi, expected_phi)
+    assert jnp.allclose(theta, expected_theta)
+
+
+@pytest.mark.parametrize("sampling", ["mw", "mwss", "dh", "gl", "healpix"])
+def test_phi_theta_noL(sampling):
+    """
+    Test that phi/theta arrays can be generated without L for healpix and
+    raise error for other samplings.
+    """
+    if sampling == "healpix":
+        nside = 16
+        cro.utils.generate_phi(lmax=None, sampling=sampling, nside=nside)
+        cro.utils.generate_theta(lmax=None, sampling=sampling, nside=nside)
+    else:
+        with pytest.raises(ValueError):
+            cro.utils.generate_phi(lmax=None, sampling=sampling, nside=None)
+        with pytest.raises(ValueError):
+            cro.utils.generate_theta(lmax=None, sampling=sampling, nside=None)
+
+
+@pytest.mark.parametrize("sampling", ["mw", "mwss", "dh", "gl", "healpix"])
+def test_phi_theta_no_nside(sampling):
+    """
+    Test that phi/theta arrays can be generated without nside for non-healpix
+    samplings and raise error for healpix.
+    """
+    if sampling != "healpix":
+        lmax = 16
+        cro.utils.generate_phi(lmax=lmax, sampling=sampling, nside=None)
+        cro.utils.generate_theta(lmax=lmax, sampling=sampling, nside=None)
+    else:
+        with pytest.raises(ValueError):
+            cro.utils.generate_phi(lmax=None, sampling=sampling, nside=None)
+        with pytest.raises(ValueError):
+            cro.utils.generate_theta(lmax=None, sampling=sampling, nside=None)
 
 
 @pytest.mark.parametrize("lmax", [8, 16, 64, 128])
