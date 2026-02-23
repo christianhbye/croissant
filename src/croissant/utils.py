@@ -283,17 +283,30 @@ def generate_phi(lmax=None, sampling="mw", nside=None):
     phi : np.ndarray
         An array of phi values for the given lmax and sampling scheme.
 
-    """
-    if lmax is None:
-        L = None
-    else:
-        L = lmax + 1
+    Raises
+    ------
+    ValueError
+        If the required parameters are not provided for the given sampling
+        scheme. If sampling is "healpix", nside must be provided. If
+        sampling is not "healpix", lmax must be provided.
 
+    """
     if sampling != "healpix":
+        if lmax is None:
+            raise ValueError(
+                "lmax must be specified if sampling is not 'healpix'. Got "
+                f"lmax={lmax} and sampling={sampling}."
+            )
+        L = lmax + 1
         phi = s2fft.sampling.s2_samples.phis_equiang(L, sampling=sampling)
     else:
+        if nside is None:
+            raise ValueError(
+                "nside must be specified if sampling is 'healpix'. Got "
+                f"nside={nside} and sampling={sampling}."
+            )
         ntheta = s2fft.sampling.s2_samples.ntheta(
-            L=L, sampling=sampling, nside=nside
+            sampling=sampling, nside=nside
         )
         ts = np.arange(ntheta)
         phi = np.concatenate(
@@ -328,9 +341,26 @@ def generate_theta(lmax=None, sampling="mw", nside=None):
     theta : np.ndarray
         An array of theta values for the given lmax and sampling scheme.
 
+    Raises
+    ------
+    ValueError
+        If the required parameters are not provided for the given sampling
+        scheme. If sampling is "healpix", nside must be provided. If
+        sampling is not "healpix", lmax must be provided.
+
     """
-    if lmax is None:
-        L = None
+    if sampling == "healpix":
+        L = None  # does not matter
+        if nside is None:
+            raise ValueError(
+                "nside must be specified if sampling is 'healpix'. Got "
+                f"nside={nside} and sampling={sampling}."
+            )
+    elif lmax is None:
+        raise ValueError(
+            "lmax must be specified if sampling is not 'healpix'. Got "
+            f"lmax={lmax} and sampling={sampling}."
+        )
     else:
         L = lmax + 1
 
