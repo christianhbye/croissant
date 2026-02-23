@@ -133,6 +133,26 @@ def rotmat_to_eulerZYZ(mat):
     return rotations.rotmat_to_eulerZYZ(mat)
 
 
+def valid_nside(nside):
+    """
+    Check if the nside of a HEALPix map is valid.
+
+    Parameters
+    ----------
+    nside : int
+        The nside of the map.
+
+    Returns
+    -------
+    valid : bool
+        True if nside is valid, False otherwise. This is true if nside
+        is a positive integer and a power of 2.
+
+    """
+    valid = nside > 0 and (nside & (nside - 1)) == 0
+    return valid
+
+
 def hp_npix2nside(npix):
     """
     Calculate the nside of a HEALPix map from the number of pixels.
@@ -147,9 +167,47 @@ def hp_npix2nside(npix):
     nside : int
         The nside of the map.
 
+    Raises
+    ------
+    ValueError
+        If npix is not a positive integer and a multiple of 12. Note
+        that this only checks that the nside can be computed, but does
+        guarantee that nside is valid. Use the function `valid_nside`
+        to check if nside is valid.
+
     """
+    if npix <= 0 or npix % 12 != 0:
+        raise ValueError(
+            "npix must be a positive integer and a multiple of 12. Got "
+            f"npix={npix}."
+        )
     nside = int(np.sqrt(npix / 12))
     return nside
+
+
+def hp_valid_npix(npix):
+    """
+    Check if the number of pixels in a HEALPix map is valid.
+
+    Parameters
+    ----------
+    npix : int
+        The number of pixels in the map.
+
+    Returns
+    -------
+    valid : bool
+        True if npix is valid, False otherwise. This is true if npix is
+        a positive integer and can be expressed as npix = 12 * nside^2,
+        where nside is a power of 2. See the functions `valid_nside`
+        and `hp_npix2nside`.
+
+    """
+    try:
+        nside = hp_npix2nside(npix)
+    except ValueError:
+        return False
+    return valid_nside(nside)
 
 
 def time_array(t_start=None, t_end=None, N_times=None, delta_t=None):
