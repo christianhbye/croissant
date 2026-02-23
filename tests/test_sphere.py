@@ -7,30 +7,34 @@ import pytest
 import s2fft
 
 from croissant import utils
+from croissant.constants import Y00
 from croissant.sphere import SphBase, compute_alm
 
+pytestmark = pytest.mark.parametrize("lmax", [8, 16, 25])
 rng = np.random.default_rng(seed=0)
 
-# (sampling, lmax) parameter pairs for tests
 SAMPLING_PARAMS = [
-    pytest.param("mwss", 8, id="mwss-lmax8"),
-    pytest.param("mw", 8, id="mw-lmax8"),
-    pytest.param("dh", 8, id="dh-lmax8"),
-    pytest.param("healpix", 8, id="healpix-lmax8"),
+    pytest.param("mwss"),
+    pytest.param("mw"),
+    pytest.param("dh"),
+    pytest.param("gl"),
+    pytest.param("healpix"),
 ]
 
 # s2fft mw/mwss forward transforms call spin.size which fails on Python ints
 # when jit is disabled; restrict disable_jit alm tests to healpix and dh
 SAMPLING_PARAMS_JIT_SAFE = [
-    pytest.param("dh", 8, id="dh-lmax8"),
-    pytest.param("healpix", 8, id="healpix-lmax8"),
+    pytest.param("dh"),
+    pytest.param("gl"),
+    pytest.param("healpix"),
 ]
 
 
-def _make_data(lmax, sampling, N_freqs=1):
+def _make_data(lmax, sampling, N_freqs=50):
     """Create uniform data for a given lmax and sampling scheme."""
     if sampling == "healpix":
-        nside = lmax // 2
+        # find largest nside that is <= lmax // 2
+        nside = 1 << (lmax // 2).bit_length() - 1
         npix = 12 * nside**2
         return np.ones((N_freqs, npix))
     L = lmax + 1
@@ -39,40 +43,39 @@ def _make_data(lmax, sampling, N_freqs=1):
     return np.ones((N_freqs, ntheta, nphi))
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_init(sampling, lmax):
     """SphBase should initialize with correct attributes."""
-    N_freqs = 2
+    N_freqs = 50
     data = _make_data(lmax, sampling, N_freqs)
     freqs = np.linspace(50, 100, N_freqs)
     obj = SphBase(data, freqs, sampling)
+
+    if sampling == "healpix":
+        npix = data.shape[1]
+        expected_nside = utils.hp_npix2nside(npix)
+        assert obj.nside == expected_nside
+        expected_lmax = 2 * expected_nside
+        assert obj.lmax == expected_lmax
+        assert obj._L == expected_lmax + 1
+    else:
+        assert obj.nside is None
+        assert obj.lmax == lmax
+        assert obj._L == lmax + 1
+
     assert obj.sampling == sampling
-    assert obj.lmax == lmax
-    assert obj._L == lmax + 1
     assert jnp.allclose(obj.freqs, freqs)
     assert obj.data.shape == data.shape
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
-def test_sphbase_nside(sampling, lmax):
-    """SphBase should infer nside for healpix and None otherwise."""
-    data = _make_data(lmax, sampling)
-    obj = SphBase(data, np.array([50.0]), sampling)
-    if sampling == "healpix":
-        assert obj.nside == lmax // 2
-    else:
-        assert obj.nside is None
-
-
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_theta_phi_shape(sampling, lmax):
     """Theta and phi arrays should have consistent shapes."""
     data = _make_data(lmax, sampling)
     obj = SphBase(data, np.array([50.0]), sampling)
     # For healpix, theta and phi have length npix
     if sampling == "healpix":
-        nside = lmax // 2
-        npix = 12 * nside**2
+        npix = data.shape[1]
         assert obj.theta.shape == (npix,)
         assert obj.phi.shape == (npix,)
     else:
@@ -83,16 +86,16 @@ def test_sphbase_theta_phi_shape(sampling, lmax):
         assert obj.phi.shape == (nphi,)
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_theta_range(sampling, lmax):
     """Theta values should be in [0, pi]."""
     data = _make_data(lmax, sampling)
     obj = SphBase(data, np.array([50.0]), sampling)
     assert jnp.all(obj.theta >= 0)
-    assert jnp.all(obj.theta <= jnp.pi)
+    assert jnp.all(obj.theta < jnp.pi + 1e-10)
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS)
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_phi_range(sampling, lmax):
     """Phi values should be in [0, 2*pi)."""
     data = _make_data(lmax, sampling)
@@ -101,28 +104,35 @@ def test_sphbase_phi_range(sampling, lmax):
     assert jnp.all(obj.phi < 2 * jnp.pi + 1e-10)
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS_JIT_SAFE)
 @pytest.mark.parametrize("disable_jit", [True, False])
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_shape(sampling, lmax, disable_jit):
     """compute_alm should return array of shape (N_freqs, lmax+1, 2*lmax+1)."""
     N_freqs = 3
     data = jnp.array(_make_data(lmax, sampling, N_freqs))
-    nside = (lmax // 2) if sampling == "healpix" else None
+    if sampling == "healpix":
+        npix = data.shape[1]
+        nside = utils.hp_npix2nside(npix)
+    else:
+        nside = None
     with jax.disable_jit(disable_jit):
         alm = compute_alm(data, lmax, sampling, nside=nside)
     assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
 
 
-@pytest.mark.parametrize("sampling,lmax", SAMPLING_PARAMS_JIT_SAFE)
 @pytest.mark.parametrize("disable_jit", [True, False])
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_monopole(sampling, lmax, disable_jit):
     """Uniform map should produce a dominant monopole component."""
-    from croissant.constants import Y00
 
     T = 500.0
     N_freqs = 1
     data = T * jnp.array(_make_data(lmax, sampling, N_freqs))
-    nside = (lmax // 2) if sampling == "healpix" else None
+    if sampling == "healpix":
+        npix = data.shape[1]
+        nside = utils.hp_npix2nside(npix)
+    else:
+        nside = None
     with jax.disable_jit(disable_jit):
         alm = compute_alm(data, lmax, sampling, nside=nside)
     l_ix, m_ix = utils.getidx(lmax, 0, 0)
