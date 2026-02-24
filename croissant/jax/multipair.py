@@ -97,7 +97,7 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
 def compute_normalization(auto_beam_alm):
     """
     Compute normalization factors in parallel for auto-correlation
-    beams. This vecotrizes the total_power computation across antennas.
+    beams. This vectorizes the total_power computation across antennas.
 
 
     Parameters
@@ -125,7 +125,7 @@ def pair_normalization(antenna_powers, pairs):
     Parameters
     ----------
     antenna_powers : jnp.ndarray
-        The total power for each antenna. 
+        The total power for each antenna.
         Shape (N_antennas,) or (N_antennas, N_freqs).
         If frequency-dependent, normalization will be frequency-dependent.
     pairs : array-like of shape (N_pairs, 2)
