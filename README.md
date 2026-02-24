@@ -22,8 +22,6 @@ Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can th
 
 For the latest version 4 release, do `pip install croissant-sim<5` (see https://pypi.org/project/croissant-sim). Git clone this repository for the newest changes (this is under activate development, do so at your own risk!).
 
-To access the JAX features, JAX must also be installed. See the [installation guide](https://github.com/google/jax#installation).
-
 Note that croissant is only tested up to Python 3.12. Python 3.13 and newer are not yet supported.
 
 ## Demo
