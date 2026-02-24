@@ -1,3 +1,4 @@
+import functools
 import warnings
 
 import jax.numpy as jnp
@@ -487,13 +488,20 @@ def __getattr__(name):
         "rotmat_to_eulerZYX",
         "rotmat_to_eulerZYZ",
     }:
-        warnings.warn(
-            f"utils.{name} has been moved to the rotations module "
-            "and will be removed from the utils module in a future release.",
-            FutureWarning,
-            stacklevel=2,
-        )
         from . import rotations
 
-        return getattr(rotations, name)
+        func = getattr(rotations, name)
+
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            warnings.warn(
+                f"utils.{name} has been moved to the rotations module and "
+                "will be removed from the utils module in a future release.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            return func(*args, **kwargs)
+
+        return wrapper
+
     raise AttributeError(f"module {__name__} has no attribute {name}")
