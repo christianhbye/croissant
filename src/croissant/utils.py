@@ -6,138 +6,7 @@ import s2fft
 from astropy import units
 from lunarsky import Time
 
-from . import rotations
 from .constants import Y00
-
-
-def _future_warning(func):
-    """
-    Decorator to add a FutureWarning to a function.
-
-    Parameters
-    ----------
-    func : callable
-        The function to add the FutureWarning to.
-
-    Returns
-    -------
-    wrapper : callable
-        The wrapped function that raises a FutureWarning when called.
-
-    """
-
-    def wrapper(*args, **kwargs):
-        warnings.warn(
-            f"{func.__name__} has been moved to the rotations module "
-            "and will be removed from the utils module in a future release.",
-            FutureWarning,
-            stacklevel=2,
-        )
-        return func(*args, **kwargs)
-
-    return wrapper
-
-
-@_future_warning
-def get_rot_mat(from_frame, to_frame):
-    """
-    Get the rotation matrix that transforms from one frame to another.
-
-    Parameters
-    ----------
-    from_frame : str or astropy frame
-        The coordinate frame to transform from.
-    to_frame : str or astropy frame
-        The coordinate frame to transform to.
-
-    Returns
-    -------
-    rmat : np.ndarray
-        The rotation matrix.
-
-    """
-    return rotations.get_rot_mat(from_frame, to_frame)
-
-
-def rotmat_to_euler(mat, eulertype="ZYX"):
-    """
-    Convert a rotation matrix to Euler angles in the specified convention.
-
-    Parameters
-    ----------
-    mat : np.ndarray
-        The rotation matrix.
-    eulertype : {"ZYX", "ZYZ"}
-        The Euler angle convention to use.
-
-    Returns
-    -------
-    eul : tup
-        The Euler angles in the specified convention.
-
-    Notes
-    -----
-    ``ZYX'' is the default healpy convention, what you would make ``rot''
-    when you call healpy.Rotator(rot, euletype="ZYX"). Wikipedia refers
-    to this as Tait-Bryan angles X1-Y2-Z3.
-
-    ``ZYZ'' is the convention typically used for Wigner D matrices, which
-    s2fft uses. Wikipedia calls it Euler angles Z1-Y2-Z3. This would be
-    used in s2fft.utils.rotation.rotate_flms.
-
-
-    """
-    warnings.warn(
-        "`rotmat_to_euler` has been moved to the rotations module and will be "
-        "removed from the utils module in a future release. Also note that "
-        "the eulertype default will be changed to 'ZYZ' in the future for "
-        "consistency with s2fft.",
-        FutureWarning,
-        stacklevel=2,
-    )
-    return rotations.rotmat_to_euler(mat, eulertype=eulertype)
-
-
-@_future_warning
-def rotmat_to_eulerZYX(mat):
-    """
-    Convert a rotation matrix to Euler angles in the ZYX convention. This is
-    sometimes referred to as Tait-Bryan angles X1-Y2-Z3.
-
-    Parameters
-    ----------
-    mat : np.ndarray
-        The rotation matrix.
-
-    Returns
-    --------
-    eul : tup
-        The Euler angles in the order yaw, -pitch, roll. This is the input
-        healpy.rotator.Rotator expects when ``eulertype'' is ZYX.
-
-    """
-    return rotations.rotmat_to_eulerZYX(mat)
-
-
-@_future_warning
-def rotmat_to_eulerZYZ(mat):
-    """
-    Convert a rotation matrix to Euler angles in the ZYZ convention. This is
-    sometimes referred to as Euler angles Z1-Y2-Z3.
-
-    Parameters
-    ----------
-    mat : np.ndarray
-        The rotation matrix.
-
-    Returns
-    --------
-    eul : tup
-        The Euler angles in the order alpha, beta, gamma. This is the input
-        s2fft.utils.rotation.rotate_flms expects.
-
-    """
-    return rotations.rotmat_to_eulerZYZ(mat)
 
 
 def valid_nside(nside):
@@ -605,3 +474,26 @@ def lmax_from_ntheta(ntheta, sampling):
             "from s2fft and include {'mw', 'mwss', 'dh', 'gl', 'healpix'}."
         )
     return lmax
+
+
+def __getattr__(name):
+    """
+    Redirect attribute access to the rotations module for deprecated
+    functions.
+    """
+    if name in {
+        "get_rot_mat",
+        "rotmat_to_euler",
+        "rotmat_to_eulerZYX",
+        "rotmat_to_eulerZYZ",
+    }:
+        warnings.warn(
+            f"utils.{name} has been moved to the rotations module "
+            "and will be removed from the utils module in a future release.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        from . import rotations
+
+        return getattr(rotations, name)
+    raise AttributeError(f"module {__name__} has no attribute {name}")
