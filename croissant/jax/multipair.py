@@ -96,22 +96,21 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
 
 def compute_normalization(auto_beam_alm):
     """
-    Compute normalization factors for antenna pairs from auto-correlation beams.
+    Compute normalization factors in parallel for auto-correlation
+    beams. This vecotrizes the total_power computation across antennas.
 
-    For pair (p, q), the normalization is sqrt(total_power_p * total_power_q).
-    This function takes the auto-correlation beam alms and computes the
-    total power for each antenna.
 
     Parameters
     ----------
     auto_beam_alm : jnp.ndarray
-        The auto-correlation beam alms. Shape (N_antennas, N_freqs, lmax+1, 2*lmax+1).
+        The auto-correlation beam alms.
+        Shape (N_antennas, N_freqs, lmax+1, 2*lmax+1).
         Entry i holds the beam alm for antenna i (auto-correlation).
 
     Returns
     -------
     antenna_powers : jnp.ndarray
-        The total power for each antenna at each frequency.
+        The total (auto) power for each antenna at each frequency.
         Shape (N_antennas, N_freqs).
 
     """
@@ -126,10 +125,12 @@ def pair_normalization(antenna_powers, pairs):
     Parameters
     ----------
     antenna_powers : jnp.ndarray
-        The total power for each antenna. Shape (N_antennas,) or (N_antennas, N_freqs).
+        The total power for each antenna. 
+        Shape (N_antennas,) or (N_antennas, N_freqs).
         If frequency-dependent, normalization will be frequency-dependent.
-    pairs : Sequence[Tuple[int, int]]
-        List of (p, q) tuples indicating antenna pairs.
+    pairs : array-like of shape (N_pairs, 2)
+        List of (p, q) tuples indicating antenna pairs where p/q are
+        integer indices into the antenna_powers array.
 
     Returns
     -------
@@ -137,9 +138,9 @@ def pair_normalization(antenna_powers, pairs):
         Normalization for each pair. Shape (N_pairs,) or (N_pairs, N_freqs).
 
     """
-    # For each pair (p, q), compute sqrt(power_p * power_q)
-    norms = []
-    for p, q in pairs:
-        norm_pq = jnp.sqrt(antenna_powers[p] * antenna_powers[q])
-        norms.append(norm_pq)
-    return jnp.stack(norms, axis=0)
+    pair_indices = jnp.array(pairs)  # shape (N_pairs, 2)
+    p_idx = pair_indices[:, 0]  # shape (N_pairs,)
+    q_idx = pair_indices[:, 1]  # shape (N_pairs,)
+    power_p = antenna_powers[p_idx]
+    power_q = antenna_powers[q_idx]
+    return jnp.sqrt(power_p * power_q)
