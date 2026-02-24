@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 import s2fft
 
-from croissant.jax import alm, simulator, multipair
+from croissant.jax import alm, multipair, simulator
 
 rng = np.random.default_rng(42)
 
@@ -27,7 +27,9 @@ def make_real_beam_alm(lmax, n_freqs=1, seed=None):
         _rng = np.random.default_rng(seed)
     else:
         _rng = rng
-    beam = s2fft.utils.signal_generator.generate_flm(_rng, lmax + 1, reality=True)
+    beam = s2fft.utils.signal_generator.generate_flm(
+        _rng, lmax + 1, reality=True
+    )
     # Always add frequency axis
     beam = jnp.repeat(beam[None, :, :], n_freqs, axis=0)
     return beam
@@ -63,7 +65,9 @@ class TestRegression:
         beam_multi = beam[None, ...]  # Add pair axis
         norm_multi = jnp.array([norm_single])
 
-        vis_multi = multipair.compute_visibilities(beam_multi, sky, phases, norm_multi)
+        vis_multi = multipair.compute_visibilities(
+            beam_multi, sky, phases, norm_multi
+        )
 
         # Compare
         vis_multi_squeezed = vis_multi[:, 0, :]
@@ -76,19 +80,19 @@ class TestRegression:
         max_imag_single = jnp.max(jnp.abs(jnp.imag(vis_single)))
         max_imag_multi = jnp.max(jnp.abs(jnp.imag(vis_multi_squeezed)))
         imag_tol = 1e-12
-        assert max_imag_single < imag_tol, (
-            f"Single-pair visibility has non-negligible imaginary part: {max_imag_single}"
-        )
-        assert max_imag_multi < imag_tol, (
-            f"Multi-pair visibility has non-negligible imaginary part: {max_imag_multi}"
-        )
+        assert max_imag_single < imag_tol
+        assert max_imag_multi < imag_tol
+
 
 class TestJAXGradient:
     """JAX gradient through vmap."""
 
     @pytest.mark.parametrize("lmax", [8, 16])
     def test_gradient_finite_nonzero(self, lmax):
-        """Gradient of sum of visibility magnitudes squared is finite and nonzero."""
+        """
+        Gradient of sum of visibility magnitudes squared is finite and
+        nonzero.
+        """
         n_freqs = 2
         n_times = 5
         n_pairs = 3
@@ -119,7 +123,9 @@ class TestJAXGradient:
         grad = jax.grad(loss_fn)(beam_alm)
 
         # Check finite
-        assert jnp.all(jnp.isfinite(grad)), "Gradient contains non-finite values"
+        assert jnp.all(jnp.isfinite(grad)), (
+            "Gradient contains non-finite values"
+        )
 
         # Check nonzero
         assert jnp.any(grad != 0), "Gradient is all zeros"
@@ -171,16 +177,18 @@ class TestComputeNormalization:
         assert jnp.allclose(norm, expected)
 
     def test_pair_normalization_freq_dependent(self):
-        """Test pair_normalization with frequency-dependent antenna powers."""
+        """
+        Test pair_normalization with frequency-dependent antenna powers.
+        """
         n_freqs = 3
 
-        # Shape (n_antennas, n_freqs); choose simple values for easy verification.
+        # Shape (n_antennas, n_freqs)
         antenna_powers = jnp.array(
             [
-                [1.0, 2.0, 3.0],   # antenna 0
-                [4.0, 5.0, 6.0],   # antenna 1
-                [7.0, 8.0, 9.0],   # antenna 2
-                [10.0, 11.0, 12.0] # antenna 3
+                [1.0, 2.0, 3.0],  # antenna 0
+                [4.0, 5.0, 6.0],  # antenna 1
+                [7.0, 8.0, 9.0],  # antenna 2
+                [10.0, 11.0, 12.0],  # antenna 3
             ]
         )
 

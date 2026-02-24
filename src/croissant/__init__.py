@@ -1,6 +1,6 @@
 from importlib.metadata import PackageNotFoundError, version
 
-from . import constants, rotations, simulator, multipair, utils
+from . import constants, multipair, rotations, simulator, utils
 from .beam import Beam
 from .simulator import Simulator
 from .sky import Sky
