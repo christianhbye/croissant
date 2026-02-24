@@ -82,6 +82,7 @@ class TestRegression:
         assert max_imag_multi < imag_tol, (
             f"Multi-pair visibility has non-negligible imaginary part: {max_imag_multi}"
         )
+
 class TestJAXGradient:
     """JAX gradient through vmap."""
 
@@ -154,7 +155,6 @@ class TestComputeNormalization:
 
     def test_pair_normalization(self):
         """Test pair_normalization from antenna powers."""
-        n_antennas = 4
         antenna_powers = jnp.array([1.0, 2.0, 3.0, 4.0])
 
         pairs = [(0, 0), (0, 1), (1, 2), (2, 3)]
@@ -172,7 +172,6 @@ class TestComputeNormalization:
 
     def test_pair_normalization_freq_dependent(self):
         """Test pair_normalization with frequency-dependent antenna powers."""
-        n_antennas = 4
         n_freqs = 3
 
         # Shape (n_antennas, n_freqs); choose simple values for easy verification.
