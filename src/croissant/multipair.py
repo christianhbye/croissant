@@ -1,19 +1,8 @@
-"""
-Multi-pair visibility simulation via vmapped alm dot products.
-
-This module extends CROISSANT to compute visibilities for multiple antenna pairs
-simultaneously. It works with complex-valued pair beams in s2fft alm format,
-handling both auto-correlations (real beams) and cross-correlations (complex beams)
-uniformly.
-
-The core operation is a vmap of the existing convolve function over the pair axis.
-"""
-
 import jax
 import jax.numpy as jnp
 
 from .simulator import convolve
-from .alm import total_power, lmax_from_shape
+from .utils import lmax_from_shape, total_power
 
 # vmap convolve over the pair axis (axis 0 of beam_alm)
 # sky_alm and phases are broadcast (not mapped)
@@ -31,11 +20,10 @@ def multi_convolve(beam_alm, sky_alm, phases):
     Parameters
     ----------
     beam_alm : jnp.ndarray
-        The beam alms for all pairs. Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
-        Each slice along axis 0 holds the s2fft alm of one pair beam.
-        dtype complex128.
+        The beam alms for all pairs.
+        Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
     sky_alm : jnp.ndarray
-        The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1). dtype complex128.
+        The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1).
     phases : jnp.ndarray
         The phases that rotate the sky, of the form exp(-i*m*phi(t)).
         Shape (N_times, 2*lmax+1). See simulator.rot_alm_z.
@@ -58,11 +46,10 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
     Parameters
     ----------
     beam_alm : jnp.ndarray
-        The beam alms for all pairs. Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
-        Each slice along axis 0 holds the s2fft alm of one pair beam.
-        dtype complex128.
+        The beam alms for all pairs.
+        Shape (N_pairs, N_freqs, lmax+1, 2*lmax+1).
     sky_alm : jnp.ndarray
-        The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1). dtype complex128.
+        The sky alms. Shape (N_freqs, lmax+1, 2*lmax+1).
     phases : jnp.ndarray
         The phases that rotate the sky, of the form exp(-i*m*phi(t)).
         Shape (N_times, 2*lmax+1). See simulator.rot_alm_z.
@@ -87,7 +74,9 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
     # Normalize: broadcast norm over time axis (and freq axis if scalar)
     # norm shape (N_pairs,) -> (N_pairs, 1, 1)
     # norm shape (N_pairs, N_freqs) -> (N_pairs, 1, N_freqs)
-    norm_broadcast = norm[:, None, None] if norm.ndim == 1 else norm[:, None, :]
+    norm_broadcast = (
+        norm[:, None, None] if norm.ndim == 1 else norm[:, None, :]
+    )
     vis_normalized = vis_raw / norm_broadcast
 
     # Transpose to (N_times, N_pairs, N_freqs)
