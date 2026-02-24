@@ -20,7 +20,7 @@ Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can th
 > [!WARNING]
 > Version 4 is the last major release of CROISSANT that supports the simulator based on numpy/healpy. Version 5.0.0 and beyond are fully JAX-based. Pin your dependency to version 4 if you need this functionality.
 
-For the latest version 4 release, do `pip install croissant-sim<5` (see https://pypi.org/project/croissant-sim). Git clone this repository for the newest changes (this is under activate development, do so at your own risk!).
+For the latest version 4 release, do `pip install croissant-sim<5` (see https://pypi.org/project/croissant-sim). Git clone this repository for the newest changes (this is under active development, do so at your own risk!).
 
 Note that croissant is only tested up to Python 3.12. Python 3.13 and newer are not yet supported.
 
