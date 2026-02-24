@@ -116,11 +116,7 @@ def compute_normalization(auto_beam_alm):
 
     """
     lmax = lmax_from_shape(auto_beam_alm.shape)
-    # vmap total_power over antenna and frequency axes
-    # total_power expects last two dims to be (lmax+1, 2*lmax+1)
-    # auto_beam_alm has shape (N_antennas, N_freqs, lmax+1, 2*lmax+1)
-    # We need to apply total_power to each (lmax+1, 2*lmax+1) slice
-    return jax.vmap(jax.vmap(lambda x: total_power(x, lmax)))(auto_beam_alm)
+    return jax.vmap(total_power, in_axes=(0, None))(auto_beam_alm, lmax)
 
 
 def pair_normalization(antenna_powers, pairs):
