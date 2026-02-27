@@ -120,6 +120,20 @@ def test_compute_alm_shape(sampling, lmax, disable_jit):
     assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
 
 
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
+def test_compute_alm_niter(sampling, lmax):
+    """compute_alm with a non-default niter should return correct shape."""
+    N_freqs = 3
+    data = jnp.array(_make_data(lmax, sampling, N_freqs))
+    if sampling == "healpix":
+        npix = data.shape[1]
+        nside = utils.hp_npix2nside(npix)
+    else:
+        nside = None
+    alm = compute_alm(data, lmax, sampling, nside=nside, niter=1)
+    assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
+
+
 @pytest.mark.parametrize("disable_jit", [True, False])
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_monopole(sampling, lmax, disable_jit):
