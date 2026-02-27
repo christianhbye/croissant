@@ -29,7 +29,7 @@ def _make_beam(sampling, lmax, N_freqs=50, value=1.0, horizon=None):
         ntheta = s2fft.sampling.s2_samples.ntheta(L=L, sampling=sampling)
         nphi = s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling)
         data = value * jnp.ones((N_freqs, ntheta, nphi))
-    return Beam(data, freqs, sampling=sampling, horizon=horizon)
+    return Beam(data, freqs, sampling=sampling, horizon=horizon, niter=0)
 
 
 # ---------------------------------------------------------------------------
@@ -226,8 +226,8 @@ def test_beam_az_rot_preserves_power(sampling):
         data = data[:, None, :]  # add extra dimension for theta
         data = jnp.repeat(data, ntheta, axis=1)  # broadcast to all theta
     freq = 1.0  # single frequency
-    beam0 = Beam(data, freq, sampling=sampling)
-    beam90 = Beam(data, freq, sampling=sampling, beam_az_rot=90.0)
+    beam0 = Beam(data, freq, sampling=sampling, niter=0)
+    beam90 = Beam(data, freq, sampling=sampling, beam_az_rot=90.0, niter=0)
 
     alm0 = beam0.compute_alm()
     alm90 = beam90.compute_alm()
@@ -253,8 +253,8 @@ def test_beam_az_rot_phase_formula(sampling):
         data = jnp.repeat(data, ntheta, axis=1)  # broadcast to all theta
     freq = 1.0  # single frequency
     az_rot = 45.0  # degrees
-    beam0 = Beam(data, freq, sampling=sampling)
-    beam_rot = Beam(data, freq, sampling=sampling, beam_az_rot=az_rot)
+    beam0 = Beam(data, freq, sampling=sampling, niter=0)
+    beam_rot = Beam(data, freq, sampling=sampling, beam_az_rot=az_rot, niter=0)
 
     alm0 = beam0.compute_alm()
     alm_rot = beam_rot.compute_alm()

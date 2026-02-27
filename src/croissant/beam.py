@@ -18,6 +18,7 @@ class Beam(sphere.SphBase):
         horizon=None,
         beam_az_rot=0.0,
         beam_tilt=0.0,
+        niter=None,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -57,9 +58,14 @@ class Beam(sphere.SphBase):
             The tilt angle of the beam in degrees. The tilt is the
             angle measured from the local zenith towards the antenna
             pointing direction.
+        niter : int or None
+            Number of iterations for the spherical harmonic transform
+            when using iterative methods. If None, the default number of
+            iterations is used based on the sampling scheme, currently
+            3 for "healpix" and 0 for other schemes.
 
         """
-        super().__init__(data, freqs, sampling)
+        super().__init__(data, freqs, sampling, niter=niter)
 
         if not jnp.isclose(beam_tilt, 0.0):
             raise NotImplementedError("Beam tilt is not yet implemented.")

@@ -49,7 +49,7 @@ def test_sphbase_init(sampling, lmax):
     N_freqs = 50
     data = _make_data(lmax, sampling, N_freqs)
     freqs = np.linspace(50, 100, N_freqs)
-    obj = SphBase(data, freqs, sampling)
+    obj = SphBase(data, freqs, sampling, niter=0)
 
     if sampling == "healpix":
         npix = data.shape[1]
@@ -72,7 +72,7 @@ def test_sphbase_init(sampling, lmax):
 def test_sphbase_theta_phi_shape(sampling, lmax):
     """Theta and phi arrays should have consistent shapes."""
     data = _make_data(lmax, sampling)
-    obj = SphBase(data, np.array([50.0]), sampling)
+    obj = SphBase(data, np.array([50.0]), sampling, niter=0)
     # For healpix, theta and phi have length npix
     if sampling == "healpix":
         npix = data.shape[1]
@@ -90,7 +90,7 @@ def test_sphbase_theta_phi_shape(sampling, lmax):
 def test_sphbase_theta_range(sampling, lmax):
     """Theta values should be in [0, pi]."""
     data = _make_data(lmax, sampling)
-    obj = SphBase(data, np.array([50.0]), sampling)
+    obj = SphBase(data, np.array([50.0]), sampling, niter=0)
     assert jnp.all(obj.theta >= 0)
     assert jnp.all(obj.theta < jnp.pi + 1e-10)
 
@@ -99,7 +99,7 @@ def test_sphbase_theta_range(sampling, lmax):
 def test_sphbase_phi_range(sampling, lmax):
     """Phi values should be in [0, 2*pi)."""
     data = _make_data(lmax, sampling)
-    obj = SphBase(data, np.array([50.0]), sampling)
+    obj = SphBase(data, np.array([50.0]), sampling, niter=0)
     assert jnp.all(obj.phi >= 0)
     assert jnp.all(obj.phi < 2 * jnp.pi + 1e-10)
 

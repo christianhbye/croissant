@@ -72,7 +72,7 @@ class SphBase(eqx.Module):
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
 
-    def __init__(self, data, freqs, sampling):
+    def __init__(self, data, freqs, sampling, niter=None):
         """
         Base class for scalar fields on the sphere. Holds the field
         data and associated metadata. The field must be defined on the
@@ -93,6 +93,11 @@ class SphBase(eqx.Module):
             "dh", "gl", "healpix"}. The default is "mwss", which is a 1
             deg equiangular sampling in theta and phi and includes the
             poles.
+        niter : int
+            Number of iterations for the s2fft algorithm. Higher values
+            can improve accuracy at the cost of increased computation
+            time. Default is None meaning 0 for non-healpix and 3 for
+            healpix sampling.
 
         Raises
         ------
@@ -111,9 +116,13 @@ class SphBase(eqx.Module):
                     f"Invalid number of pixels {npix} for healpix sampling. "
                     "Number of pixels must be of the form 12 * nside^2."
                 )
-            niter = 3
-        else:
-            niter = 0
+
+        if niter is None:
+            if sampling == "healpix":
+                niter = 3
+            else:
+                niter = 0
+
         self._niter = niter
 
         self.sampling = sampling
