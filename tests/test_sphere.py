@@ -120,6 +120,56 @@ def test_compute_alm_shape(sampling, lmax, disable_jit):
     assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
 
 
+@pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
+def test_compute_alm_niter(sampling, lmax):
+    """compute_alm with a non-default niter should return correct shape."""
+    N_freqs = 3
+    data = jnp.array(_make_data(lmax, sampling, N_freqs))
+    if sampling == "healpix":
+        npix = data.shape[1]
+        nside = utils.hp_npix2nside(npix)
+    else:
+        nside = None
+    alm = compute_alm(data, lmax, sampling, nside=nside, niter=1)
+    assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
+
+
+def test_compute_alm_healpix_niter_reduces_error(lmax):
+    """
+    niter=3 for healpix should reduce forward/inverse reconstruction
+    error vs niter=0.
+    """
+    nside = 1 << (lmax // 2).bit_length() - 1
+    npix = 12 * nside**2
+    data = jnp.array(rng.standard_normal((1, npix)).astype(np.float32))
+
+    alm0 = compute_alm(data, lmax, "healpix", nside=nside, niter=0)
+    alm3 = compute_alm(data, lmax, "healpix", nside=nside, niter=3)
+
+    rec0 = s2fft.inverse(
+        np.array(alm0[0]),
+        L=lmax + 1,
+        spin=0,
+        nside=nside,
+        sampling="healpix",
+        method="jax",
+        reality=True,
+    )
+    rec3 = s2fft.inverse(
+        np.array(alm3[0]),
+        L=lmax + 1,
+        spin=0,
+        nside=nside,
+        sampling="healpix",
+        method="jax",
+        reality=True,
+    )
+
+    err0 = float(jnp.mean(jnp.abs(jnp.array(rec0) - data[0])))
+    err3 = float(jnp.mean(jnp.abs(jnp.array(rec3) - data[0])))
+    assert err3 < err0
+
+
 @pytest.mark.parametrize("disable_jit", [True, False])
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_monopole(sampling, lmax, disable_jit):
