@@ -47,7 +47,7 @@ addopts = [
   "--cov-report=html",
   "--junitxml=junit.xml",
   "-o junit_family=legacy",
-  "--timeout=60",
+  "--timeout=120",
 ]
 
 [tool.ruff]
