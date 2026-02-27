@@ -16,9 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: release-please
+        id: release
         uses: googleapis/release-please-action@v4
         with:
-          release-type: simple
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
 
       - name: Checkout code
         if: ${{ steps.release.outputs.release_created }}
