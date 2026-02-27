@@ -48,7 +48,11 @@ class Sky(sphere.SphBase):
 
         """
         return sphere.compute_alm(
-            self.data, self.lmax, self.sampling, nside=self.nside
+            self.data,
+            self.lmax,
+            self.sampling,
+            nside=self.nside,
+            niter=self._niter,
         )
 
     def compute_alm_eq(self, world="moon"):

@@ -159,7 +159,11 @@ class Beam(sphere.SphBase):
         """
         data = self.data * self.horizon[None]  # mask out below-horizon part
         alm = sphere.compute_alm(
-            data, self.lmax, self.sampling, nside=self.nside
+            data,
+            self.lmax,
+            self.sampling,
+            nside=self.nside,
+            niter=self._niter,
         )
         # apply the azimuthal rotation (no-op when beam_az_rot == 0)
         emms = jnp.arange(-self.lmax, self.lmax + 1)

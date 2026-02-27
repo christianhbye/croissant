@@ -9,10 +9,10 @@ from . import utils
 
 
 @eqx.filter_jit
-def compute_alm(data, lmax, sampling, nside=None):
+def compute_alm(data, lmax, sampling, nside=None, niter=0):
     """
     Compute the spherical harmonic coefficients of a scalar field on
-    the sphere. Wraps the s2fft.forward_jax in a convenient interface
+    the sphere. Wraps the s2fft.forward method in a convenient interface
     and uses vmap to compute the coefficients for multiple frequencies
     in parallel.
 
@@ -32,6 +32,11 @@ def compute_alm(data, lmax, sampling, nside=None):
     nside : int or None,
         Nside parameter for healpix sampling. Required if `sampling` is
         "healpix". Ignored otherwise.
+    niter : int
+        Number of iterations for the s2fft algorithm. Higher values can
+        improve accuracy at the cost of increased computation time.
+        Default is 0, which corresponds to the default behavior of
+        s2fft.
 
     Returns
     -------
@@ -41,12 +46,17 @@ def compute_alm(data, lmax, sampling, nside=None):
 
     """
     m2alm = partial(
-        s2fft.forward_jax,
+        s2fft.forward,
         L=lmax + 1,
         spin=0,
         nside=nside,
         sampling=sampling,
+        method="jax",
         reality=True,
+        precomps=None,
+        spmd=False,
+        L_lower=0,
+        iter=niter,
     )
     return jax.vmap(m2alm)(data)
 
@@ -57,6 +67,7 @@ class SphBase(eqx.Module):
     sampling: str = eqx.field(static=True)
     lmax: int = eqx.field(static=True)
     _L: int = eqx.field(static=True)  # L = lmax + 1 for s2fft
+    _niter: int = eqx.field(static=True)  # niter for sht
     nside: int | None = eqx.field(static=True)
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
@@ -100,6 +111,10 @@ class SphBase(eqx.Module):
                     f"Invalid number of pixels {npix} for healpix sampling. "
                     "Number of pixels must be of the form 12 * nside^2."
                 )
+            niter = 3
+        else:
+            niter = 0
+        self._niter = niter
 
         self.sampling = sampling
         self.lmax = utils.lmax_from_ntheta(self.data.shape[1], self.sampling)
