@@ -1,0 +1,17 @@
+{
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "croissant-sim",
+      "changelog-path": "CHANGELOG.md",
+      "include-v-in-tag": true,
+      "extra-files": [
+        {
+          "path": "uv.lock",
+          "type": "toml",
+          "jsonpath": "$.package[?(@.name.value=='croissant-sim')].version"
+        }
+      ]
+    }
+  }
+}
