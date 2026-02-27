@@ -7,7 +7,9 @@ from . import rotations, sphere
 class Sky(sphere.SphBase):
     coord: str = eqx.field(static=True)
 
-    def __init__(self, data, freqs, sampling="healpix", coord="galactic"):
+    def __init__(
+        self, data, freqs, sampling="healpix", coord="galactic", niter=None
+    ):
         """
         Object that holds the sky model.
 
@@ -30,6 +32,10 @@ class Sky(sphere.SphBase):
             systems are {"galactic", "equatorial", "mcmf"}. Default is
             "galactic". The alm's will be computed in equatorial
             coordinates (mcmf on moon).
+        niter : int or None
+            The number of iterations to use for the spherical harmonic
+            transform. If None, the default number of iterations will be
+            used (3 if sampling is "healpix", 0 otherwise).
 
         """
         if coord not in {"galactic", "equatorial", "mcmf"}:
@@ -37,7 +43,7 @@ class Sky(sphere.SphBase):
                 f"Unsupported coordinate system: {coord}. Supported systems "
                 "are {'galactic', 'equatorial', 'mcmf'}."
             )
-        super().__init__(data, freqs, sampling)
+        super().__init__(data, freqs, sampling, niter=niter)
         self.coord = coord
 
     @jax.jit
@@ -48,7 +54,11 @@ class Sky(sphere.SphBase):
 
         """
         return sphere.compute_alm(
-            self.data, self.lmax, self.sampling, nside=self.nside
+            self.data,
+            self.lmax,
+            self.sampling,
+            nside=self.nside,
+            niter=self._niter,
         )
 
     def compute_alm_eq(self, world="moon"):

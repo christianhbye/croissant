@@ -50,9 +50,9 @@ def _make_sim(world="moon", Tgnd=0.0, nside=_NSIDE):
     """Create a Simulator with an isotropic beam and uniform monopole sky."""
     npix = 12 * nside**2
     sky_data = _TSKY[:, None] * jnp.ones((_N_FREQS, npix))
-    sky = Sky(sky_data, _FREQS, coord=_SKY_COORD[world])
+    sky = Sky(sky_data, _FREQS, coord=_SKY_COORD[world], niter=0)
     beam_data = jnp.ones((_N_FREQS, npix))
-    beam = Beam(beam_data, _FREQS, sampling="healpix")
+    beam = Beam(beam_data, _FREQS, sampling="healpix", niter=0)
     times_jd = _TIMES_JD[world]
     return Simulator(
         beam, sky, times_jd, _FREQS, 0.0, 0.0, world=world, Tgnd=Tgnd
@@ -81,9 +81,9 @@ def test_simulator_freq_mismatch():
     freqs_sim = jnp.array([50.0, 200.0])  # different
 
     sky_data = jnp.ones((2, npix))
-    sky = Sky(sky_data, freqs_beam, coord="mcmf")
+    sky = Sky(sky_data, freqs_beam, coord="mcmf", niter=0)
     beam_data = jnp.ones((2, npix))
-    beam = Beam(beam_data, freqs_beam, sampling="healpix")
+    beam = Beam(beam_data, freqs_beam, sampling="healpix", niter=0)
 
     with pytest.raises(ValueError, match="frequencies"):
         Simulator(beam, sky, _TIMES_JD_MOON, freqs_sim, 0.0, 0.0, world="moon")
@@ -92,8 +92,8 @@ def test_simulator_freq_mismatch():
 def test_simulator_lmax_too_large():
     """Requesting lmax larger than beam/sky lmax should raise."""
     sim_data = jnp.ones((_N_FREQS, _NPIX))
-    sky = Sky(sim_data, _FREQS, coord="mcmf")
-    beam = Beam(sim_data, _FREQS, sampling="healpix")
+    sky = Sky(sim_data, _FREQS, coord="mcmf", niter=0)
+    beam = Beam(sim_data, _FREQS, sampling="healpix", niter=0)
 
     with pytest.raises(ValueError, match="lmax"):
         Simulator(
@@ -111,8 +111,8 @@ def test_simulator_lmax_too_large():
 def test_simulator_invalid_world():
     """Invalid world keyword should raise ValueError."""
     sim_data = jnp.ones((_N_FREQS, _NPIX))
-    sky = Sky(sim_data, _FREQS, coord="galactic")
-    beam = Beam(sim_data, _FREQS, sampling="healpix")
+    sky = Sky(sim_data, _FREQS, coord="galactic", niter=0)
+    beam = Beam(sim_data, _FREQS, sampling="healpix", niter=0)
     with pytest.raises(ValueError, match="world"):
         Simulator(beam, sky, _TIMES_JD_MOON, _FREQS, 0.0, 0.0, world="saturn")
 

@@ -21,7 +21,7 @@ def _uniform_sky(coord="galactic", N_freqs=1):
     """Create a uniform healpix sky map."""
     data = _T_SKY * jnp.ones((N_freqs, _NPIX))
     freqs = jnp.linspace(50.0, 100.0, N_freqs)
-    return Sky(data, freqs, coord=coord)
+    return Sky(data, freqs, coord=coord, niter=0)
 
 
 # ---------------------------------------------------------------------------
@@ -42,7 +42,7 @@ def test_sky_invalid_coord():
     """Unsupported coordinate system should raise ValueError."""
     data = jnp.ones((1, _NPIX))
     with pytest.raises(ValueError, match="Unsupported coordinate system"):
-        Sky(data, _FREQS[:1], coord="ecliptic")
+        Sky(data, _FREQS[:1], coord="ecliptic", niter=0)
 
 
 # ---------------------------------------------------------------------------
@@ -127,7 +127,7 @@ def test_sky_multifreq_alm_scales_correctly():
     # sky temperature follows a power law: T ∝ freq^(-2.5)
     T = _T_SKY * (freqs / freqs[0]) ** (-2.5)
     data = T[:, None] * jnp.ones((N_freqs, _NPIX))
-    sky = Sky(data, freqs, coord="mcmf")
+    sky = Sky(data, freqs, coord="mcmf", niter=0)
     alm = sky.compute_alm()
     l_ix, m_ix = utils.getidx(_LMAX, 0, 0)
     for i, Ti in enumerate(T):
