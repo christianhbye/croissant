@@ -135,7 +135,10 @@ def test_compute_alm_niter(sampling, lmax):
 
 
 def test_compute_alm_healpix_niter_reduces_error(lmax):
-    """niter=3 for healpix should reduce forward/inverse reconstruction error vs niter=0."""
+    """
+    niter=3 for healpix should reduce forward/inverse reconstruction
+    error vs niter=0.
+    """
     nside = 1 << (lmax // 2).bit_length() - 1
     npix = 12 * nside**2
     data = jnp.array(rng.standard_normal((1, npix)).astype(np.float32))
