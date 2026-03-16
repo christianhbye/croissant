@@ -212,7 +212,7 @@ def generate_euler_dl_from_rotmat(lmax, rotmat):
     return euler, dl_array
 
 
-def topo_to_mepa_euler_dl(lmax, topo_frame, obstime_jd):
+def topo_to_mepa_euler_dl(lmax, topo_frame):
     """
     Compute the Euler angles and reduced Wigner d-function values for
     rotating alm from a LunarTopo frame to the MEPA frame.
@@ -220,15 +220,14 @@ def topo_to_mepa_euler_dl(lmax, topo_frame, obstime_jd):
     This transform is time-dependent because MEPA is inertial while
     LunarTopo co-rotates with the Moon. The Moon's spin phase at the
     observation time enters through the MCMF-to-J2000 rotation.
+    The observation time is taken from ``topo_frame.obstime``.
 
     Parameters
     ----------
     lmax : int
         The maximum spherical harmonic degree.
     topo_frame : lunarsky.LunarTopo
-        The topocentric frame on the Moon.
-    obstime_jd : float
-        The observation time as a Julian date.
+        The topocentric frame on the Moon. Must have ``obstime`` set.
 
     Returns
     -------
@@ -241,7 +240,7 @@ def topo_to_mepa_euler_dl(lmax, topo_frame, obstime_jd):
     # topo → MCMF (time-independent, depends only on observer location)
     R_topo_mcmf = get_rot_mat(topo_frame, "mcmf")
     # MCMF → J2000 at observation time (time-dependent: Moon's spin)
-    et = (obstime_jd - 2451545.0) * 86400
+    et = (topo_frame.obstime.jd - 2451545.0) * 86400
     R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et))
     # J2000 → MEPA (fixed)
     R_j2000_mepa = get_mepa_rotation_matrix()
