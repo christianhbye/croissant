@@ -3,6 +3,7 @@ from functools import partial
 import jax
 import numpy as np
 import s2fft
+import spiceypy as spice
 from astropy.coordinates import SkyCoord
 
 from .utils import lmax_from_shape
@@ -183,9 +184,6 @@ def get_mepa_rotation_matrix():
         The 3x3 rotation matrix from J2000 to MEPA.
 
     """
-    import lunarsky  # noqa: F401 — triggers SPICE kernel loading
-    import spiceypy as spice
-
     return np.array(spice.pxform("J2000", "MOON_ME", 0.0))
 
 
@@ -240,9 +238,6 @@ def topo_to_mepa_euler_dl(lmax, topo_frame, obstime_jd):
         The reduced Wigner d-function values.
 
     """
-    import lunarsky  # noqa: F401 — triggers SPICE kernel loading
-    import spiceypy as spice
-
     # topo → MCMF (time-independent, depends only on observer location)
     R_topo_mcmf = get_rot_mat(topo_frame, "mcmf")
     # MCMF → J2000 at observation time (time-dependent: Moon's spin)
