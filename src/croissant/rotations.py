@@ -1,4 +1,4 @@
-from functools import partial
+from functools import partial, lru_cache
 
 import jax
 import numpy as np
@@ -170,6 +170,7 @@ def generate_euler_dl(lmax, from_frame, to_frame):
     return euler, dl_array
 
 
+@lru_cache(maxsize=None)
 def get_mepa_rotation_matrix():
     """
     Get the rotation matrix from J2000 to the Mean Earth / Polar Axis
