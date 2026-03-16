@@ -87,10 +87,10 @@ def test_topo_to_mepa_time_dependent():
     lmax = 4
 
     topo1 = LunarTopo(location=loc, obstime=t1)
-    eul1, _ = rotations.topo_to_mepa_euler_dl(lmax, topo1, t1.jd)
+    eul1, _ = rotations.topo_to_mepa_euler_dl(lmax, topo1)
 
     topo2 = LunarTopo(location=loc, obstime=t2)
-    eul2, _ = rotations.topo_to_mepa_euler_dl(lmax, topo2, t2.jd)
+    eul2, _ = rotations.topo_to_mepa_euler_dl(lmax, topo2)
 
     # Euler angles should differ (Moon has rotated ~180° in 14 days)
     assert not np.allclose(eul1, eul2)
