@@ -1,4 +1,4 @@
-from functools import partial, lru_cache
+from functools import lru_cache, partial
 
 import jax
 import numpy as np
