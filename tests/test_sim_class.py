@@ -43,7 +43,7 @@ _TIMES_JD_EARTH = jnp.linspace(
 )
 
 _TIMES_JD = {"moon": _TIMES_JD_MOON, "earth": _TIMES_JD_EARTH}
-_SKY_COORD = {"moon": "mcmf", "earth": "equatorial"}
+_SKY_COORD = {"moon": "mepa", "earth": "equatorial"}
 
 
 def _make_sim(world="moon", Tgnd=0.0, nside=_NSIDE):
@@ -81,7 +81,7 @@ def test_simulator_freq_mismatch():
     freqs_sim = jnp.array([50.0, 200.0])  # different
 
     sky_data = jnp.ones((2, npix))
-    sky = Sky(sky_data, freqs_beam, coord="mcmf", niter=0)
+    sky = Sky(sky_data, freqs_beam, coord="mepa", niter=0)
     beam_data = jnp.ones((2, npix))
     beam = Beam(beam_data, freqs_beam, sampling="healpix", niter=0)
 
@@ -92,7 +92,7 @@ def test_simulator_freq_mismatch():
 def test_simulator_lmax_too_large():
     """Requesting lmax larger than beam/sky lmax should raise."""
     sim_data = jnp.ones((_N_FREQS, _NPIX))
-    sky = Sky(sim_data, _FREQS, coord="mcmf", niter=0)
+    sky = Sky(sim_data, _FREQS, coord="mepa", niter=0)
     beam = Beam(sim_data, _FREQS, sampling="healpix", niter=0)
 
     with pytest.raises(ValueError, match="lmax"):
@@ -214,3 +214,38 @@ def test_ground_loss_biased(vis_highres):
     true_fsky = 1 - true_fgnd
     expected_bias = -true_fgnd / true_fsky * wrong_Tgnd
     assert jnp.allclose(bias, expected_bias, rtol=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Moon simulation depends on start time (regression test for MEPA fix)
+# ---------------------------------------------------------------------------
+
+
+def test_moon_sim_depends_on_start_time():
+    """
+    For a non-uniform sky on the Moon, changing the observation start
+    time should change the visibility. This verifies that the beam
+    transform correctly captures the Moon's spin phase via the MEPA
+    frame.
+    """
+    nside = 4
+    npix = 12 * nside**2
+    freqs = jnp.array([50.0])
+    # non-uniform sky: point source at one pixel
+    sky_data = jnp.zeros((1, npix))
+    sky_data = sky_data.at[0, npix // 3].set(1.0)
+    sky = Sky(sky_data, freqs, coord="galactic", niter=0)
+    beam_data = jnp.ones((1, npix))
+    beam = Beam(beam_data, freqs, sampling="healpix", niter=0)
+
+    t0 = LunarTime("2022-01-01 00:00:00")
+    times1 = jnp.linspace(t0.jd, t0.jd + sidereal_day["moon"] / 86400, 12)
+    times2 = times1 + 7.0  # start 7 days later
+
+    sim1 = Simulator(beam, sky, times1, freqs, 0.0, 5.0, world="moon")
+    sim2 = Simulator(beam, sky, times2, freqs, 0.0, 5.0, world="moon")
+
+    vis1 = sim1.sim()
+    vis2 = sim2.sim()
+    # visibilities must differ (sky has rotated ~92° in 7 days)
+    assert not jnp.allclose(vis1, vis2, atol=1e-6)

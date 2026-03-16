@@ -60,7 +60,7 @@ def test_rotmat_to_euler():
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
 
-    rot_mat = rotations.get_rot_mat("galactic", "mcmf")
+    rot_mat = rotations.get_rot_mat("galactic", MCMF())
     eul = rotations.rotmat_to_euler(rot_mat, eulertype="ZYX")
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
@@ -69,3 +69,28 @@ def test_rotmat_to_euler():
     eul = rotations.rotmat_to_euler(rot_mat, eulertype="ZYX")
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
+
+
+def test_mepa_rotation_matrix():
+    """MEPA rotation matrix should be a proper rotation (det=+1)."""
+    R = rotations.get_mepa_rotation_matrix()
+    assert R.shape == (3, 3)
+    assert np.isclose(np.linalg.det(R), 1.0)
+    assert np.allclose(R @ R.T, np.eye(3), atol=1e-10)
+
+
+def test_topo_to_mepa_time_dependent():
+    """topo→MEPA Euler angles must change with observation time."""
+    loc = MoonLocation(lon=0, lat=40)
+    t1 = Time("2022-01-01 00:00:00")
+    t2 = Time("2022-01-15 00:00:00")
+    lmax = 4
+
+    topo1 = LunarTopo(location=loc, obstime=t1)
+    eul1, _ = rotations.topo_to_mepa_euler_dl(lmax, topo1, t1.jd)
+
+    topo2 = LunarTopo(location=loc, obstime=t2)
+    eul2, _ = rotations.topo_to_mepa_euler_dl(lmax, topo2, t2.jd)
+
+    # Euler angles should differ (Moon has rotated ~180° in 14 days)
+    assert not np.allclose(eul1, eul2)

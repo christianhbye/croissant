@@ -169,9 +169,99 @@ def generate_euler_dl(lmax, from_frame, to_frame):
     return euler, dl_array
 
 
-def _gal_to_eq_mcmf(alm, eul=None, dl_array=None, world="moon"):
+def get_mepa_rotation_matrix():
     """
-    Rotate alm from galactic to equatorial or mcmf coordinates.
+    Get the rotation matrix from J2000 to the Mean Earth / Polar Axis
+    (MEPA) frame. MEPA is an inertial frame with Z-axis along the
+    Moon's mean rotation axis and X-axis toward the mean Earth
+    direction, frozen at the J2000 epoch. It is equivalent to
+    MOON_ME evaluated at J2000.
+
+    Returns
+    -------
+    R : np.ndarray
+        The 3x3 rotation matrix from J2000 to MEPA.
+
+    """
+    import lunarsky  # noqa: F401 — triggers SPICE kernel loading
+    import spiceypy as spice
+
+    return np.array(spice.pxform("J2000", "MOON_ME", 0.0))
+
+
+def generate_euler_dl_from_rotmat(lmax, rotmat):
+    """
+    Generate Euler angles and reduced Wigner d-function values from
+    a rotation matrix.
+
+    Parameters
+    ----------
+    lmax : int
+        The maximum spherical harmonic degree.
+    rotmat : np.ndarray
+        A 3x3 rotation matrix.
+
+    Returns
+    -------
+    euler : tuple
+        The Euler angles (alpha, beta, gamma) in ZYZ convention.
+    dl_array : np.ndarray
+        The reduced Wigner d-function values.
+
+    """
+    euler = rotmat_to_eulerZYZ(rotmat)
+    dl_array = s2fft.generate_rotate_dls(lmax + 1, euler[1])
+    return euler, dl_array
+
+
+def topo_to_mepa_euler_dl(lmax, topo_frame, obstime_jd):
+    """
+    Compute the Euler angles and reduced Wigner d-function values for
+    rotating alm from a LunarTopo frame to the MEPA frame.
+
+    This transform is time-dependent because MEPA is inertial while
+    LunarTopo co-rotates with the Moon. The Moon's spin phase at the
+    observation time enters through the MCMF-to-J2000 rotation.
+
+    Parameters
+    ----------
+    lmax : int
+        The maximum spherical harmonic degree.
+    topo_frame : lunarsky.LunarTopo
+        The topocentric frame on the Moon.
+    obstime_jd : float
+        The observation time as a Julian date.
+
+    Returns
+    -------
+    euler : tuple
+        The Euler angles (alpha, beta, gamma) in ZYZ convention.
+    dl_array : np.ndarray
+        The reduced Wigner d-function values.
+
+    """
+    import lunarsky  # noqa: F401 — triggers SPICE kernel loading
+    import spiceypy as spice
+
+    # topo → MCMF (time-independent, depends only on observer location)
+    R_topo_mcmf = get_rot_mat(topo_frame, "mcmf")
+    # MCMF → J2000 at observation time (time-dependent: Moon's spin)
+    et = (obstime_jd - 2451545.0) * 86400
+    R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et))
+    # J2000 → MEPA (fixed)
+    R_j2000_mepa = get_mepa_rotation_matrix()
+    # compose: topo → MEPA
+    R_topo_mepa = R_j2000_mepa @ R_mcmf_j2000 @ R_topo_mcmf
+    return generate_euler_dl_from_rotmat(lmax, R_topo_mepa)
+
+
+def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon"):
+    """
+    Rotate alm from galactic to the simulation frame.
+
+    For Earth, the simulation frame is FK5 (equatorial).
+    For the Moon, the simulation frame is MEPA (Mean Earth / Polar
+    Axis), an inertial frame with Z-axis along the Moon's polar axis.
 
     Parameters
     ----------
@@ -179,40 +269,40 @@ def _gal_to_eq_mcmf(alm, eul=None, dl_array=None, world="moon"):
         The input alm in galactic coordinates. Last two axes should be
         the (l, m) indices. Preceding are batch dimensions.
     eul : tuple
-        The Euler angles for the galactic to equatorial transformation.
+        The Euler angles for the rotation. If not provided, they will
+        be computed on the fly.
     dl_array : jnp.ndarray
-        Precomputed reduced Wigner d-function values for the galactic
-        to equatorial transformation. If not provided, it will be
-        computed on the fly.
+        Precomputed reduced Wigner d-function values. If not provided,
+        they will be computed on the fly.
     world : {"moon", "earth"}
-        Whether to use the galactic to equatorial transformation for
-        the moon or the earth (equatorial coordinates are different for
-        the two worlds). This is ignored if eul and dl_array are
-        provided.
+        Which simulation frame to use. This is ignored if eul and
+        dl_array are provided.
 
     Returns
     -------
-    alm_eq : jnp.ndarray
-        The output alm in equatorial coordinates.
+    alm_sim : jnp.ndarray
+        The output alm in the simulation frame.
 
     """
     lmax = lmax_from_shape(alm.shape)
     if eul is None or dl_array is None:
         if world == "moon":
-            frame = "mcmf"
+            R_gal_fk5 = get_rot_mat("galactic", "fk5")
+            R_j2000_mepa = get_mepa_rotation_matrix()
+            R_gal_mepa = R_j2000_mepa @ R_gal_fk5
+            eul, dl_array = generate_euler_dl_from_rotmat(lmax, R_gal_mepa)
         elif world == "earth":
-            frame = "fk5"
+            eul, dl_array = generate_euler_dl(lmax, "galactic", "fk5")
         else:
             raise ValueError("Invalid world. Must be 'moon' or 'earth'.")
-        eul, dl_array = generate_euler_dl(lmax, "galactic", frame)
     ct = partial(
         s2fft.utils.rotation.rotate_flms,
         L=lmax + 1,
         rotation=eul,
         dl_array=dl_array,
     )
-    alm_eq = jax.vmap(ct)(alm)
-    return alm_eq
+    alm_sim = jax.vmap(ct)(alm)
+    return alm_sim
 
 
 def gal2eq(alm, eul=None, dl_array=None):
@@ -237,12 +327,13 @@ def gal2eq(alm, eul=None, dl_array=None):
         The output alm in equatorial coordinates.
 
     """
-    return _gal_to_eq_mcmf(alm, eul=eul, dl_array=dl_array, world="earth")
+    return _gal_to_sim_frame(alm, eul=eul, dl_array=dl_array, world="earth")
 
 
-def gal2mcmf(alm, eul=None, dl_array=None):
+def gal2mepa(alm, eul=None, dl_array=None):
     """
-    Rotate alm from galactic to MCMF coordinates (moon equatorial).
+    Rotate alm from galactic to MEPA coordinates (Mean Earth / Polar
+    Axis frame for the Moon).
 
     Parameters
     ----------
@@ -250,16 +341,16 @@ def gal2mcmf(alm, eul=None, dl_array=None):
         The input alm in galactic coordinates. Last two axes should be
         the (l, m) indices. Preceding are batch dimensions.
     eul : tuple
-        The Euler angles for the galactic to MCMF transformation.
+        The Euler angles for the galactic to MEPA transformation.
     dl_array : jnp.ndarray
         Precomputed reduced Wigner d-function values for the galactic
-        to MCMF transformation. If not provided, it will be
+        to MEPA transformation. If not provided, it will be
         computed on the fly.
 
     Returns
     -------
-    alm_eq : jnp.ndarray
-        The output alm in equatorial coordinates.
+    alm_mepa : jnp.ndarray
+        The output alm in MEPA coordinates.
 
     """
-    return _gal_to_eq_mcmf(alm, eul=eul, dl_array=dl_array, world="moon")
+    return _gal_to_sim_frame(alm, eul=eul, dl_array=dl_array, world="moon")

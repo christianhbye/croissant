@@ -59,7 +59,7 @@ ignore = []
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401"]
-"notebooks/*" = ["E402"]
+"notebooks/*" = ["E402", "E501"]
 "src/croissant/jax/__init__.py" = ["F403"]
 "src/croissant/alm.py" = ["F401"]
 
