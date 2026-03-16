@@ -66,7 +66,7 @@ def test_sky_alm_monopole_uniform():
 
 
 # ---------------------------------------------------------------------------
-# compute_alm_eq – rotation to equatorial / mcmf
+# compute_alm_eq – rotation to equatorial / mepa
 # ---------------------------------------------------------------------------
 
 
@@ -74,7 +74,7 @@ def test_sky_alm_monopole_uniform():
     "world,coord", [("moon", "mepa"), ("earth", "equatorial")]
 )
 def test_sky_alm_eq_native_coords_no_rotation(world, coord):
-    """Sky already in equatorial/mcmf should not be rotated."""
+    """Sky already in equatorial/mepa should not be rotated."""
     sky = _uniform_sky(coord=coord)
     alm_direct = sky.compute_alm()
     alm_eq = sky.compute_alm_eq(world=world)
@@ -83,7 +83,7 @@ def test_sky_alm_eq_native_coords_no_rotation(world, coord):
 
 @pytest.mark.parametrize("world", ["moon", "earth"])
 def test_sky_alm_eq_galactic_preserves_monopole(world):
-    """Galactic → equatorial/mcmf rotation should preserve the monopole."""
+    """Galactic → equatorial/mepa rotation should preserve the monopole."""
     sky = _uniform_sky(coord="galactic")
     alm_eq = sky.compute_alm_eq(world=world)
     l_ix, m_ix = utils.getidx(_LMAX, 0, 0)
@@ -97,8 +97,8 @@ def test_sky_alm_eq_invalid_world():
         sky.compute_alm_eq(world="mars")
 
 
-def test_sky_alm_eq_coord_world_mismatch_mcmf_earth():
-    """mcmf sky + world='earth' should raise ValueError."""
+def test_sky_alm_eq_coord_world_mismatch_mepa_earth():
+    """mepa sky + world='earth' should raise ValueError."""
     sky = _uniform_sky(coord="mepa")
     with pytest.raises(
         ValueError, match="Unsupported coordinate transformation"
