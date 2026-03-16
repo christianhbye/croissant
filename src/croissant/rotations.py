@@ -240,7 +240,7 @@ def topo_to_mepa_euler_dl(lmax, topo_frame):
     # topo → MCMF (time-independent, depends only on observer location)
     R_topo_mcmf = get_rot_mat(topo_frame, "mcmf")
     # MCMF → J2000 at observation time (time-dependent: Moon's spin)
-    et = (topo_frame.obstime.jd - 2451545.0) * 86400
+    et = (topo_frame.obstime.tdb.jd - 2451545.0) * 86400.0
     R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et))
     # J2000 → MEPA (fixed)
     R_j2000_mepa = get_mepa_rotation_matrix()
