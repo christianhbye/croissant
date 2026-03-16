@@ -71,7 +71,7 @@ def test_sky_alm_monopole_uniform():
 
 
 @pytest.mark.parametrize(
-    "world,coord", [("moon", "mcmf"), ("earth", "equatorial")]
+    "world,coord", [("moon", "mepa"), ("earth", "equatorial")]
 )
 def test_sky_alm_eq_native_coords_no_rotation(world, coord):
     """Sky already in equatorial/mcmf should not be rotated."""
@@ -99,7 +99,7 @@ def test_sky_alm_eq_invalid_world():
 
 def test_sky_alm_eq_coord_world_mismatch_mcmf_earth():
     """mcmf sky + world='earth' should raise ValueError."""
-    sky = _uniform_sky(coord="mcmf")
+    sky = _uniform_sky(coord="mepa")
     with pytest.raises(
         ValueError, match="Unsupported coordinate transformation"
     ):
@@ -127,7 +127,7 @@ def test_sky_multifreq_alm_scales_correctly():
     # sky temperature follows a power law: T ∝ freq^(-2.5)
     T = _T_SKY * (freqs / freqs[0]) ** (-2.5)
     data = T[:, None] * jnp.ones((N_freqs, _NPIX))
-    sky = Sky(data, freqs, coord="mcmf", niter=0)
+    sky = Sky(data, freqs, coord="mepa", niter=0)
     alm = sky.compute_alm()
     l_ix, m_ix = utils.getidx(_LMAX, 0, 0)
     for i, Ti in enumerate(T):

@@ -38,10 +38,10 @@ class Sky(sphere.SphBase):
             used (3 if sampling is "healpix", 0 otherwise).
 
         """
-        if coord not in {"galactic", "equatorial", "mcmf"}:
+        if coord not in {"galactic", "equatorial", "mepa"}:
             raise ValueError(
                 f"Unsupported coordinate system: {coord}. Supported systems "
-                "are {'galactic', 'equatorial', 'mcmf'}."
+                "are {'galactic', 'equatorial', 'mepa'}."
             )
         super().__init__(data, freqs, sampling, niter=niter)
         self.coord = coord
@@ -64,19 +64,19 @@ class Sky(sphere.SphBase):
     def compute_alm_eq(self, world="moon"):
         """
         Compute the spherical harmonic coefficients (alm) of the sky
-        model in equatorial coordinates.
+        model in the simulation frame.
 
         Parameters
         ---------
         world : {"moon", "earth"}
-            Which equatorial coordinate system to use. If ``world'' is
-            "moon", the alm's will be computed in the mcmf coordinate
-            system. If "earth", the alm's will be computed in the
-            equatorial coordinate system used on Earth.
+            Which simulation frame to use. If ``world'' is "moon", the
+            alm's will be computed in the MEPA (Mean Earth / Polar Axis)
+            coordinate system. If "earth", the alm's will be computed
+            in FK5 equatorial coordinates.
 
         Notes
         -----
-        This method does not support mcmf <-> equatorial
+        This method does not support mepa <-> equatorial
         transformations. If the sky model is in galactic coordinates,
         both "earth" and "moon" are possible. Otherwise, ``world'' must
         match the coordinate system of the sky model.
@@ -88,7 +88,7 @@ class Sky(sphere.SphBase):
                 "{'moon', 'earth'}."
             )
         if (
-            self.coord == "mcmf"
+            self.coord == "mepa"
             and world == "earth"
             or self.coord == "equatorial"
             and world == "moon"
@@ -104,5 +104,5 @@ class Sky(sphere.SphBase):
         if world == "earth":
             alm = rotations.gal2eq(alm)
         else:
-            alm = rotations.gal2mcmf(alm)
+            alm = rotations.gal2mepa(alm)
         return alm
