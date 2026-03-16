@@ -1,6 +1,9 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [main, 'release-please--**']
+  pull_request:
 
 jobs:
   # Run this once to fail fast if code style is wrong
