@@ -10,6 +10,6 @@ from . import alm
 
 __author__ = "Christian Hellum Bye"
 try:
-    __version__ = version("croissant")
+    __version__ = version("croissant-sim")
 except PackageNotFoundError:  # pragma: no cover
     __version__ = "unknown"
