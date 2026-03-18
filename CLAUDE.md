@@ -28,6 +28,8 @@ uv run ruff format
 uv run pre-commit install
 ```
 
+Python 3.10–3.12 only (3.13+ is experimental). Tests enable 64-bit JAX precision globally via `conftest.py`.
+
 ## Architecture
 
 All core classes inherit from `eqx.Module` (Equinox/JAX) and are JIT-compilable.
@@ -39,6 +41,14 @@ All core classes inherit from `eqx.Module` (Equinox/JAX) and are JIT-compilable.
 - **`multipair.py`** — Multi-antenna pair visibilities using `jax.vmap`.
 - **`rotations.py`** — Euler angle computation and coordinate transforms (galactic↔equatorial↔MCMF).
 - **`utils.py`** — Spherical harmonic indexing (`getidx`, `getlm`), lmax calculations, coordinate helpers.
+
+### Core Data Flow
+
+1. **Input** — Beam/Sky data on a grid `(N_freqs, theta, phi)` or HEALPix pixels
+2. **Transform** — Compute alm via `s2fft.forward` (vmapped over frequencies, `reality=True` for Hermitian symmetry)
+3. **Rotation** — Apply phase factors `exp(-i*m*φ(t))` for sky rotation with sidereal time
+4. **Convolution** — Einsum `"flm,tm,flm->tf"` over beam and sky alm → visibility `(time, frequency)`
+5. **Normalization** — Divide by beam integral (monopole mode) to recover sky temperature
 
 ### Spherical Harmonic Indexing
 
@@ -52,7 +62,9 @@ alm arrays have shape `(N_freqs, lmax+1, 2*lmax+1)` indexed as `(freq, ell, m)` 
 ## Code Style
 
 - Line length: 79 characters (ruff enforced)
+- Ruff lint rules: E, F, W, I (pycodestyle errors/warnings, pyflakes, isort)
 - NumPy-style docstrings
 - Use `eqx.field(static=True)` for non-traced fields in Module classes
+- Use `jnp` (JAX NumPy) for array operations, not `numpy`
 - Floating point comparisons in tests: `np.testing.assert_allclose`
 - Test timeout: 120s per test
