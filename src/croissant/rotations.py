@@ -207,7 +207,7 @@ def generate_euler_dl(lmax, from_frame, to_frame, et=None):
     return euler, dl_array
 
 
-@lru_cache(maxsize=None)
+@lru_cache(maxsize=1024)
 def get_mepa_rotation_matrix(et=0.0):
     """
     Get the rotation matrix from J2000 to the Mean Earth / Polar Axis
