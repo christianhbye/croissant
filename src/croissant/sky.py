@@ -29,9 +29,9 @@ class Sky(sphere.SphBase):
             "healpix".
         coord : str
             The coordinate system of the sky model data. Supported
-            systems are {"galactic", "equatorial", "mcmf"}. Default is
+            systems are {"galactic", "equatorial", "mepa"}. Default is
             "galactic". The alm's will be computed in equatorial
-            coordinates (mcmf on moon).
+            coordinates (mepa on moon).
         niter : int or None
             The number of iterations to use for the spherical harmonic
             transform. If None, the default number of iterations will be
