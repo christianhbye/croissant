@@ -269,8 +269,9 @@ def _point_source_sky(nside, freqs, ra_deg, dec_deg, flux=1.0):
 def test_beam_enu_east_direction():
     """
     A beam with peak toward East (in ENU) should see sources at East
-    more strongly than at North. This verifies the ENU-to-topo
-    conversion in compute_alm.
+    more strongly than at North. This verifies that the ENU-defined
+    beam pattern is correctly rotated into the topocentric frame via
+    the ENU/NEU handling used in the Simulator setup.
 
     The beam pattern is ``1 + 0.5 * sin(theta) * cos(phi)`` in ENU,
     where phi=0 is East. For a source at altitude ``alt`` toward East,
