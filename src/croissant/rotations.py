@@ -4,7 +4,8 @@ import jax
 import numpy as np
 import s2fft
 import spiceypy as spice
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import AltAz, SkyCoord
+from lunarsky import LunarTopo
 
 from .utils import lmax_from_shape
 
@@ -29,14 +30,7 @@ def jd_to_et(jd):
 
 def _is_topo_frame(frame):
     """Return True if frame is AltAz or LunarTopo (left-handed NEU)."""
-    from astropy.coordinates import AltAz
-
-    try:
-        from lunarsky import LunarTopo
-
-        return isinstance(frame, (AltAz, LunarTopo))
-    except ImportError:
-        return isinstance(frame, AltAz)
+    return isinstance(frame, (AltAz, LunarTopo))
 
 
 def get_rot_mat(from_frame, to_frame, et=None):
