@@ -1,7 +1,7 @@
 import healpy as hp
 import numpy as np
 from astropy.coordinates import AltAz, EarthLocation
-from lunarsky import MCMF, LunarTopo, MoonLocation, SkyCoord, Time
+from lunarsky import LunarTopo, MoonLocation, SkyCoord, Time
 
 from croissant import rotations
 
@@ -30,27 +30,23 @@ def test_get_rot_mat():
     )
     assert np.allclose(rot_mat, np.array([xp, yp, zp]))
 
-    # MCMF -> AltAz
+    # LunarTopo -> MEPA
     loc = MoonLocation(lon=0, lat=40)
-    to_frame = LunarTopo(obstime=time, location=loc)
-    rot_mat = rotations.get_rot_mat("mcmf", to_frame)
-    xp, yp, zp = (
-        SkyCoord(x=x, y=y, z=z, frame="mcmf", representation_type="cartesian")
-        .transform_to(to_frame)
-        .cartesian.xyz.value
-    )
-    assert np.allclose(rot_mat, np.array([xp, yp, zp]))
+    topo_frame = LunarTopo(obstime=time, location=loc)
+    rot_mat = rotations.get_rot_mat(topo_frame, "mepa")
+    # must be orthogonal
+    assert np.allclose(rot_mat @ rot_mat.T, np.eye(3), atol=1e-10)
+    # round-trip: to_mepa then back should give identity
+    rot_mat_inv = rotations.get_rot_mat("mepa", topo_frame)
+    assert np.allclose(rot_mat_inv @ rot_mat, np.eye(3), atol=1e-10)
 
-    # galactic -> MCMF
-    # in this case we have to invert the matrix that does MCMF -> galactic
-    # since we cannot instantiate a galactic frame from cartesian coords
-    rot_mat = rotations.get_rot_mat("galactic", MCMF())
-    xp, yp, zp = (
-        SkyCoord(x=x, y=y, z=z, frame="mcmf", representation_type="cartesian")
-        .transform_to("galactic")
-        .cartesian.xyz.value
-    )
-    assert np.allclose(rot_mat, np.array([xp, yp, zp]).T)
+    # galactic -> MEPA
+    rot_mat = rotations.get_rot_mat("galactic", "mepa")
+    assert np.isclose(np.linalg.det(rot_mat), 1.0)
+    assert np.allclose(rot_mat @ rot_mat.T, np.eye(3), atol=1e-10)
+    # round-trip
+    rot_mat_inv = rotations.get_rot_mat("mepa", "galactic")
+    assert np.allclose(rot_mat_inv @ rot_mat, np.eye(3), atol=1e-10)
 
 
 def test_rotmat_to_euler():
@@ -60,7 +56,7 @@ def test_rotmat_to_euler():
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
 
-    rot_mat = rotations.get_rot_mat("galactic", MCMF())
+    rot_mat = rotations.get_rot_mat("galactic", "mepa")
     eul = rotations.rotmat_to_euler(rot_mat, eulertype="ZYX")
     rmat = hp.rotator.get_rotation_matrix(eul)[0]
     assert np.allclose(rot_mat, rmat)
@@ -101,7 +97,7 @@ def test_topo_to_mepa_beta_constant():
     The beta Euler angle (colatitude of beam center in MEPA) should be
     the same for different observation times at the same location. This
     verifies that the MEPA epoch is set to the frame's obstime by
-    default, so the MCMF→J2000→MEPA chain cancels to topo→MCMF
+    default, so the time-dependent parts of the chain cancel out
     (time-independent).
     """
     loc = MoonLocation(lon=0, lat=40)
@@ -116,7 +112,7 @@ def test_topo_to_mepa_beta_constant():
     eul2, _ = rotations.generate_euler_dl(lmax, topo2, "mepa")
 
     # all three Euler angles should be the same because the MEPA epoch
-    # defaults to obstime, collapsing topo->MCMF->J2000->MEPA to topo->MCMF
+    # defaults to obstime, so the time-dependent parts cancel
     # compare modulo 2pi to handle branch-cut wrapping (e.g. pi vs -pi)
     twopi = 2 * np.pi
     assert np.isclose(eul1[0] % twopi, eul2[0] % twopi)

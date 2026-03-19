@@ -36,10 +36,10 @@ All core classes inherit from `eqx.Module` (Equinox/JAX) and are JIT-compilable.
 
 - **`Simulator`** (`simulator.py`) — Main orchestrator. Holds beam, sky, observer location, times, frequencies. Computes visibilities via `sim()` which calls `convolve()` (an einsum over alm coefficients). Key helper: `rot_alm_z()` handles sky rotation over time as phase factors `exp(-i*m*φ(t))`.
 - **`Beam`** (`beam.py`) — Antenna beam patterns. Inherits `SphBase`. Supports multiple sampling schemes (mwss, mw, dh, gl, healpix). Includes horizon masking and azimuthal rotation.
-- **`Sky`** (`sky.py`) — Sky models in galactic, equatorial, or MCMF coordinates. Inherits `SphBase`. Transforms between coordinate systems via Euler rotations of alm.
+- **`Sky`** (`sky.py`) — Sky models in galactic, equatorial, or MEPA coordinates. Inherits `SphBase`. Transforms between coordinate systems via Euler rotations of alm.
 - **`SphBase`** (`sphere.py`) — Base class for fields on the sphere. Manages data in various samplings, computes lmax from shape, runs spherical harmonic transforms via `s2fft`.
 - **`multipair.py`** — Multi-antenna pair visibilities using `jax.vmap`.
-- **`rotations.py`** — Euler angle computation and coordinate transforms (galactic↔equatorial↔MCMF).
+- **`rotations.py`** — Euler angle computation and coordinate transforms (galactic↔equatorial↔MEPA).
 - **`utils.py`** — Spherical harmonic indexing (`getidx`, `getlm`), lmax calculations, coordinate helpers.
 
 ### Core Data Flow
@@ -57,7 +57,7 @@ alm arrays have shape `(N_freqs, lmax+1, 2*lmax+1)` indexed as `(freq, ell, m)` 
 ### Coordinate Conventions
 
 - Theta: colatitude [0, π], Phi: longitude [0, 2π). Euler angles use ZYZ convention.
-- Supports Earth (FK5/AltAz) and Moon (MCMF/LunarTopo) observations.
+- Supports Earth (FK5/AltAz) and Moon (MEPA/LunarTopo) observations.
 
 ## Code Style
 
