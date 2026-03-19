@@ -140,6 +140,7 @@ class Simulator(eqx.Module):
     Tgnd: jax.Array  # ground temperature in K
     world: str = eqx.field(static=True)  # "earth" or "moon"
     phases: jax.Array  # precomputed phases for sky rotation
+    _et_ref: float = eqx.field(static=True)  # MEPA reference epoch
 
     def __init__(
         self,
@@ -229,10 +230,12 @@ class Simulator(eqx.Module):
             eul_topo, dl_topo = rotations.generate_euler_dl(
                 self.beam.lmax, topo, "fk5"
             )
+            self._et_ref = 0.0
         elif world == "moon":
             loc = MoonLocation(lon, lat, height=alt)
             t0 = LunarTime(times_jd[0], format="jd")
             topo = LunarTopo(location=loc, obstime=t0)
+            self._et_ref = float(rotations.jd_to_et(t0.tdb.jd))
             eul_topo, dl_topo = rotations.generate_euler_dl(
                 self.beam.lmax, topo, "mepa"
             )
@@ -308,7 +311,7 @@ class Simulator(eqx.Module):
         """
         # compute beam and sky alms in equatorial coordinates
         beam_eq_alm = self.compute_beam_eq()
-        sky_eq_alm = self.sky.compute_alm_eq(world=self.world)
+        sky_eq_alm = self.sky.compute_alm_eq(world=self.world, et=self._et_ref)
         # resize to the simulation lmax
         beam_eq_alm = utils.reduce_lmax(beam_eq_alm, self.lmax)
         sky_eq_alm = utils.reduce_lmax(sky_eq_alm, self.lmax)

@@ -61,7 +61,7 @@ class Sky(sphere.SphBase):
             niter=self._niter,
         )
 
-    def compute_alm_eq(self, world="moon"):
+    def compute_alm_eq(self, world="moon", et=None):
         """
         Compute the spherical harmonic coefficients (alm) of the sky
         model in the simulation frame.
@@ -73,6 +73,12 @@ class Sky(sphere.SphBase):
             alm's will be computed in the MEPA (Mean Earth / Polar Axis)
             coordinate system. If "earth", the alm's will be computed
             in FK5 equatorial coordinates.
+        et : float or None
+            The reference epoch for the MEPA frame as SPICE ephemeris
+            time (seconds past J2000). Only used when ``world'' is
+            "moon" and the sky is in galactic coordinates. Using the
+            observation epoch aligns the MEPA Z-axis with the Moon's
+            current rotation axis. Default is None (J2000).
 
         Notes
         -----
@@ -104,5 +110,5 @@ class Sky(sphere.SphBase):
         if world == "earth":
             alm = rotations.gal2eq(alm)
         else:
-            alm = rotations.gal2mepa(alm)
+            alm = rotations.gal2mepa(alm, et=et)
         return alm
