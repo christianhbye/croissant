@@ -1171,13 +1171,13 @@ class TestMultipair:
             pairs_cross,
         )
         vis_auto = compute_visibilities(
-            beam_pair[:1],
+            beam_pair,
             sky_alm,
             phases,
             norm_auto,
         )
         vis_cross = compute_visibilities(
-            beam_pair[:1],
+            beam_pair,
             sky_alm,
             phases,
             norm_cross,
