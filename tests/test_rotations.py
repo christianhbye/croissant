@@ -1,4 +1,5 @@
 import healpy as hp
+import jax.numpy as jnp
 import numpy as np
 from astropy.coordinates import AltAz, EarthLocation
 from lunarsky import LunarTopo, MoonLocation, SkyCoord, Time
@@ -118,3 +119,24 @@ def test_topo_to_mepa_beta_constant():
     assert np.isclose(eul1[0] % twopi, eul2[0] % twopi)
     assert np.isclose(eul1[1] % twopi, eul2[1] % twopi)
     assert np.isclose(eul1[2] % twopi, eul2[2] % twopi)
+
+
+def test_enu_to_topo():
+    """Test ENU-to-topo conversion on random alm."""
+    rng = np.random.default_rng(42)
+    lmax = 5
+    shape = (3, lmax + 1, 2 * lmax + 1)
+    alm = jnp.array(
+        rng.standard_normal(shape) + 1j * rng.standard_normal(shape)
+    )
+    emms = jnp.arange(-lmax, lmax + 1)
+
+    # beam_az_rot=0: result should be conj(alm) * exp(i*m*pi/2)
+    result0 = rotations.enu_to_topo(alm, beam_az_rot=0.0)
+    expected0 = jnp.conj(alm) * jnp.exp(1j * emms * jnp.pi / 2)
+    np.testing.assert_allclose(result0, expected0, atol=1e-12)
+
+    # beam_az_rot=90: phase cancels, so result is conj(alm)
+    result90 = rotations.enu_to_topo(alm, beam_az_rot=90.0)
+    expected90 = jnp.conj(alm)
+    np.testing.assert_allclose(result90, expected90, atol=1e-12)

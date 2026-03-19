@@ -1,6 +1,7 @@
 from functools import lru_cache, partial
 
 import jax
+import jax.numpy as jnp
 import numpy as np
 import s2fft
 import spiceypy as spice
@@ -437,3 +438,47 @@ def gal2mepa(alm, eul=None, dl_array=None, et=None):
     return _gal_to_sim_frame(
         alm, eul=eul, dl_array=dl_array, world="moon", et=et
     )
+
+
+def enu_to_topo(alm, beam_az_rot=0.0):
+    """
+    Convert beam alm from ENU convention to topocentric (AltAz /
+    LunarTopo) convention.
+
+    HFSS/FEKO antenna beams use ENU coordinates (X=East, Y=North,
+    Z=Up, phi counterclockwise E->N->W->S). Astropy's AltAz and
+    lunarsky's LunarTopo use NEU (X=North, Y=East, Z=Up, phi
+    N->E->S->W). The relationship ``phi_topo = pi/2 - phi_ENU`` is
+    a reflection + shift and **cannot** be achieved with a proper
+    rotation (det = +1), so it cannot be handled by ``get_rot_mat``
+    or Euler angles. Instead it must be applied directly to the alm
+    as ``conj(alm) * exp(i * m * (pi/2 - rad(beam_az_rot)))``.
+
+    Parameters
+    ----------
+    alm : jax.Array
+        Spherical harmonic coefficients in ENU convention. The last
+        axis has size ``2 * lmax + 1`` and corresponds to the
+        m-values from ``-lmax`` to ``+lmax``.
+    beam_az_rot : float
+        Angle from East to the beam X-axis, in degrees, measured
+        counter-clockwise. Default is 0 (beam X-axis points East).
+
+    Returns
+    -------
+    alm_topo : jax.Array
+        Spherical harmonic coefficients in the topocentric (AltAz /
+        LunarTopo) convention.
+
+    Notes
+    -----
+    The conjugation flips the sign of phi (reflection), and the
+    ``exp(i * m * pi/2)`` shifts the origin from East to North.
+    The ``beam_az_rot`` term accounts for the angle between the
+    beam X-axis and East in the ENU frame.
+
+    """
+    lmax = (alm.shape[-1] - 1) // 2
+    emms = jnp.arange(-lmax, lmax + 1)
+    phase = jnp.exp(1j * emms * (jnp.pi / 2 - jnp.radians(beam_az_rot)))
+    return jnp.conj(alm) * phase

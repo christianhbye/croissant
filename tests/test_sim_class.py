@@ -1,8 +1,11 @@
 """Tests for the Simulator class."""
 
+import astropy.units as u
+import healpy as hp
 import jax.numpy as jnp
 import numpy as np
 import pytest
+from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time as AstroTime
 from lunarsky import Time as LunarTime
 
@@ -249,3 +252,97 @@ def test_moon_sim_depends_on_start_time():
     vis2 = sim2.sim()
     # visibilities must differ (sky has rotated ~92° in 7 days)
     assert not jnp.allclose(vis1, vis2, atol=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# ENU beam orientation: East-peaked beam should see East sources stronger
+# ---------------------------------------------------------------------------
+
+
+def _point_source_sky(nside, freqs, ra_deg, dec_deg, flux=1.0):
+    """Create a HEALPix sky with a single point source."""
+    npix = 12 * nside**2
+    pix = hp.ang2pix(nside, ra_deg, dec_deg, lonlat=True)
+    sky_data = jnp.zeros((len(freqs), npix))
+    sky_data = sky_data.at[:, pix].set(flux)
+    return sky_data
+
+
+def test_beam_enu_east_direction():
+    """
+    A beam with peak toward East (in ENU) should see sources at East
+    more strongly than at North. This verifies the ENU-to-topo
+    conversion in compute_alm.
+
+    The beam pattern is ``1 + 0.5 * sin(theta) * cos(phi)`` in ENU,
+    where phi=0 is East. For a source at altitude ``alt`` toward East,
+    the beam value is ``1 + 0.5 * cos(alt)``. Toward North the
+    cos(phi) term vanishes, giving beam = 1.
+    """
+    nside = 16
+    npix = 12 * nside**2
+    freqs = jnp.array([75.0])
+
+    # Beam: 1 + 0.5*sin(theta)*cos(phi) in ENU convention
+    theta, phi = hp.pix2ang(nside, np.arange(npix))
+    beam_data = 1.0 + 0.5 * np.sin(theta) * np.cos(phi)
+    beam_data = jnp.array(beam_data[None, :])  # (1, npix)
+    beam = Beam(beam_data, freqs, sampling="healpix", niter=3)
+
+    # Observer on Earth
+    lon, lat = 0.0, 45.0
+    t0 = AstroTime("2022-06-21 00:00:00")
+    loc = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
+    altaz_frame = AltAz(obstime=t0, location=loc)
+
+    alt_deg = 45.0
+    # East source (az=90 in AltAz)
+    east_eq = SkyCoord(
+        alt=alt_deg * u.deg, az=90 * u.deg, frame=altaz_frame
+    ).transform_to("fk5")
+    # North source (az=0 in AltAz)
+    north_eq = SkyCoord(
+        alt=alt_deg * u.deg, az=0 * u.deg, frame=altaz_frame
+    ).transform_to("fk5")
+
+    sky_east = Sky(
+        _point_source_sky(nside, freqs, east_eq.ra.deg, east_eq.dec.deg),
+        freqs,
+        coord="equatorial",
+        niter=3,
+    )
+    sky_north = Sky(
+        _point_source_sky(nside, freqs, north_eq.ra.deg, north_eq.dec.deg),
+        freqs,
+        coord="equatorial",
+        niter=3,
+    )
+
+    times_jd = jnp.array([t0.jd, t0.jd + 1.0 / 86400])
+    sim_east = Simulator(
+        beam,
+        sky_east,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        world="earth",
+        Tgnd=0.0,
+    )
+    sim_north = Simulator(
+        beam,
+        sky_north,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        world="earth",
+        Tgnd=0.0,
+    )
+
+    vis_east = sim_east.sim()[0, 0]
+    vis_north = sim_north.sim()[0, 0]
+
+    alt_rad = np.radians(alt_deg)
+    expected_ratio = (1 + 0.5 * np.cos(alt_rad)) / 1.0
+    np.testing.assert_allclose(vis_east / vis_north, expected_ratio, rtol=0.15)

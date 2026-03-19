@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 import s2fft
 
-from . import sphere
+from . import rotations, sphere
 
 
 class Beam(sphere.SphBase):
@@ -22,8 +22,12 @@ class Beam(sphere.SphBase):
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
-        coordinates and associated metadata. The beam must be defined
-        on the grid specified by the `sampling` scheme.
+        coordinates and associated metadata. The beam data is assumed
+        to be in ENU convention (X=East, Y=North, Z=Up, phi=0 along
+        the beam X-axis, phi increases counter-clockwise).
+        ``compute_alm`` converts from ENU to topocentric convention
+        internally via ``rotations.enu_to_topo``. The beam must be
+        defined on the grid specified by the `sampling` scheme.
 
         Parameters
         ----------
@@ -171,8 +175,6 @@ class Beam(sphere.SphBase):
             nside=self.nside,
             niter=self._niter,
         )
-        # apply the azimuthal rotation (no-op when beam_az_rot == 0)
-        emms = jnp.arange(-self.lmax, self.lmax + 1)
-        phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
-        alm = alm * phase[None, None, :]  # add freq/ell axes
+        # convert from ENU to topocentric (AltAz / LunarTopo)
+        alm = rotations.enu_to_topo(alm, self.beam_az_rot)
         return alm
