@@ -1,5 +1,23 @@
 # Changelog
 
+## [5.1.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.0...croissant-sim-v5.1.1) (2026-03-19)
+
+
+### Bug Fixes
+
+* add mepa et parameter ([7bb4651](https://github.com/christianhbye/croissant/commit/7bb46518ab85462448199971865cc27c5d5c70c5))
+* cap cache maxsize ([0661eb2](https://github.com/christianhbye/croissant/commit/0661eb2724abe2499269c1a10f9db3873cb17fdb))
+
+
+### Documentation
+
+* fix docstring quote ([311c57b](https://github.com/christianhbye/croissant/commit/311c57bf9ac700c2185ea968aa8e73318192330b))
+* fix notebooks with new code ([58611bf](https://github.com/christianhbye/croissant/commit/58611bf839f0a1c2f932eb3d0aa0c8b8d6450020))
+* replace mcmf with mepa in docstring ([277208e](https://github.com/christianhbye/croissant/commit/277208e336d8ded6ae49217ebcbfaed99f1ca212))
+* update claude.md ([e653aaa](https://github.com/christianhbye/croissant/commit/e653aaad1bc5628647500cd3075ca0ee39983969))
+* update example notebooks with mepa frame code ([3d9e0e8](https://github.com/christianhbye/croissant/commit/3d9e0e8b6b5406e9426e34c980f3d8f6d615b6d0))
+* update notebooks ([ae674d6](https://github.com/christianhbye/croissant/commit/ae674d6ec4460a0aa7e018370ba0aa3690f5eb36))
+
 ## [5.1.0](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.0.0...croissant-sim-v5.1.0) (2026-03-16)
 
 
