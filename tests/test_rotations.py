@@ -94,3 +94,28 @@ def test_topo_to_mepa_time_dependent():
 
     # Euler angles should differ (Moon has rotated ~180° in 14 days)
     assert not np.allclose(eul1, eul2)
+
+
+def test_topo_to_mepa_beta_constant():
+    """
+    The beta Euler angle (colatitude of beam center in MEPA) should be
+    the same for different observation times at the same location. This
+    verifies that the MEPA epoch is set to the frame's obstime by
+    default, so the MCMF→J2000→MEPA chain cancels to topo→MCMF
+    (time-independent).
+    """
+    loc = MoonLocation(lon=0, lat=40)
+    t1 = Time("2022-01-01 00:00:00")
+    t2 = Time("2022-01-15 00:00:00")
+    lmax = 4
+
+    topo1 = LunarTopo(location=loc, obstime=t1)
+    eul1, _ = rotations.generate_euler_dl(lmax, topo1, "mepa")
+
+    topo2 = LunarTopo(location=loc, obstime=t2)
+    eul2, _ = rotations.generate_euler_dl(lmax, topo2, "mepa")
+
+    # alpha and gamma should differ (Moon has rotated)
+    assert not np.isclose(eul1[0], eul2[0]) or not np.isclose(eul1[2], eul2[2])
+    # beta should be the same (observer latitude determines colatitude)
+    assert np.isclose(eul1[1], eul2[1])

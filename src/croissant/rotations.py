@@ -9,7 +9,25 @@ from astropy.coordinates import SkyCoord
 from .utils import lmax_from_shape
 
 
-def get_rot_mat(from_frame, to_frame):
+def jd_to_et(jd):
+    """
+    Convert a Julian Date to SPICE ephemeris time (seconds past J2000).
+
+    Parameters
+    ----------
+    jd : float
+        Julian Date (e.g. from ``astropy.time.Time.tdb.jd``).
+
+    Returns
+    -------
+    et : float
+        Ephemeris time in seconds past J2000.
+
+    """
+    return (jd - 2451545.0) * 86400.0
+
+
+def get_rot_mat(from_frame, to_frame, et=None):
     """
     Get the rotation matrix that transforms from one frame to another.
 
@@ -19,6 +37,11 @@ def get_rot_mat(from_frame, to_frame):
         The coordinate frame to transform from.
     to_frame : str or astropy frame
         The coordinate frame to transform to.
+    et : float or None
+        The reference epoch for the MEPA frame as SPICE ephemeris time
+        (seconds past J2000). Only used when one of the frames is
+        MEPA. Default is None (see ``_rot_mat_to_mepa`` for default
+        behavior).
 
     Returns
     -------
@@ -36,9 +59,9 @@ def get_rot_mat(from_frame, to_frame):
         to_name = to_frame
     # MEPA is not a standard astropy/lunarsky frame, handle separately
     if to_name.lower() == "mepa":
-        return _rot_mat_to_mepa(from_frame)
+        return _rot_mat_to_mepa(from_frame, et=et)
     if from_name.lower() == "mepa":
-        return _rot_mat_to_mepa(to_frame).T
+        return _rot_mat_to_mepa(to_frame, et=et).T
     # skycoord does not support galactic -> cartesian, do the inverse
     if from_name.lower() == "galactic":
         from_frame = to_frame
@@ -151,7 +174,7 @@ def rotmat_to_eulerZYZ(mat):
     return eul
 
 
-def generate_euler_dl(lmax, from_frame, to_frame):
+def generate_euler_dl(lmax, from_frame, to_frame, et=None):
     """
     Generate the Euler angles and reduced Wigner d-function values for a
     coordinate transformation.
@@ -164,6 +187,11 @@ def generate_euler_dl(lmax, from_frame, to_frame):
         The coordinate system of the input alm.
     to_frame : str or astropy frame
         The coordinate system of the output alm.
+    et : float or None
+        The reference epoch for the MEPA frame as SPICE ephemeris time
+        (seconds past J2000). Only used when one of the frames is
+        MEPA. Default is None (see ``_rot_mat_to_mepa`` for default
+        behavior).
 
     Returns
     -------
@@ -173,20 +201,27 @@ def generate_euler_dl(lmax, from_frame, to_frame):
         The reduced Wigner d-function values for the coordinate transformation.
 
     """
-    rmat = get_rot_mat(from_frame, to_frame)
+    rmat = get_rot_mat(from_frame, to_frame, et=et)
     euler = rotmat_to_euler(rmat, eulertype="ZYZ")
     dl_array = s2fft.generate_rotate_dls(lmax + 1, euler[1])
     return euler, dl_array
 
 
 @lru_cache(maxsize=None)
-def get_mepa_rotation_matrix():
+def get_mepa_rotation_matrix(et=0.0):
     """
     Get the rotation matrix from J2000 to the Mean Earth / Polar Axis
     (MEPA) frame. MEPA is an inertial frame with Z-axis along the
-    Moon's mean rotation axis and X-axis toward the mean Earth
-    direction, frozen at the J2000 epoch. It is equivalent to
-    MOON_ME evaluated at J2000.
+    Moon's rotation axis, frozen at a reference epoch. It is
+    equivalent to MOON_ME evaluated at the given epoch.
+
+    Parameters
+    ----------
+    et : float
+        The reference epoch as SPICE ephemeris time (seconds past
+        J2000). Default is 0.0 (J2000). Using the observation epoch
+        aligns the MEPA Z-axis with the Moon's current rotation axis,
+        which makes the ``rot_alm_z`` time-evolution exact.
 
     Returns
     -------
@@ -194,10 +229,10 @@ def get_mepa_rotation_matrix():
         The 3x3 rotation matrix from J2000 to MEPA.
 
     """
-    return np.array(spice.pxform("J2000", "MOON_ME", 0.0))
+    return np.array(spice.pxform("J2000", "MOON_ME", et))
 
 
-def _rot_mat_to_mepa(from_frame):
+def _rot_mat_to_mepa(from_frame, et=None):
     """
     Compute the rotation matrix from ``from_frame`` to MEPA.
 
@@ -210,6 +245,11 @@ def _rot_mat_to_mepa(from_frame):
     ----------
     from_frame : str or astropy frame
         The source coordinate frame.
+    et : float or None
+        The reference epoch for the MEPA frame as SPICE ephemeris time
+        (seconds past J2000). For LunarTopo frames, defaults to the
+        frame's observation time. For other frames, defaults to 0.0
+        (J2000).
 
     Returns
     -------
@@ -217,7 +257,6 @@ def _rot_mat_to_mepa(from_frame):
         The 3x3 rotation matrix from ``from_frame`` to MEPA.
 
     """
-    R_j2000_mepa = get_mepa_rotation_matrix()
     try:
         name = from_frame.name
     except AttributeError:
@@ -225,12 +264,18 @@ def _rot_mat_to_mepa(from_frame):
     if name.lower() == "lunartopo":
         # topo -> MCMF (depends only on observer location)
         R_from_mcmf = get_rot_mat(from_frame, "mcmf")
-        # MCMF -> J2000 at observation time (time-dependent)
-        et = (from_frame.obstime.tdb.jd - 2451545.0) * 86400.0
-        R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et))
+        # MCMF -> J2000 always uses the frame's observation time
+        et_obs = jd_to_et(from_frame.obstime.tdb.jd)
+        R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et_obs))
+        # J2000 -> MEPA uses the reference epoch (default: obs time)
+        et_mepa = et if et is not None else et_obs
+        R_j2000_mepa = get_mepa_rotation_matrix(et_mepa)
         return R_j2000_mepa @ R_mcmf_j2000 @ R_from_mcmf
     else:
         # frame -> FK5/J2000 -> MEPA
+        if et is None:
+            et = 0.0
+        R_j2000_mepa = get_mepa_rotation_matrix(et)
         R_from_j2000 = get_rot_mat(from_frame, "fk5")
         return R_j2000_mepa @ R_from_j2000
 
@@ -286,7 +331,7 @@ def topo_to_mepa_euler_dl(lmax, topo_frame):
     return generate_euler_dl(lmax, topo_frame, "mepa")
 
 
-def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon"):
+def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon", et=None):
     """
     Rotate alm from galactic to the simulation frame.
 
@@ -308,6 +353,10 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon"):
     world : {"moon", "earth"}
         Which simulation frame to use. This is ignored if eul and
         dl_array are provided.
+    et : float or None
+        The reference epoch for the MEPA frame as SPICE ephemeris time
+        (seconds past J2000). Only used when ``world`` is "moon" and
+        eul/dl_array are not provided. Default is None (J2000).
 
     Returns
     -------
@@ -318,7 +367,7 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon"):
     lmax = lmax_from_shape(alm.shape)
     if eul is None or dl_array is None:
         if world == "moon":
-            eul, dl_array = generate_euler_dl(lmax, "galactic", "mepa")
+            eul, dl_array = generate_euler_dl(lmax, "galactic", "mepa", et=et)
         elif world == "earth":
             eul, dl_array = generate_euler_dl(lmax, "galactic", "fk5")
         else:
@@ -358,7 +407,7 @@ def gal2eq(alm, eul=None, dl_array=None):
     return _gal_to_sim_frame(alm, eul=eul, dl_array=dl_array, world="earth")
 
 
-def gal2mepa(alm, eul=None, dl_array=None):
+def gal2mepa(alm, eul=None, dl_array=None, et=None):
     """
     Rotate alm from galactic to MEPA coordinates (Mean Earth / Polar
     Axis frame for the Moon).
@@ -374,6 +423,10 @@ def gal2mepa(alm, eul=None, dl_array=None):
         Precomputed reduced Wigner d-function values for the galactic
         to MEPA transformation. If not provided, it will be
         computed on the fly.
+    et : float or None
+        The reference epoch for the MEPA frame as SPICE ephemeris time
+        (seconds past J2000). Only used when eul/dl_array are not
+        provided. Default is None (J2000).
 
     Returns
     -------
@@ -381,4 +434,6 @@ def gal2mepa(alm, eul=None, dl_array=None):
         The output alm in MEPA coordinates.
 
     """
-    return _gal_to_sim_frame(alm, eul=eul, dl_array=dl_array, world="moon")
+    return _gal_to_sim_frame(
+        alm, eul=eul, dl_array=dl_array, world="moon", et=et
+    )
