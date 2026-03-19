@@ -320,24 +320,24 @@ def test_beam_enu_east_direction():
 
     times_jd = jnp.array([t0.jd])
     sim_east = Simulator(
-    beam,
-    sky_east,
-    times_jd,
-    freqs,
-    lon,
-    lat,
-    world="earth",
-    Tgnd=0.0,
+        beam,
+        sky_east,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        world="earth",
+        Tgnd=0.0,
     )
     sim_north = Simulator(
-    beam,
-    sky_north,
-    times_jd,
-    freqs,
-    lon,
-    lat,
-    world="earth",
-    Tgnd=0.0,
+        beam,
+        sky_north,
+        times_jd,
+        freqs,
+        lon,
+        lat,
+        world="earth",
+        Tgnd=0.0,
     )
 
     vis_east = sim_east.sim()[0, 0]
