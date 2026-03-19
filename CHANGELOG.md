@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.1.2](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.1...croissant-sim-v5.1.2) (2026-03-19)
+
+
+### Bug Fixes
+
+* swap NEU→ENU axes in get_rot_mat for topocentric frames ([#110](https://github.com/christianhbye/croissant/issues/110)) ([1b0902e](https://github.com/christianhbye/croissant/commit/1b0902ebb8cc0aedab3460ac888d525829aae965))
+
 ## [5.1.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.0...croissant-sim-v5.1.1) (2026-03-19)
 
 
