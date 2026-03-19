@@ -1188,10 +1188,11 @@ class TestMultipair:
             rtol=1e-10,
         )
 
-    def test_cross_dipole_time_shift(self, freqs, lmax):
+    def test_dipole_azimuth_rotation_time_shift(self, freqs, lmax):
         """
         A beam rotated 90° in azimuth produces a visibility that
-        is time-shifted by a quarter sidereal day.
+        is time-shifted by a quarter sidereal day, when compared
+        to the visibility from the unrotated beam.
         """
         world = "earth"
         n_times = 24  # must be divisible by 4
@@ -1235,19 +1236,19 @@ class TestMultipair:
             shape,
         ).copy()
 
-        # Compute both visibilities via multipair
+        # Compute auto-visibilities for each beam orientation via multipair
         beams = jnp.stack([beam_0, beam_90], axis=0)
         vis = multi_convolve(beams, sky_alm, phases)
-        # vis shape: (2, N_times, N_freqs)
-        vis_0 = vis[0]
-        vis_90 = vis[1]
+        # vis shape: (2, N_times, N_freqs); index 0/1 are not cross-correlations
+        vis_beam_0 = vis[0]
+        vis_beam_90 = vis[1]
 
-        # vis_90(t) should equal vis_0(t + T_sid/4)
-        # i.e., vis_90 is vis_0 shifted by n_times/4 = 6 steps
+        # vis_beam_90(t) should equal vis_beam_0(t + T_sid/4)
+        # i.e., vis_beam_90 is vis_beam_0 shifted by n_times/4 = 6 steps
         shift = n_times // 4
-        vis_0_shifted = jnp.roll(vis_0, -shift, axis=0)
+        vis_beam_0_shifted = jnp.roll(vis_beam_0, -shift, axis=0)
         np.testing.assert_allclose(
-            vis_90,
-            vis_0_shifted,
+            vis_beam_90,
+            vis_beam_0_shifted,
             rtol=1e-10,
         )
