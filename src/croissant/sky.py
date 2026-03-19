@@ -69,13 +69,13 @@ class Sky(sphere.SphBase):
         Parameters
         ---------
         world : {"moon", "earth"}
-            Which simulation frame to use. If ``world'' is "moon", the
+            Which simulation frame to use. If ``world`` is "moon", the
             alm's will be computed in the MEPA (Mean Earth / Polar Axis)
             coordinate system. If "earth", the alm's will be computed
             in FK5 equatorial coordinates.
         et : float or None
             The reference epoch for the MEPA frame as SPICE ephemeris
-            time (seconds past J2000). Only used when ``world'' is
+            time (seconds past J2000). Only used when ``world`` is
             "moon" and the sky is in galactic coordinates. Using the
             observation epoch aligns the MEPA Z-axis with the Moon's
             current rotation axis. Default is None (J2000).
@@ -84,7 +84,7 @@ class Sky(sphere.SphBase):
         -----
         This method does not support mepa <-> equatorial
         transformations. If the sky model is in galactic coordinates,
-        both "earth" and "moon" are possible. Otherwise, ``world'' must
+        both "earth" and "moon" are possible. Otherwise, ``world`` must
         match the coordinate system of the sky model.
 
         """
