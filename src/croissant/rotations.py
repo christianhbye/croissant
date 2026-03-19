@@ -27,6 +27,18 @@ def jd_to_et(jd):
     return (jd - 2451545.0) * 86400.0
 
 
+def _is_topo_frame(frame):
+    """Return True if frame is AltAz or LunarTopo (left-handed NEU)."""
+    from astropy.coordinates import AltAz
+
+    try:
+        from lunarsky import LunarTopo
+
+        return isinstance(frame, (AltAz, LunarTopo))
+    except ImportError:
+        return isinstance(frame, AltAz)
+
+
 def get_rot_mat(from_frame, to_frame, et=None):
     """
     Get the rotation matrix that transforms from one frame to another.
@@ -74,6 +86,14 @@ def get_rot_mat(from_frame, to_frame, et=None):
         x=x, y=y, z=z, frame=from_frame, representation_type="cartesian"
     )
     rmat = sc.transform_to(to_frame).cartesian.xyz.value
+    # AltAz/LunarTopo use left-handed NEU Cartesian (x=North, y=East,
+    # z=Up).  Swap x<->y so that get_rot_mat always uses the
+    # right-handed ENU convention (x=East, y=North, z=Up), keeping
+    # det = +1.
+    if _is_topo_frame(from_frame):
+        rmat = rmat[:, [1, 0, 2]]
+    if _is_topo_frame(to_frame):
+        rmat = rmat[[1, 0, 2], :]
     if return_inv:
         rmat = rmat.T
     return rmat
