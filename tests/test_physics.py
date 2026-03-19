@@ -42,12 +42,12 @@ _NPIX = 12 * _NSIDE**2
 _N_TIMES = 24
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def freqs():
     return jnp.linspace(50.0, 250.0, 5)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def times_jd_earth():
     t0 = AstroTime("2022-01-01 00:00:00")
     return jnp.linspace(
@@ -58,7 +58,7 @@ def times_jd_earth():
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def times_jd_moon():
     t0 = LunarTime("2022-01-01 00:00:00")
     return jnp.linspace(
@@ -69,23 +69,23 @@ def times_jd_moon():
     )
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def nside():
     return _NSIDE
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def lmax():
     return _LMAX
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def isotropic_beam(freqs):
     data = jnp.ones((len(freqs), _NPIX))
     return Beam(data, freqs, sampling="healpix", niter=0)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def monopole_sky(freqs):
     tsky = 1e4 * (freqs / 150.0) ** (-2.5)
     data = tsky[:, None] * jnp.ones((_NPIX,))
@@ -1239,7 +1239,7 @@ class TestMultipair:
         # Compute auto-visibilities for each beam orientation via multipair
         beams = jnp.stack([beam_0, beam_90], axis=0)
         vis = multi_convolve(beams, sky_alm, phases)
-        # vis shape: (2, N_times, N_freqs); index 0/1 are not cross-correlations
+        # vis shape: (2, N_times, N_freqs); index 0/1 are not cross
         vis_beam_0 = vis[0]
         vis_beam_90 = vis[1]
 
