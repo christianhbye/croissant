@@ -116,6 +116,6 @@ def test_topo_to_mepa_beta_constant():
     eul2, _ = rotations.generate_euler_dl(lmax, topo2, "mepa")
 
     # alpha and gamma should differ (Moon has rotated)
-    assert not np.isclose(eul1[0], eul2[0]) or not np.isclose(eul1[2], eul2[2])
+    assert not np.isclose(eul1[0], eul2[0]) and not np.isclose(eul1[2], eul2[2])
     # beta should be the same (observer latitude determines colatitude)
     assert np.isclose(eul1[1], eul2[1])
