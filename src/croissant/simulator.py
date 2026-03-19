@@ -233,8 +233,8 @@ class Simulator(eqx.Module):
             loc = MoonLocation(lon, lat, height=alt)
             t0 = LunarTime(times_jd[0], format="jd")
             topo = LunarTopo(location=loc, obstime=t0)
-            eul_topo, dl_topo = rotations.topo_to_mepa_euler_dl(
-                self.beam.lmax, topo
+            eul_topo, dl_topo = rotations.generate_euler_dl(
+                self.beam.lmax, topo, "mepa"
             )
         else:
             raise ValueError("`world` must be either 'earth' or 'moon'.")

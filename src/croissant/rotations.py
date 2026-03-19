@@ -30,6 +30,15 @@ def get_rot_mat(from_frame, to_frame):
         from_name = from_frame.name
     except AttributeError:
         from_name = from_frame
+    try:
+        to_name = to_frame.name
+    except AttributeError:
+        to_name = to_frame
+    # MEPA is not a standard astropy/lunarsky frame, handle separately
+    if to_name.lower() == "mepa":
+        return _rot_mat_to_mepa(from_frame)
+    if from_name.lower() == "mepa":
+        return _rot_mat_to_mepa(to_frame).T
     # skycoord does not support galactic -> cartesian, do the inverse
     if from_name.lower() == "galactic":
         from_frame = to_frame
@@ -188,6 +197,44 @@ def get_mepa_rotation_matrix():
     return np.array(spice.pxform("J2000", "MOON_ME", 0.0))
 
 
+def _rot_mat_to_mepa(from_frame):
+    """
+    Compute the rotation matrix from ``from_frame`` to MEPA.
+
+    For lunar topocentric frames (LunarTopo), this composes
+    topo -> MCMF -> J2000 -> MEPA using the observation time from
+    the frame. For other frames (galactic, fk5, etc.), it composes
+    frame -> FK5/J2000 -> MEPA.
+
+    Parameters
+    ----------
+    from_frame : str or astropy frame
+        The source coordinate frame.
+
+    Returns
+    -------
+    rmat : np.ndarray
+        The 3x3 rotation matrix from ``from_frame`` to MEPA.
+
+    """
+    R_j2000_mepa = get_mepa_rotation_matrix()
+    try:
+        name = from_frame.name
+    except AttributeError:
+        name = from_frame
+    if name.lower() == "lunartopo":
+        # topo -> MCMF (depends only on observer location)
+        R_from_mcmf = get_rot_mat(from_frame, "mcmf")
+        # MCMF -> J2000 at observation time (time-dependent)
+        et = (from_frame.obstime.tdb.jd - 2451545.0) * 86400.0
+        R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et))
+        return R_j2000_mepa @ R_mcmf_j2000 @ R_from_mcmf
+    else:
+        # frame -> FK5/J2000 -> MEPA
+        R_from_j2000 = get_rot_mat(from_frame, "fk5")
+        return R_j2000_mepa @ R_from_j2000
+
+
 def generate_euler_dl_from_rotmat(lmax, rotmat):
     """
     Generate Euler angles and reduced Wigner d-function values from
@@ -218,10 +265,8 @@ def topo_to_mepa_euler_dl(lmax, topo_frame):
     Compute the Euler angles and reduced Wigner d-function values for
     rotating alm from a LunarTopo frame to the MEPA frame.
 
-    This transform is time-dependent because MEPA is inertial while
-    LunarTopo co-rotates with the Moon. The Moon's spin phase at the
-    observation time enters through the MCMF-to-J2000 rotation.
-    The observation time is taken from ``topo_frame.obstime``.
+    This is a convenience wrapper around
+    ``generate_euler_dl(lmax, topo_frame, "mepa")``.
 
     Parameters
     ----------
@@ -238,16 +283,7 @@ def topo_to_mepa_euler_dl(lmax, topo_frame):
         The reduced Wigner d-function values.
 
     """
-    # topo → MCMF (time-independent, depends only on observer location)
-    R_topo_mcmf = get_rot_mat(topo_frame, "mcmf")
-    # MCMF → J2000 at observation time (time-dependent: Moon's spin)
-    et = (topo_frame.obstime.tdb.jd - 2451545.0) * 86400.0
-    R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et))
-    # J2000 → MEPA (fixed)
-    R_j2000_mepa = get_mepa_rotation_matrix()
-    # compose: topo → MEPA
-    R_topo_mepa = R_j2000_mepa @ R_mcmf_j2000 @ R_topo_mcmf
-    return generate_euler_dl_from_rotmat(lmax, R_topo_mepa)
+    return generate_euler_dl(lmax, topo_frame, "mepa")
 
 
 def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon"):
@@ -282,10 +318,7 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon"):
     lmax = lmax_from_shape(alm.shape)
     if eul is None or dl_array is None:
         if world == "moon":
-            R_gal_fk5 = get_rot_mat("galactic", "fk5")
-            R_j2000_mepa = get_mepa_rotation_matrix()
-            R_gal_mepa = R_j2000_mepa @ R_gal_fk5
-            eul, dl_array = generate_euler_dl_from_rotmat(lmax, R_gal_mepa)
+            eul, dl_array = generate_euler_dl(lmax, "galactic", "mepa")
         elif world == "earth":
             eul, dl_array = generate_euler_dl(lmax, "galactic", "fk5")
         else:
