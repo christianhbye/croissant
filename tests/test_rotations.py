@@ -115,8 +115,10 @@ def test_topo_to_mepa_beta_constant():
     topo2 = LunarTopo(location=loc, obstime=t2)
     eul2, _ = rotations.generate_euler_dl(lmax, topo2, "mepa")
 
-    # alpha and gamma should differ (Moon has rotated)
-    assert not np.isclose(eul1[0], eul2[0])
-    assert not np.isclose(eul1[2], eul2[2])
-    # beta should be the same (observer latitude determines colatitude)
-    assert np.isclose(eul1[1], eul2[1])
+    # all three Euler angles should be the same because the MEPA epoch
+    # defaults to obstime, collapsing topo->MCMF->J2000->MEPA to topo->MCMF
+    # compare modulo 2pi to handle branch-cut wrapping (e.g. pi vs -pi)
+    twopi = 2 * np.pi
+    assert np.isclose(eul1[0] % twopi, eul2[0] % twopi)
+    assert np.isclose(eul1[1] % twopi, eul2[1] % twopi)
+    assert np.isclose(eul1[2] % twopi, eul2[2] % twopi)
