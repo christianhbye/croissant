@@ -17,24 +17,37 @@ def test_get_rot_mat():
     rot = hp.Rotator(coord=["C", "G"])
     assert np.allclose(rot_mat, rot.mat)
 
-    # check that we agree with astropy for equatorial -> AltAz
+    # equatorial -> AltAz: det must be +1 (ENU swap fixes NEU
+    # handedness).  Astropy's FK5->AltAz includes aberration so the
+    # matrix is not perfectly orthogonal (~1e-4); we only check det
+    # and the row-swap relationship to the raw SkyCoord output.
     time = Time("2022-06-16 17:00:00")
     loc = EarthLocation(lon=0, lat=40)
     to_frame = AltAz(obstime=time, location=loc)
     rot_mat = rotations.get_rot_mat("fk5", to_frame)
+    assert np.isclose(np.linalg.det(rot_mat), 1.0, atol=1e-6)
+    # verify relationship to raw SkyCoord (NEU): our matrix has
+    # swapped rows compared to the raw NEU-based SkyCoord result
     x, y, z = np.eye(3)
-    xp, yp, zp = (
-        SkyCoord(x=x, y=y, z=z, frame="fk5", representation_type="cartesian")
+    raw = (
+        SkyCoord(
+            x=x,
+            y=y,
+            z=z,
+            frame="fk5",
+            representation_type="cartesian",
+        )
         .transform_to(to_frame)
         .cartesian.xyz.value
     )
-    assert np.allclose(rot_mat, np.array([xp, yp, zp]))
+    assert np.allclose(rot_mat, raw[[1, 0, 2], :])
 
     # LunarTopo -> MEPA
     loc = MoonLocation(lon=0, lat=40)
     topo_frame = LunarTopo(obstime=time, location=loc)
     rot_mat = rotations.get_rot_mat(topo_frame, "mepa")
-    # must be orthogonal
+    # must be a proper rotation (det = +1) and orthogonal
+    assert np.isclose(np.linalg.det(rot_mat), 1.0)
     assert np.allclose(rot_mat @ rot_mat.T, np.eye(3), atol=1e-10)
     # round-trip: to_mepa then back should give identity
     rot_mat_inv = rotations.get_rot_mat("mepa", topo_frame)
@@ -76,17 +89,22 @@ def test_mepa_rotation_matrix():
 
 
 def test_topo_to_mepa_time_dependent():
-    """topo→MEPA Euler angles must change with observation time."""
+    """topo→MEPA Euler angles must change with observation time
+    when the MEPA epoch is fixed."""
     loc = MoonLocation(lon=0, lat=40)
     t1 = Time("2022-01-01 00:00:00")
     t2 = Time("2022-01-15 00:00:00")
     lmax = 4
 
+    # Use a fixed MEPA epoch (J2000) so the time-dependent parts
+    # of the chain do NOT cancel
+    et_fixed = 0.0
+
     topo1 = LunarTopo(location=loc, obstime=t1)
-    eul1, _ = rotations.topo_to_mepa_euler_dl(lmax, topo1)
+    eul1, _ = rotations.generate_euler_dl(lmax, topo1, "mepa", et=et_fixed)
 
     topo2 = LunarTopo(location=loc, obstime=t2)
-    eul2, _ = rotations.topo_to_mepa_euler_dl(lmax, topo2)
+    eul2, _ = rotations.generate_euler_dl(lmax, topo2, "mepa", et=et_fixed)
 
     # Euler angles should differ (Moon has rotated ~180° in 14 days)
     assert not np.allclose(eul1, eul2)
