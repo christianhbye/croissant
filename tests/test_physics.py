@@ -92,7 +92,7 @@ def monopole_sky(freqs):
     return Sky(data, freqs, coord="galactic", niter=0)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def gsm_sky(freqs):
     gsm = pygdsm.GlobalSkyModel16(freq_unit="MHz")
     freqs_np = np.asarray(freqs)
