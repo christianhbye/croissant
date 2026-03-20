@@ -96,8 +96,9 @@ class SphBase(eqx.Module):
         niter : int
             Number of iterations for the s2fft algorithm. Higher values
             can improve accuracy at the cost of increased computation
-            time. Default is None meaning 0 for non-healpix and 3 for
-            healpix sampling.
+            time. Default is 0 for all sampling schemes. For healpix
+            sampling, setting niter=3 improves accuracy but
+            significantly increases JIT compile time.
 
         Raises
         ------
@@ -118,10 +119,7 @@ class SphBase(eqx.Module):
                 )
 
         if niter is None:
-            if sampling == "healpix":
-                niter = 3
-            else:
-                niter = 0
+            niter = 0
 
         self._niter = niter
 

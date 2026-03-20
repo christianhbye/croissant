@@ -34,8 +34,9 @@ class Sky(sphere.SphBase):
             coordinates (mepa on moon).
         niter : int or None
             The number of iterations to use for the spherical harmonic
-            transform. If None, the default number of iterations will be
-            used (3 if sampling is "healpix", 0 otherwise).
+            transform. Default is 0 for all sampling schemes. For
+            healpix, setting niter=3 improves accuracy but
+            significantly increases JIT compile time.
 
         """
         if coord not in {"galactic", "equatorial", "mepa"}:

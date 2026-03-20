@@ -60,9 +60,9 @@ class Beam(sphere.SphBase):
             pointing direction.
         niter : int or None
             Number of iterations for the spherical harmonic transform
-            when using iterative methods. If None, the default number of
-            iterations is used based on the sampling scheme, currently
-            3 for "healpix" and 0 for other schemes.
+            when using iterative methods. Default is 0 for all sampling
+            schemes. For healpix, setting niter=3 improves accuracy
+            but significantly increases JIT compile time.
 
         """
         super().__init__(data, freqs, sampling, niter=niter)
