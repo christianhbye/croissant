@@ -72,7 +72,7 @@ class SphBase(eqx.Module):
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
 
-    def __init__(self, data, freqs, sampling, niter=None):
+    def __init__(self, data, freqs, sampling, niter=0):
         """
         Base class for scalar fields on the sphere. Holds the field
         data and associated metadata. The field must be defined on the
@@ -96,8 +96,9 @@ class SphBase(eqx.Module):
         niter : int
             Number of iterations for the s2fft algorithm. Higher values
             can improve accuracy at the cost of increased computation
-            time. Default is None meaning 0 for non-healpix and 3 for
-            healpix sampling.
+            time. Default is 0 for all sampling schemes. For healpix
+            sampling, setting niter=3 improves accuracy but
+            significantly increases JIT compile time.
 
         Raises
         ------
@@ -116,12 +117,6 @@ class SphBase(eqx.Module):
                     f"Invalid number of pixels {npix} for healpix sampling. "
                     "Number of pixels must be of the form 12 * nside^2."
                 )
-
-        if niter is None:
-            if sampling == "healpix":
-                niter = 3
-            else:
-                niter = 0
 
         self._niter = niter
 
