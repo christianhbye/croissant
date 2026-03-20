@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.1.3](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.2...croissant-sim-v5.1.3) (2026-03-20)
+
+
+### Performance Improvements
+
+* set default niter to 0, update improvements.md ([#112](https://github.com/christianhbye/croissant/issues/112)) ([dfadb71](https://github.com/christianhbye/croissant/commit/dfadb71dfeeeb674b846c9cda00e0377258fb7ce))
+
 ## [5.1.2](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.1...croissant-sim-v5.1.2) (2026-03-19)
 
 

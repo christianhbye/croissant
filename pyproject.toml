@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "croissant-sim"
-version = "5.1.2"  # x-release-please-version
+version = "5.1.3"  # x-release-please-version
 description = """
 CROISSANT: A differentiable visibility simulator based on spherical harmonics
 """
