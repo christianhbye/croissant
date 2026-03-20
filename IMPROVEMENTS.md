@@ -24,23 +24,25 @@ topocentric to equatorial frame (`eul_topo`) are computed at **a single
 reference epoch** (`times_jd[0]`) and then held fixed for the entire
 observation.  Over a short observation this is fine, but:
 
-- On Earth, precession and nutation move the celestial pole at roughly
-  50"/year (precession) and up to 17" (nutation), so over months the fixed
-  rotation is noticeably wrong.
+- On Earth, precession moves the celestial pole at roughly 50"/year (cumulative,
+  grows linearly with time). Nutation adds an oscillatory term up to ~17"
+  (bounded, not cumulative). For observations spanning days to weeks, precession
+  is the dominant error source.
 - On the Moon the effect is smaller but the MCMF frame itself drifts relative
   to inertial space on timescales of a lunar month.
 - The `phases` array (sky rotation) is computed using a fixed sidereal-day
   constant, but the actual rotation rate changes slightly between the synodic
   and sidereal periods and is not constant over a year.
 
-**Impact:** For observations spanning more than a few days the fixed beam
-orientation introduces a systematic error that grows with time.
+**Impact:** For typical 21-cm observations (days to weeks), the beam orientation
+error is well below the beam uncertainty itself. For observations spanning
+months or longer, the fixed beam orientation introduces a systematic error that
+grows with time — but such long baselines are uncommon in practice. This is a
+low-priority improvement.
 
 ---
 
-## 2. Ground model is oversimplified
-
-### Human summary
+## 2. Ground model — known limitations
 
 The ground contribution is currently:
 
@@ -50,20 +52,18 @@ vis_sky /= beam.compute_norm()                 # normalise by full-sphere integr
 vis = vis_sky + vis_gnd                        # add ground
 ```
 
-This is a simple model with three main limitations:
+This is a simple model with known limitations:
 
-**1. Constant, isotropic, unpolarised ground temperature.**  Real sites have
-terrain, and the ground temperature/emissivity depends on both azimuth and
-frequency.  The interface only accepts a scalar `Tgnd` with no spatial
-variation.
+1. **Constant, isotropic, unpolarised ground temperature.** Real sites have
+   terrain, and the ground temperature/emissivity depends on azimuth and
+   frequency.
+2. **No frequency dependence in `Tgnd`.**
+3. **No reflection or scattering.**
 
-**2. No frequency dependence in `Tgnd`.**  At MHz frequencies relevant to
-cosmological 21-cm studies, the ground contribution can have a nontrivial
-spectral dependence (e.g. via soil emissivity ~1 - reflectance).
-
-**3. No reflection or scattering.**  The model assumes the ground is a perfect
-absorber, but in reality the ground can reflect and scatter radiation, which
-can produce additional contributions to the visibility. The reflected light should show up at a delay set by the path length difference between direct and reflected rays, which can be important for foreground contamination in 21-cm experiments.
+A spatially-varying, frequency-dependent, scattering ground model would require
+its own SHT pipeline and represents a significant architectural change. This is
+outside the scope of incremental improvements and would be better addressed in a
+dedicated design document if needed.
 
 ---
 
@@ -74,46 +74,94 @@ can produce additional contributions to the visibility. The reflected light shou
 `Beam.__init__` accepts a `beam_tilt` argument (the angle between the beam
 boresight and the local zenith) but raises `NotImplementedError` when it is
 non-zero.  A tilted antenna is common in real deployments — e.g. phased arrays
-on uneven terrain.  The implementation would require an additional Wigner
-rotation in the beam-to-equatorial transform.
+on uneven terrain.  The implementation requires an additional Wigner rotation in
+the beam-to-equatorial transform.
+
+**Performance note:** The proposed approach (forward SHT → rotate alm → inverse
+SHT → apply horizon → forward SHT) requires three SHTs per `compute_alm()`
+call for a tilted beam, which triples compile time and runtime. For small tilts,
+a pixel-space interpolation might be cheaper, though less exact at high lmax.
 
 ---
 
-## 4. `sim()` recomputes beam/sky alms on every call
+## 4. SHT recomputation in `sim()` — by design for differentiability
 
 ### Human summary
 
 `Simulator.sim()` calls `compute_beam_eq()` and `sky.compute_alm_eq()` every
-time it is invoked.  These are expensive SHTs.  If a user iterates over a grid
-of sky or beam parameters (as is common in Bayesian inference or design
-optimisation) the alms are recomputed redundantly.
+time it is invoked.  These are expensive SHTs.
 
-The pattern used in the code is `@jax.jit`, which memoises the *compiled*
-function but still executes it on new values.  What would help for repeated
-calls with *the same* beam/sky is an explicit `precompute()` method that stores
-the equatorial alms and a lazy-evaluation flag.
+**This is intentional.** `beam.data` and `sky.data` are traced arrays in
+`eqx.Module`. The SHT inside `sim()` is part of the JAX computation graph, so
+`jax.grad` can differentiate through beam/sky data. If alms were precomputed and
+stored in `__init__`, they would become static pytree leaves and gradients would
+no longer flow through the beam and sky parameters.
+
+Additionally, `@jax.jit` on `sim()` means that for identical inputs, JAX
+dispatches the cached compiled function — the recomputation exists in the XLA
+graph but XLA can fuse and optimise it.
+
+**For users who don't need gradients** through beam/sky data (e.g. fixed
+instrument, varying sky model parameters only in alm space), the inner
+`convolve()` function is public and can be called directly:
+
+```python
+beam_alm = sim.compute_beam_eq()
+sky_alm = sim.sky.compute_alm_eq(world=sim.world, et=sim._et_ref)
+beam_alm = utils.reduce_lmax(beam_alm, sim.lmax)
+sky_alm = utils.reduce_lmax(sky_alm, sim.lmax)
+vis = convolve(beam_alm, sky_alm, sim.phases)
+```
+
+This avoids redundant SHTs when iterating over parameters that don't affect the
+beam or sky pixel data.
 
 ---
 
-## 5. The topocentric-to-equatorial rotation does not account for the observer's altitude
+## 5. HEALPix SHT compile time
 
 ### Human summary
 
-`EarthLocation(lon, lat, height=alt)` is constructed with the altitude, and
-`MoonLocation(lon, lat, height=alt)` likewise.  However, the Euler angles
-computed from `get_rot_mat(topo_frame, sim_frame)` describe a pure rotation
-(no translation), so altitude affects the orientation only through relativistic
-aberration and parallax — both negligible at radio frequencies for ground-based
-observations.  This is physically fine.  However, `alt` is stored as an
-`eqx.field` with no documentation that it is effectively unused, which could
-confuse contributors.
+The HEALPix spherical harmonic transform via `s2fft` with `method="jax"` has
+long JIT compile times, especially with iterative refinement (`niter > 0`).
+Each iteration requires an additional forward/inverse SHT pass, all of which
+must be compiled. This is the biggest practical pain point for day-to-day
+usability.
+
+The available options and their tradeoffs:
+
+| Approach | Compile time | Accuracy | GPU | Gradients |
+|---|---|---|---|---|
+| `method="jax"`, `niter=3` | Very slow | Good | Yes | Yes |
+| `method="jax"`, `niter=0` (current default) | Fast | Approximate | Yes | Yes |
+| `method="jax_healpy"` | Fast | Good | **No** | Partial |
+
+As of v5.1.2, the default is `niter=0` for all sampling schemes. Users who need
+higher accuracy for HEALPix can set `niter=3` explicitly, accepting the compile
+cost. The `method="jax_healpy"` path uses healpy's C backend via JAX callbacks
+and works only on CPU; it also breaks some gradient paths.
+
+A `method` parameter could be added to `SphBase.__init__` to let users opt into
+`"jax_healpy"` for CPU workflows without auto-detecting the device internally.
+
+---
+
+## 6. Observer altitude is unused
+
+`EarthLocation(lon, lat, height=alt)` and `MoonLocation(lon, lat, height=alt)`
+are constructed with the altitude, but the Euler angles from
+`get_rot_mat(topo_frame, sim_frame)` describe a pure rotation (no translation).
+Altitude affects the orientation only through relativistic aberration and
+parallax — both negligible at radio frequencies for ground-based observations.
+This is physically correct but the `alt` parameter could use a docstring note
+explaining this.
 
 ---
 
 ## LLM Implementation Prompt
 
 ```
-You are working on the `croissant` radio-astronomy simulator (version 5.0.0).
+You are working on the `croissant` radio-astronomy simulator (version 5.1.2).
 The codebase is in `src/croissant/`. The main modules are:
 
   simulator.py  – Simulator class and helper functions (rot_alm_z, convolve,
@@ -172,6 +220,9 @@ In `Beam.compute_alm()`, if `not isclose(self.beam_tilt, 0.0)`, compute the tilt
    6. Compute tilted_data by doing an inverse SHT.
    7. Pass tilted data into the existing code replacing `self.data` (which is the untilted beam pattern) with `tilted_data` (the tilted beam pattern).
 
+Note: the inverse SHT must also use `method="jax"` and consistent `niter`
+settings to avoid asymmetry with the forward transform.
+
 A similar fix is needed in `compute_fgnd()` to ensure the horizon mask is applied after the tilt. You are allowed to refactor the code to avoid duplication, e.g. by creating a helper method that applies the tilt to the beam pattern and is called from both `compute_alm` and `compute_fgnd`.
 
 Restrict `beam_tilt` to `[-90, 90]` degrees and raise `ValueError` for values
@@ -184,14 +235,15 @@ Add tests in tests/test_beam.py:
 - `beam_tilt=±90` does not raise an error (edge case of pointing at horizon).
 - `|beam_tilt| > 90` raises `ValueError`.
 
-### Change 2 – Add `n_jobs` / chunked time evaluation for long observations
+### Change 2 – Add chunked time evaluation for long observations
 
 In `Simulator.sim()`, add an optional `chunk_size` integer parameter (default
 `None`).  When provided, split `self.phases` into chunks of `chunk_size` time
-steps and evaluate `convolve()` iteratively, accumulating results with
-`jnp.concatenate`.  This allows simulating long time series without running
-out of GPU memory (the current `einsum` over N_times × N_freqs × lmax² can
-require many GB for large lmax and many times).
+steps and evaluate `convolve()` iteratively, accumulating results.  This allows
+simulating long time series without running out of GPU memory.
+
+Prefer `jax.lax.map` or `jax.lax.scan` over a Python loop with
+`jnp.concatenate` to avoid recompilation for different chunk counts.
 
 The interface should be:
 
@@ -208,5 +260,5 @@ the same result as `sim()` for N=1, N=N_times//2, and N=N_times.
 * All new code must pass `ruff check` and `ruff format --check`.
 * Use `jax_enable_x64 = True` (already configured in `tests/conftest.py`).
 * After all changes, run `python -m pytest tests/ -q` and confirm all
-  pre-existing tests still pass 
+  pre-existing tests still pass.
 ```
