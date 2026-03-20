@@ -8,7 +8,7 @@ class Sky(sphere.SphBase):
     coord: str = eqx.field(static=True)
 
     def __init__(
-        self, data, freqs, sampling="healpix", coord="galactic", niter=None
+        self, data, freqs, sampling="healpix", coord="galactic", niter=0
     ):
         """
         Object that holds the sky model.
@@ -32,7 +32,7 @@ class Sky(sphere.SphBase):
             systems are {"galactic", "equatorial", "mepa"}. Default is
             "galactic". The alm's will be computed in equatorial
             coordinates (mepa on moon).
-        niter : int or None
+        niter : int
             The number of iterations to use for the spherical harmonic
             transform. Default is 0 for all sampling schemes. For
             healpix, setting niter=3 improves accuracy but

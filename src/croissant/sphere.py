@@ -72,7 +72,7 @@ class SphBase(eqx.Module):
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
 
-    def __init__(self, data, freqs, sampling, niter=None):
+    def __init__(self, data, freqs, sampling, niter=0):
         """
         Base class for scalar fields on the sphere. Holds the field
         data and associated metadata. The field must be defined on the
@@ -117,9 +117,6 @@ class SphBase(eqx.Module):
                     f"Invalid number of pixels {npix} for healpix sampling. "
                     "Number of pixels must be of the form 12 * nside^2."
                 )
-
-        if niter is None:
-            niter = 0
 
         self._niter = niter
 

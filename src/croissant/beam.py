@@ -18,7 +18,7 @@ class Beam(sphere.SphBase):
         horizon=None,
         beam_az_rot=0.0,
         beam_tilt=0.0,
-        niter=None,
+        niter=0,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -58,7 +58,7 @@ class Beam(sphere.SphBase):
             The tilt angle of the beam in degrees. The tilt is the
             angle measured from the local zenith towards the antenna
             pointing direction.
-        niter : int or None
+        niter : int
             Number of iterations for the spherical harmonic transform
             when using iterative methods. Default is 0 for all sampling
             schemes. For healpix, setting niter=3 improves accuracy
