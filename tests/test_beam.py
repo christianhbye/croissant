@@ -207,12 +207,12 @@ def test_beam_alm_is_real(N_freqs, sampling):
 
 
 # ---------------------------------------------------------------------------
-# beam_az_rot – azimuthal rotation only changes phases, not power
+# beam_rot – azimuthal rotation only changes phases, not power
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("sampling", ["mw", "mwss", "gl", "dh", "healpix"])
-def test_beam_az_rot_preserves_power(sampling):
+def test_beam_rot_preserves_power(sampling):
     """Rotating the beam azimuthally should not change the alm magnitudes."""
     # use a phi-dependent beam so that m != 0 modes are populated
     phi = utils.generate_phi(_LMAX, sampling, _NSIDE)
@@ -227,7 +227,7 @@ def test_beam_az_rot_preserves_power(sampling):
         data = jnp.repeat(data, ntheta, axis=1)  # broadcast to all theta
     freq = 1.0  # single frequency
     beam0 = Beam(data, freq, sampling=sampling, niter=0)
-    beam90 = Beam(data, freq, sampling=sampling, beam_az_rot=90.0, niter=0)
+    beam90 = Beam(data, freq, sampling=sampling, beam_rot=90.0, niter=0)
 
     alm0 = beam0.compute_alm()
     alm90 = beam90.compute_alm()
@@ -239,8 +239,8 @@ def test_beam_az_rot_preserves_power(sampling):
 
 
 @pytest.mark.parametrize("sampling", ["mw", "mwss", "gl", "dh", "healpix"])
-def test_beam_az_rot_phase_formula(sampling):
-    """beam_az_rot applies exp(-i*m*az_rot) phase to each m-mode."""
+def test_beam_rot_phase_formula(sampling):
+    """beam_rot applies exp(+i*m*rot) phase to each m-mode (N→E)."""
     phi = utils.generate_phi(_LMAX, sampling, _NSIDE)
     data = 1.0 + 0.3 * jnp.cos(phi)
     # add freq dimension
@@ -254,7 +254,7 @@ def test_beam_az_rot_phase_formula(sampling):
     freq = 1.0  # single frequency
     az_rot = 45.0  # degrees
     beam0 = Beam(data, freq, sampling=sampling, niter=0)
-    beam_rot = Beam(data, freq, sampling=sampling, beam_az_rot=az_rot, niter=0)
+    beam_rot = Beam(data, freq, sampling=sampling, beam_rot=az_rot, niter=0)
 
     alm0 = beam0.compute_alm()
     alm_rot = beam_rot.compute_alm()
@@ -270,8 +270,8 @@ def test_beam_az_rot_phase_formula(sampling):
     )
 
 
-def test_beam_az_rot_direction():
-    """Positive beam_az_rot rotates from North towards East (astro convention).
+def test_beam_rot_direction():
+    """Positive beam_rot rotates from North towards East (astro convention).
 
     A cos(phi) beam peaks at phi=0 (East in ENU). A +90 deg rotation in
     the N-to-E direction should move that peak to phi=270 deg (South in
@@ -296,7 +296,7 @@ def test_beam_az_rot_direction():
         data,
         jnp.array([100.0]),
         sampling="healpix",
-        beam_az_rot=90.0,
+        beam_rot=90.0,
         niter=0,
     )
     alm_rot = beam_rot.compute_alm()

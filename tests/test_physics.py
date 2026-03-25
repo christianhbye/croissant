@@ -783,14 +783,14 @@ class TestBeamProperties:
             beam_data,
             freqs,
             sampling="healpix",
-            beam_az_rot=0.0,
+            beam_rot=0.0,
             niter=0,
         )
         beam360 = Beam(
             beam_data,
             freqs,
             sampling="healpix",
-            beam_az_rot=360.0,
+            beam_rot=360.0,
             niter=0,
         )
         sim0 = _make_sim(
@@ -840,14 +840,14 @@ class TestBeamProperties:
             beam_data,
             freqs,
             sampling="healpix",
-            beam_az_rot=0.0,
+            beam_rot=0.0,
             niter=0,
         )
         beam180 = Beam(
             beam_data,
             freqs,
             sampling="healpix",
-            beam_az_rot=180.0,
+            beam_rot=180.0,
             niter=0,
         )
         sim0 = _make_sim(
@@ -901,14 +901,14 @@ class TestBeamProperties:
             beam_data,
             freqs,
             sampling="healpix",
-            beam_az_rot=0.0,
+            beam_rot=0.0,
             niter=0,
         )
         beam90 = Beam(
             beam_data,
             freqs,
             sampling="healpix",
-            beam_az_rot=90.0,
+            beam_rot=90.0,
             niter=0,
         )
         sim0 = _make_sim(

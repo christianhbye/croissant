@@ -7,7 +7,7 @@ from . import sphere
 
 class Beam(sphere.SphBase):
     horizon: jax.Array  # boolean mask for above/below horizon
-    beam_az_rot: jax.Array  # in degrees
+    beam_rot: jax.Array  # in degrees
     beam_tilt: jax.Array  # in degrees
 
     def __init__(
@@ -16,7 +16,7 @@ class Beam(sphere.SphBase):
         freqs,
         sampling="mwss",
         horizon=None,
-        beam_az_rot=0.0,
+        beam_rot=0.0,
         beam_tilt=0.0,
         niter=0,
     ):
@@ -48,10 +48,13 @@ class Beam(sphere.SphBase):
             and False for directions that are below the horizon.
             If None, it is assumed that the horizon is at
             theta = 90 degrees.
-        beam_az_rot : float
-            Azimuthal rotation of the beam in degrees. The rotation is
-            defined in the astrophysical convention, i.e. measured from
-            the local north towards the east.
+        beam_rot : float
+            Azimuthal rotation of the beam in degrees. The rotation
+            follows the astronomical azimuth convention: it is
+            measured from local North towards East. A value of 0
+            leaves the beam unrotated (phi=0 axis aligned with
+            local East in ENU). For example, ``beam_rot=90`` rotates
+            the beam so that its phi=0 axis points South.
         beam_tilt : float
             The tilt angle of the beam in degrees. The tilt is the
             angle measured from the local zenith towards the antenna
@@ -74,7 +77,7 @@ class Beam(sphere.SphBase):
                 horizon = jnp.expand_dims(horizon, axis=-1)  # add phi axis
         self.horizon = jnp.asarray(horizon)
 
-        self.beam_az_rot = jnp.asarray(beam_az_rot)
+        self.beam_rot = jnp.asarray(beam_rot)
         self.beam_tilt = jnp.asarray(beam_tilt)
 
     def _compute_norm(self, use_horizon=True):
@@ -151,7 +154,7 @@ class Beam(sphere.SphBase):
         Compute the spherical harmonic coefficients of the beam pattern.
         Only the part of the beam above the horizon is included
         in the spherical harmonic transform. We automatically apply the
-        rotations to the beam pattern based on the `beam_az_rot` and
+        rotations to the beam pattern based on the `beam_rot` (azimuth) and
         `beam_tilt` angles.
 
         Returns
@@ -169,8 +172,8 @@ class Beam(sphere.SphBase):
             nside=self.nside,
             niter=self._niter,
         )
-        # apply the azimuthal rotation (no-op when beam_az_rot == 0)
+        # apply azimuthal rotation, N→E convention (no-op when beam_rot == 0)
         emms = jnp.arange(-self.lmax, self.lmax + 1)
-        phase = jnp.exp(1j * emms * jnp.radians(self.beam_az_rot))
+        phase = jnp.exp(1j * emms * jnp.radians(self.beam_rot))
         alm = alm * phase[None, None, :]  # add freq/ell axes
         return alm

@@ -188,7 +188,7 @@ that the existing tests in tests/ still pass.
 ### Change 1 – Implement beam tilt (small-angle rotation)
 
 In `Beam.__init__` (beam.py), remove the `NotImplementedError` for `beam_tilt`
-and implement it as a second Wigner rotation applied after `beam_az_rot`.
+and implement it as a second Wigner rotation applied after `beam_rot`.
 
 The tilt is a rotation about the local *y*-axis (East–West axis in antenna
 frame) by angle `beam_tilt` (in degrees).  In alm space this corresponds to a
