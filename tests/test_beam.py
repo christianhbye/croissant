@@ -260,7 +260,7 @@ def test_beam_az_rot_phase_formula(sampling):
     alm_rot = beam_rot.compute_alm()
     lmax = beam0.lmax
     emms = jnp.arange(-lmax, lmax + 1)
-    expected_phases = jnp.exp(-1j * emms * jnp.radians(az_rot))
+    expected_phases = jnp.exp(1j * emms * jnp.radians(az_rot))
 
     # check that alm_rot / alm0 matches expected phase for non-zero entries
     mask = jnp.abs(alm0) > 1e-12
@@ -268,3 +268,50 @@ def test_beam_az_rot_phase_formula(sampling):
     assert jnp.allclose(
         ratio[mask], jnp.broadcast_to(expected_phases, alm0.shape)[mask]
     )
+
+
+def test_beam_az_rot_direction():
+    """Positive beam_az_rot rotates from North towards East (astro convention).
+
+    A cos(phi) beam peaks at phi=0 (East in ENU). A +90 deg rotation in
+    the N-to-E direction should move that peak to phi=270 deg (South in
+    ENU), NOT to phi=90 deg (North). This catches accidental sign flips.
+    """
+    nside = 16
+    npix = 12 * nside**2
+    dummy = Beam(
+        jnp.ones((1, npix)),
+        jnp.array([100.0]),
+        sampling="healpix",
+        niter=0,
+    )
+    theta = jnp.array(dummy.theta)
+    phi = jnp.array(dummy.phi)
+    # cos(phi) beam: peak at phi=0 (East in ENU, az=90 in astro)
+    pattern = jnp.cos(theta) ** 2 * (1.0 + jnp.cos(phi))
+    pattern = jnp.where(theta <= jnp.pi / 2, pattern, 0.0)
+    data = pattern[None]
+
+    beam_rot = Beam(
+        data,
+        jnp.array([100.0]),
+        sampling="healpix",
+        beam_az_rot=90.0,
+        niter=0,
+    )
+    alm_rot = beam_rot.compute_alm()
+
+    # build reference beam at the expected destination:
+    # cos(phi + pi/2) = -sin(phi), peak at phi=270 (South in ENU)
+    ref_pattern = jnp.cos(theta) ** 2 * (1.0 - jnp.sin(phi))
+    ref_pattern = jnp.where(theta <= jnp.pi / 2, ref_pattern, 0.0)
+    ref_data = ref_pattern[None]
+    beam_ref = Beam(
+        ref_data,
+        jnp.array([100.0]),
+        sampling="healpix",
+        niter=0,
+    )
+    alm_ref = beam_ref.compute_alm()
+
+    np.testing.assert_allclose(np.array(alm_rot), np.array(alm_ref), atol=1e-6)

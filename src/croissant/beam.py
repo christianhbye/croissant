@@ -49,11 +49,9 @@ class Beam(sphere.SphBase):
             If None, it is assumed that the horizon is at
             theta = 90 degrees.
         beam_az_rot : float
-            Angle between the X-axis of the beam (antenna local frame)
-            and the local East direction, in degrees. The angle is
-            measured counter-clockwise from the local East direction.
-            For example, if the X-axis of the beam points towards the
-            local North direction, the `beam_az_rot` would be +90 deg.
+            Azimuthal rotation of the beam in degrees. The rotation is
+            defined in the astrophysical convention, i.e. measured from
+            the local north towards the east.
         beam_tilt : float
             The tilt angle of the beam in degrees. The tilt is the
             angle measured from the local zenith towards the antenna
@@ -173,6 +171,6 @@ class Beam(sphere.SphBase):
         )
         # apply the azimuthal rotation (no-op when beam_az_rot == 0)
         emms = jnp.arange(-self.lmax, self.lmax + 1)
-        phase = jnp.exp(-1j * emms * jnp.radians(self.beam_az_rot))
+        phase = jnp.exp(1j * emms * jnp.radians(self.beam_az_rot))
         alm = alm * phase[None, None, :]  # add freq/ell axes
         return alm
