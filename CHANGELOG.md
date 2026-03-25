@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.1.4](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.3...croissant-sim-v5.1.4) (2026-03-25)
+
+
+### Bug Fixes
+
+* use astronomy convention (N→E) for beam_az_rot ([b8dbf34](https://github.com/christianhbye/croissant/commit/b8dbf343df1b84531a58e2145fe639e27ca1a654))
+
 ## [5.1.3](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.2...croissant-sim-v5.1.3) (2026-03-20)
 
 
