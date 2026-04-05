@@ -291,8 +291,44 @@ class Simulator(eqx.Module):
         """
         return self.beam.compute_fgnd() * self.Tgnd
 
+    def precompute_sky_alm(self):
+        """
+        Compute the sky ALM in the simulation frame (equatorial or
+        MEPA coordinates). Use this to avoid redundant spherical
+        harmonic transforms when calling ``sim`` in a loop with
+        different beam orientations but the same sky.
+
+        Returns
+        -------
+        sky_alm : jax.Array
+            The sky ALM in the simulation frame. Shape is
+            (N_freqs, lmax+1, 2*lmax+1) where lmax is the sky's
+            lmax (not the Simulator's lmax — truncation is handled
+            inside ``sim``).
+
+        Notes
+        -----
+        The returned array is suitable for passing to
+        ``sim(sky_alm=...)``.
+
+        If you need gradients with respect to ``sky.data``, compute
+        ``sky_alm`` **inside** the ``jax.grad``-traced function
+        rather than pre-computing it outside. Pre-computing outside
+        the gradient boundary severs the computation graph from the
+        simulation output back to the sky pixel data.
+
+        Examples
+        --------
+        >>> sky_alm = sim0.precompute_sky_alm()
+        >>> for beam in beams:
+        ...     sim = Simulator(beam, sky, times, freqs, **kw)
+        ...     result = sim.sim(sky_alm=sky_alm)
+
+        """
+        return self.sky.compute_alm_eq(world=self.world, et=self._et_ref)
+
     @jax.jit
-    def sim(self):
+    def sim(self, sky_alm=None):
         """
         Compute the antenna temperature as the convolution of the beam
         and the sky, plus the ground contribution.
@@ -302,16 +338,44 @@ class Simulator(eqx.Module):
         recover an estimate of the sky temperature, the ground loss can
         be corrected for with the `correct_ground_loss` function.
 
+        Parameters
+        ----------
+        sky_alm : jax.Array or None
+            Pre-computed sky ALM in the simulation frame (equatorial
+            or MEPA). When provided, the sky's forward SHT and
+            coordinate rotation are skipped. Use
+            ``precompute_sky_alm`` to obtain this. When ``None``
+            (default), the sky ALM is computed internally and
+            behaviour is identical to previous versions.
+
         Returns
         -------
         vis : jax.Array
             The simulated antenna temperature as a function of time and
             frequency. Shape is (N_times, N_freqs).
 
+        Notes
+        -----
+        If you need gradients with respect to ``sky.data``, either
+        omit ``sky_alm`` or compute it inside the ``jax.grad``-traced
+        function. Pre-computing outside the gradient boundary severs
+        the chain from the output back to the sky pixel data.
+
         """
         # compute beam and sky alms in equatorial coordinates
         beam_eq_alm = self.compute_beam_eq()
-        sky_eq_alm = self.sky.compute_alm_eq(world=self.world, et=self._et_ref)
+        if sky_alm is None:
+            sky_eq_alm = self.sky.compute_alm_eq(
+                world=self.world, et=self._et_ref
+            )
+        else:
+            if sky_alm.shape[0] != len(self.freqs):
+                raise ValueError(
+                    "sky_alm has wrong number of frequency "
+                    f"channels: expected {len(self.freqs)}, "
+                    f"got {sky_alm.shape[0]}."
+                )
+            sky_eq_alm = sky_alm
         # resize to the simulation lmax
         beam_eq_alm = utils.reduce_lmax(beam_eq_alm, self.lmax)
         sky_eq_alm = utils.reduce_lmax(sky_eq_alm, self.lmax)

@@ -135,6 +135,65 @@ def test_sim_output_shape(world):
 
 
 # ---------------------------------------------------------------------------
+# sim(sky_alm=...) – pre-computed sky ALM
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+def test_sim_precomputed_sky_alm_matches_default(world):
+    """sim(sky_alm=...) must produce identical results to sim()."""
+    sim = _make_sim(world=world)
+    vis_default = sim.sim()
+    sky_alm = sim.precompute_sky_alm()
+    vis_precomputed = sim.sim(sky_alm=sky_alm)
+    np.testing.assert_allclose(vis_precomputed, vis_default)
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+def test_precompute_sky_alm_shape(world):
+    """precompute_sky_alm should return (N_freqs, lmax+1, 2*lmax+1)."""
+    sim = _make_sim(world=world)
+    sky_alm = sim.precompute_sky_alm()
+    sky_lmax = sim.sky.lmax
+    assert sky_alm.shape == (
+        _N_FREQS,
+        sky_lmax + 1,
+        2 * sky_lmax + 1,
+    )
+
+
+def test_sim_sky_alm_freq_mismatch():
+    """sky_alm with wrong number of frequencies should raise."""
+    sim = _make_sim(world="moon")
+    sky_alm = sim.precompute_sky_alm()
+    # drop one frequency channel
+    bad_alm = sky_alm[:-1]
+    with pytest.raises(ValueError, match="frequency"):
+        sim.sim(sky_alm=bad_alm)
+
+
+def test_sim_precomputed_sky_alm_with_reduced_lmax():
+    """sky_alm from a higher-lmax sky should be truncated by sim()."""
+    nside_hi = 16  # sky lmax = 32
+    npix_hi = 12 * nside_hi**2
+    nside_lo = 8  # beam lmax = 16 → simulator lmax = 16
+    npix_lo = 12 * nside_lo**2
+
+    sky_data = _TSKY[:, None] * jnp.ones((_N_FREQS, npix_hi))
+    sky = Sky(sky_data, _FREQS, coord="mepa", niter=0)
+    beam_data = jnp.ones((_N_FREQS, npix_lo))
+    beam = Beam(beam_data, _FREQS, sampling="healpix", niter=0)
+
+    sim = Simulator(beam, sky, _TIMES_JD_MOON, _FREQS, 0.0, 0.0, world="moon")
+    assert sim.lmax < sky.lmax  # confirm truncation will happen
+
+    vis_default = sim.sim()
+    sky_alm = sim.precompute_sky_alm()
+    vis_precomputed = sim.sim(sky_alm=sky_alm)
+    np.testing.assert_allclose(vis_precomputed, vis_default)
+
+
+# ---------------------------------------------------------------------------
 # Physical invariant: monopole sky → constant visibility over time
 # ---------------------------------------------------------------------------
 
