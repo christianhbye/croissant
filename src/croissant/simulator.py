@@ -309,7 +309,11 @@ class Simulator(eqx.Module):
         Notes
         -----
         The returned array is suitable for passing to
-        ``sim(sky_alm=...)``.
+        ``sim(sky_alm=...)``.  It is tied to this simulator's
+        ``world`` and, for lunar observations with a galactic sky,
+        the reference epoch derived from the start time. Only reuse
+        it with simulators that share the same ``world`` and start
+        time.
 
         If you need gradients with respect to ``sky.data``, compute
         ``sky_alm`` **inside** the ``jax.grad``-traced function
@@ -369,11 +373,24 @@ class Simulator(eqx.Module):
                 world=self.world, et=self._et_ref
             )
         else:
+            if sky_alm.ndim != 3:
+                raise ValueError(
+                    "sky_alm must be a 3D array with shape "
+                    "(N_freqs, lmax+1, 2*lmax+1). "
+                    f"Got ndim={sky_alm.ndim}, "
+                    f"shape={sky_alm.shape}."
+                )
             if sky_alm.shape[0] != len(self.freqs):
                 raise ValueError(
                     "sky_alm has wrong number of frequency "
                     f"channels: expected {len(self.freqs)}, "
                     f"got {sky_alm.shape[0]}."
+                )
+            sky_alm_lmax = utils.lmax_from_shape(sky_alm.shape)
+            if sky_alm_lmax < self.lmax:
+                raise ValueError(
+                    "sky_alm lmax is too small: expected at "
+                    f"least {self.lmax}, got {sky_alm_lmax}."
                 )
             sky_eq_alm = sky_alm
         # resize to the simulation lmax
