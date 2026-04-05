@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.0](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.4...croissant-sim-v5.2.0) (2026-04-05)
+
+
+### Features
+
+* allow sim() to accept pre-computed sky ALM ([#117](https://github.com/christianhbye/croissant/issues/117)) ([5c8d41a](https://github.com/christianhbye/croissant/commit/5c8d41aa015163c85f43f9ff89d664156f230213))
+
 ## [5.1.4](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.3...croissant-sim-v5.1.4) (2026-03-25)
 
 
