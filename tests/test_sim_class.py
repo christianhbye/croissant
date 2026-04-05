@@ -172,6 +172,26 @@ def test_sim_sky_alm_freq_mismatch():
         sim.sim(sky_alm=bad_alm)
 
 
+def test_sim_sky_alm_wrong_ndim():
+    """sky_alm with wrong number of dimensions should raise."""
+    sim = _make_sim(world="moon")
+    sky_alm = sim.precompute_sky_alm()
+    # squeeze to 2D
+    bad_alm = sky_alm[0]
+    with pytest.raises(ValueError, match="3D"):
+        sim.sim(sky_alm=bad_alm)
+
+
+def test_sim_sky_alm_lmax_too_small():
+    """sky_alm with lmax < simulator lmax should raise."""
+    sim = _make_sim(world="moon")
+    sky_alm = sim.precompute_sky_alm()
+    # truncate to lmax=1 (shape: N_freqs, 2, 3)
+    bad_alm = sky_alm[:, :2, :3]
+    with pytest.raises(ValueError, match="lmax"):
+        sim.sim(sky_alm=bad_alm)
+
+
 def test_sim_precomputed_sky_alm_with_reduced_lmax():
     """sky_alm from a higher-lmax sky should be truncated by sim()."""
     nside_hi = 16  # sky lmax = 32
