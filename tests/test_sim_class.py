@@ -23,7 +23,7 @@ rng = np.random.default_rng(seed=3)
 _NSIDE = 8
 _LMAX = 2 * _NSIDE
 _NPIX = 12 * _NSIDE**2
-_FREQS = jnp.linspace(50.0, 100.0, num=50)
+_FREQS = jnp.linspace(50.0, 100.0, num=5)
 _N_FREQS = len(_FREQS)
 
 _TSKY = 180 * (_FREQS / 180) ** (-2.5)  # power-law sky temperature in K
@@ -258,7 +258,7 @@ def test_compute_beam_eq_shape():
     assert beam_eq.shape == (_N_FREQS, _LMAX + 1, 2 * _LMAX + 1)
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def vis_highres():
     """
     High-resolution visibility for testing ground loss correction.

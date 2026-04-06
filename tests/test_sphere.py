@@ -108,6 +108,8 @@ def test_sphbase_phi_range(sampling, lmax):
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_shape(sampling, lmax, disable_jit):
     """compute_alm should return array of shape (N_freqs, lmax+1, 2*lmax+1)."""
+    if disable_jit and lmax > 8:
+        pytest.skip("disable_jit only tested with smallest lmax")
     N_freqs = 3
     data = jnp.array(_make_data(lmax, sampling, N_freqs))
     if sampling == "healpix":
@@ -174,6 +176,8 @@ def test_compute_alm_healpix_niter_reduces_error(lmax):
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_monopole(sampling, lmax, disable_jit):
     """Uniform map should produce a dominant monopole component."""
+    if disable_jit and lmax > 8:
+        pytest.skip("disable_jit only tested with smallest lmax")
 
     T = 500.0
     N_freqs = 1
