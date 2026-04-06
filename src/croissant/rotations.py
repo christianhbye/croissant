@@ -180,10 +180,22 @@ def rotmat_to_eulerZYZ(mat):
         s2fft.utils.rotation.rotate_flms expects.
 
     """
-    alpha = np.arctan2(mat[1, 2], mat[0, 2])
-    cos_beta = mat[2, 2]
-    beta = np.arctan2(np.sqrt(1 - cos_beta**2), cos_beta)
-    gamma = np.arctan2(mat[2, 1], -mat[2, 0])
+    cos_beta = np.clip(mat[2, 2], -1.0, 1.0)
+    sin_beta = np.sqrt(1 - cos_beta**2)
+    beta = np.arctan2(sin_beta, cos_beta)
+    if np.isclose(beta, 0.0):
+        # Gimbal lock at beta=0: R = Rz(alpha + gamma).
+        # Set gamma = 0 and absorb the full rotation into alpha.
+        gamma = 0.0
+        alpha = np.arctan2(-mat[0, 1], mat[0, 0])
+    elif np.isclose(beta, np.pi):
+        # Gimbal lock at beta=pi: R depends only on alpha - gamma.
+        # Set gamma = 0 and absorb into alpha.
+        gamma = 0.0
+        alpha = np.arctan2(-mat[0, 1], mat[1, 1])
+    else:
+        alpha = np.arctan2(mat[1, 2], mat[0, 2])
+        gamma = np.arctan2(mat[2, 1], -mat[2, 0])
     eul = (alpha, beta, gamma)
     return eul
 

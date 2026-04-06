@@ -80,6 +80,65 @@ def test_rotmat_to_euler():
     assert np.allclose(rot_mat, rmat)
 
 
+def _rz(angle):
+    c, s = np.cos(angle), np.sin(angle)
+    return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
+
+
+def _ry(angle):
+    c, s = np.cos(angle), np.sin(angle)
+    return np.array([[c, 0, s], [0, 1, 0], [-s, 0, c]])
+
+
+def _euler_to_rotmat(alpha, beta, gamma):
+    """Reconstruct rotation matrix from ZYZ Euler angles."""
+    return _rz(alpha) @ _ry(beta) @ _rz(gamma)
+
+
+def test_rotmat_to_eulerZYZ_roundtrip():
+    """rotmat_to_eulerZYZ should round-trip for arbitrary matrices."""
+    # generic rotation (beta != 0)
+    rot_mat = rotations.get_rot_mat("galactic", "fk5")
+    eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+    rmat = _euler_to_rotmat(*eul)
+    assert np.allclose(rot_mat, rmat)
+
+    # another generic rotation
+    rot_mat = rotations.get_rot_mat("galactic", "mepa")
+    eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+    rmat = _euler_to_rotmat(*eul)
+    assert np.allclose(rot_mat, rmat)
+
+    # permutation matrix
+    rot_mat = np.array([[0, 1, 0], [0, 0, 1], [1, 0, 0]], dtype=float)
+    eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+    rmat = _euler_to_rotmat(*eul)
+    assert np.allclose(rot_mat, rmat)
+
+
+def test_rotmat_to_eulerZYZ_gimbal_lock():
+    """ZYZ decomposition must handle beta=0 (pure z-rotation)."""
+    # pure z-rotations: beta = 0, only alpha + gamma matters
+    for angle in [0, np.pi / 4, np.pi / 2, np.pi, -1.2, 2.7]:
+        rot_mat = _rz(angle)
+        eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+        rmat = _euler_to_rotmat(*eul)
+        assert np.allclose(rot_mat, rmat, atol=1e-14), (
+            f"round-trip failed for Rz({angle}): euler={eul}"
+        )
+
+    # beta = pi (mat[2,2] = -1): Rz(a) @ Ry(pi) @ Rz(g)
+    rot_mat = _rz(0.3) @ _ry(np.pi) @ _rz(0.7)
+    eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+    rmat = _euler_to_rotmat(*eul)
+    assert np.allclose(rot_mat, rmat, atol=1e-14)
+
+    # identity
+    eul = rotations.rotmat_to_eulerZYZ(np.eye(3))
+    rmat = _euler_to_rotmat(*eul)
+    assert np.allclose(rmat, np.eye(3), atol=1e-14)
+
+
 def test_mepa_rotation_matrix():
     """MEPA rotation matrix should be a proper rotation (det=+1)."""
     R = rotations.get_mepa_rotation_matrix()
