@@ -117,7 +117,7 @@ def test_rotmat_to_eulerZYZ_roundtrip():
 
 
 def test_rotmat_to_eulerZYZ_gimbal_lock():
-    """ZYZ decomposition must handle beta=0 (pure z-rotation)."""
+    """ZYZ decomposition must handle beta=0 and beta=pi (pure z-rotation)."""
     # pure z-rotations: beta = 0, only alpha + gamma matters
     for angle in [0, np.pi / 4, np.pi / 2, np.pi, -1.2, 2.7]:
         rot_mat = _rz(angle)
