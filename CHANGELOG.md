@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.0...croissant-sim-v5.2.1) (2026-04-06)
+
+
+### Bug Fixes
+
+* handle gimbal lock in rotmat_to_eulerZYZ ([#120](https://github.com/christianhbye/croissant/issues/120)) ([15f6d21](https://github.com/christianhbye/croissant/commit/15f6d21e9b10e38af76586f9ed885f04b682f3f1))
+
 ## [5.2.0](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.1.4...croissant-sim-v5.2.0) (2026-04-05)
 
 
