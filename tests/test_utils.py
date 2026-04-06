@@ -236,17 +236,19 @@ class TestAlmUtils:
         assert jnp.allclose(ms, ms_)
 
     def test_getlm(self, lmax):
-        alm = jnp.zeros(cro.utils.shape_from_lmax(lmax), dtype=jnp.complex128)
-        nrows, ncols = alm.shape
-        # l correspond to rows, m correspond to columns
-        ls = jnp.arange(nrows)
-        ms = jnp.arange(ncols) - lmax
-        for i in range(nrows):
-            for j in range(ncols):
-                ix = (i, j)
-                ell, emm = cro.utils.getlm(lmax, ix)
-                assert ell == ls[i]
-                assert emm == ms[j]
+        nrows, ncols = cro.utils.shape_from_lmax(lmax)
+        rows, cols = jnp.meshgrid(
+            jnp.arange(nrows), jnp.arange(ncols), indexing="ij"
+        )
+        ells, emms = cro.utils.getlm(lmax, (rows, cols))
+        expected_ls = jnp.broadcast_to(
+            jnp.arange(nrows)[:, None], (nrows, ncols)
+        )
+        expected_ms = jnp.broadcast_to(
+            jnp.arange(ncols)[None, :] - lmax, (nrows, ncols)
+        )
+        assert jnp.array_equal(ells, expected_ls)
+        assert jnp.array_equal(emms, expected_ms)
 
     def test_lmax_from_shape(self, lmax):
         shape = s2fft.sampling.s2_samples.flm_shape(lmax + 1)

@@ -44,7 +44,6 @@ pythonpath = ["src"]
 addopts = [
   "--cov=src",
   "--cov-report=term-missing",
-  "--cov-report=html",
   "--junitxml=junit.xml",
   "-o junit_family=legacy",
   "--timeout=120",

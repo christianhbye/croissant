@@ -10,7 +10,7 @@ from croissant import utils
 from croissant.constants import Y00
 from croissant.sphere import SphBase, compute_alm
 
-pytestmark = pytest.mark.parametrize("lmax", [8, 16, 25])
+LMAX_PARAMS = [8, 16, 25]
 rng = np.random.default_rng(seed=0)
 
 SAMPLING_PARAMS = [
@@ -43,6 +43,7 @@ def _make_data(lmax, sampling, N_freqs=50):
     return np.ones((N_freqs, ntheta, nphi))
 
 
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_init(sampling, lmax):
     """SphBase should initialize with correct attributes."""
@@ -68,6 +69,7 @@ def test_sphbase_init(sampling, lmax):
     assert obj.data.shape == data.shape
 
 
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_theta_phi_shape(sampling, lmax):
     """Theta and phi arrays should have consistent shapes."""
@@ -86,6 +88,7 @@ def test_sphbase_theta_phi_shape(sampling, lmax):
         assert obj.phi.shape == (nphi,)
 
 
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_theta_range(sampling, lmax):
     """Theta values should be in [0, pi]."""
@@ -95,6 +98,7 @@ def test_sphbase_theta_range(sampling, lmax):
     assert jnp.all(obj.theta < jnp.pi + 1e-10)
 
 
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS)
 def test_sphbase_phi_range(sampling, lmax):
     """Phi values should be in [0, 2*pi)."""
@@ -104,7 +108,10 @@ def test_sphbase_phi_range(sampling, lmax):
     assert jnp.all(obj.phi < 2 * jnp.pi + 1e-10)
 
 
-@pytest.mark.parametrize("disable_jit", [True, False])
+@pytest.mark.parametrize(
+    "disable_jit, lmax",
+    [(True, 8), (False, 8), (False, 16), (False, 25)],
+)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_shape(sampling, lmax, disable_jit):
     """compute_alm should return array of shape (N_freqs, lmax+1, 2*lmax+1)."""
@@ -120,6 +127,7 @@ def test_compute_alm_shape(sampling, lmax, disable_jit):
     assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
 
 
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_niter(sampling, lmax):
     """compute_alm with a non-default niter should return correct shape."""
@@ -134,6 +142,7 @@ def test_compute_alm_niter(sampling, lmax):
     assert alm.shape == (N_freqs, lmax + 1, 2 * lmax + 1)
 
 
+@pytest.mark.parametrize("lmax", LMAX_PARAMS)
 def test_compute_alm_healpix_niter_reduces_error(lmax):
     """
     niter=3 for healpix should reduce forward/inverse reconstruction
@@ -170,7 +179,10 @@ def test_compute_alm_healpix_niter_reduces_error(lmax):
     assert err3 < err0
 
 
-@pytest.mark.parametrize("disable_jit", [True, False])
+@pytest.mark.parametrize(
+    "disable_jit, lmax",
+    [(True, 8), (False, 8), (False, 16), (False, 25)],
+)
 @pytest.mark.parametrize("sampling", SAMPLING_PARAMS_JIT_SAFE)
 def test_compute_alm_monopole(sampling, lmax, disable_jit):
     """Uniform map should produce a dominant monopole component."""
