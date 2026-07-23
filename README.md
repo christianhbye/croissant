@@ -13,6 +13,38 @@ Moreover, the time evolution of the simulation is very natural in this represent
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
+### Dense low-band-limit transforms
+
+For repeated transforms at low spherical-harmonic band-limits, `Beam` and
+`Sky` accept `engine="dense"`:
+
+```python
+sky = croissant.Sky(
+    maps,
+    frequencies,
+    sampling="healpix",
+    engine="dense",
+    lmax=30,
+)
+alm = sky.compute_alm()
+```
+
+On first construction, Croissant evaluates the spherical-harmonic basis in
+bounded chunks and caches the resulting analysis matrix on the current JAX
+device. Later transforms are native JAX matrix multiplications, so they
+support JIT compilation, batching, and automatic differentiation without
+external callbacks. The cached matrix includes the selected `niter`
+refinement count and stores only the independent `m >= 0` coefficients.
+HEALPix inputs may set `lmax` below the usual `2 * nside` default, which is
+particularly useful for high-resolution maps with low-band-limit science.
+
+`engine="s2fft"` remains the default. Applications that call
+`croissant.sphere.compute_alm` from inside an enclosing `jax.jit` can warm the
+cache explicitly with `croissant.precompute_dense_matrix`; `Beam` and `Sky`
+do this automatically during initialization. Use
+`croissant.clear_dense_matrix_cache()` to release Croissant's in-process
+matrix references.
+
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:
 

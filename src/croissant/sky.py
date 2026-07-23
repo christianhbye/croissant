@@ -8,7 +8,14 @@ class Sky(sphere.SphBase):
     coord: str = eqx.field(static=True)
 
     def __init__(
-        self, data, freqs, sampling="healpix", coord="galactic", niter=0
+        self,
+        data,
+        freqs,
+        sampling="healpix",
+        coord="galactic",
+        niter=0,
+        engine="s2fft",
+        lmax=None,
     ):
         """
         Object that holds the sky model.
@@ -37,6 +44,13 @@ class Sky(sphere.SphBase):
             transform. Default is 0 for all sampling schemes. For
             healpix, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
+        engine : {"s2fft", "dense"}
+            Spherical harmonic transform engine. Default is ``"s2fft"``.
+            The ``"dense"`` engine caches an exact transform matrix and is
+            optimized for repeated low-band-limit transforms.
+        lmax : int or None
+            Maximum spherical harmonic degree. For HEALPix data this may be
+            lower than the default ``2 * nside``. Default is None.
 
         """
         if coord not in {"galactic", "equatorial", "mepa"}:
@@ -44,7 +58,14 @@ class Sky(sphere.SphBase):
                 f"Unsupported coordinate system: {coord}. Supported systems "
                 "are {'galactic', 'equatorial', 'mepa'}."
             )
-        super().__init__(data, freqs, sampling, niter=niter)
+        super().__init__(
+            data,
+            freqs,
+            sampling,
+            niter=niter,
+            engine=engine,
+            lmax=lmax,
+        )
         self.coord = coord
 
     @jax.jit
@@ -60,6 +81,8 @@ class Sky(sphere.SphBase):
             self.sampling,
             nside=self.nside,
             niter=self._niter,
+            engine=self._engine,
+            dense_matrix=self._dense_matrix,
         )
 
     def compute_alm_eq(self, world="moon", et=None):
