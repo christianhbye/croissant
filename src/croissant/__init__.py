@@ -1,7 +1,17 @@
 from importlib.metadata import PackageNotFoundError, version
 
-from . import constants, multipair, rotations, simulator, utils
+from . import (
+    constants,
+    dense,
+    multipair,
+    polarization,
+    rotations,
+    simulator,
+    utils,
+)
 from .beam import Beam
+from .dense import DenseSphericalTransform, dense_compute_alm
+from .polarization import PairStokesBeam, PolarizedSky, polarized_convolve
 from .simulator import Simulator
 from .sky import Sky
 

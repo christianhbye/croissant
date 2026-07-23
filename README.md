@@ -9,7 +9,17 @@ CROISSANT uses spherical harmonics to decompose the sky and antenna beam to a se
 Moreover, the time evolution of the simulation is very natural in this representation. In the antenna reference frame, the sky rotates overhead with time. To account for this rotation, it is enough to rotate the spherical harmonics coefficients. In the right choice of coordinates (that is, one where the z-axis is aligned with the rotation axis of the earth or the moon), this rotation is simply achieved by multiplying the spherical coefficient by a phase.
 
 
-> **New in version 5.0.0:** CROISSANT is now fully based on JAX and legacy support for numpy/healpy code is dropped. Spherical harmonics transforms (built on [s2fft](https://github.com/astro-informatics/s2fft/)), coordinate system transforms, rotations, and the simulator itself can now all be differentiated using JAX autograd.
+> **New in version 6.0.0:** CROISSANT supports differentiable full-Stokes
+> skies and arbitrary complex pair-response beams while retaining the
+> diagonal-in-m time kernel. The exact IAU/COSMO, spin, and Stokes-V
+> conventions are documented in
+> [`docs/polarization.md`](docs/polarization.md).
+>
+> Version 5.0.0 moved CROISSANT fully to JAX and dropped the legacy
+> NumPy/healpy implementation. Spherical harmonic transforms (built on
+> [s2fft](https://github.com/astro-informatics/s2fft/)), coordinate
+> transformations, rotations, and the simulator can all be differentiated
+> using JAX autograd.
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
@@ -29,7 +39,10 @@ pip install croissant-sim
 
 ```
 
-Note that croissant is only tested up to Python 3.12. Python 3.13 and newer versions are experimental.
+Version 6 supports Python 3.11 and 3.12. The corrected pinned s2fft
+revision required for reliable spin-2 HEALPix transforms requires Python
+3.11 or newer; Croissant 5 remains the last Python 3.10-compatible release.
+Python 3.13 and newer versions are experimental.
 
 ## Development
 

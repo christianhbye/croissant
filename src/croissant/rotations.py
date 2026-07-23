@@ -10,6 +10,30 @@ from lunarsky import LunarTopo
 from .utils import lmax_from_shape
 
 
+def rotate_alm(alm, rotation, dl_array=None):
+    """Rotate spherical harmonic coefficients with arbitrary batch axes.
+
+    Spin-weighted fields rotate through the same Wigner-D action once their
+    coefficients have been formed in a consistent spin basis. This helper
+    therefore applies one spatial rotation to every leading batch/component
+    axis without treating Q and U as independent scalar maps.
+    """
+    alm = jax.numpy.asarray(alm)
+    lmax = lmax_from_shape(alm.shape)
+    if dl_array is None:
+        dl_array = s2fft.generate_rotate_dls(lmax + 1, rotation[1])
+    rotate_one = partial(
+        s2fft.utils.rotation.rotate_flms,
+        L=lmax + 1,
+        rotation=rotation,
+        dl_array=dl_array,
+    )
+    batch_shape = alm.shape[:-2]
+    flat = alm.reshape((-1,) + alm.shape[-2:])
+    rotated = jax.vmap(rotate_one)(flat)
+    return rotated.reshape(batch_shape + alm.shape[-2:])
+
+
 def jd_to_et(jd):
     """
     Convert a Julian Date to SPICE ephemeris time (seconds past J2000).
@@ -398,14 +422,7 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon", et=None):
             eul, dl_array = generate_euler_dl(lmax, "galactic", "fk5")
         else:
             raise ValueError("Invalid world. Must be 'moon' or 'earth'.")
-    ct = partial(
-        s2fft.utils.rotation.rotate_flms,
-        L=lmax + 1,
-        rotation=eul,
-        dl_array=dl_array,
-    )
-    alm_sim = jax.vmap(ct)(alm)
-    return alm_sim
+    return rotate_alm(alm, eul, dl_array=dl_array)
 
 
 def gal2eq(alm, eul=None, dl_array=None):

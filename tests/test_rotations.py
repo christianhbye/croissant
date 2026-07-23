@@ -6,6 +6,22 @@ from lunarsky import LunarTopo, MoonLocation, SkyCoord, Time
 from croissant import rotations
 
 
+def test_jd_to_et_uses_tdb_j2000_epoch():
+    assert np.isclose(rotations.jd_to_et(2451545.0), 0.0)
+    assert np.isclose(rotations.jd_to_et(2451545.5), 43200.0)
+
+
+def test_mepa_alias_rotation_accepts_explicit_et():
+    euler, dl_array = rotations.generate_euler_dl(
+        3,
+        "galactic",
+        "mepa",
+        et=0.0,
+    )
+    assert len(euler) == 3
+    assert np.asarray(dl_array).size > 0
+
+
 def test_get_rot_mat():
     # check that we agree with healpy for galactic -> equatorial
     rot_mat = rotations.get_rot_mat("galactic", "fk5")
