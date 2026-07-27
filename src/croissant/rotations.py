@@ -34,6 +34,40 @@ def rotate_alm(alm, rotation, dl_array=None):
     return rotated.reshape(batch_shape + alm.shape[-2:])
 
 
+def _rotate_alm_with_dl(alm, rotation, dl_array):
+    """Rotate alms with dynamic Euler angles and precomputed d values."""
+    alm = jax.numpy.asarray(alm)
+    L = lmax_from_shape(alm.shape) + 1
+    center = L - 1
+    emms = jax.numpy.arange(-center, center + 1)
+    alpha = jax.numpy.exp(-1j * emms * rotation[0])
+    gamma = jax.numpy.exp(-1j * emms * rotation[2])
+    result = jax.numpy.zeros_like(alm)
+    for ell in range(L):
+        indices = jax.numpy.arange(center - ell, center + ell + 1)
+        reduced = dl_array[ell, indices][:, indices]
+        values = alpha[indices] * jax.numpy.einsum(
+            "mn,n,...n->...m",
+            reduced,
+            gamma[indices],
+            alm[..., ell, indices],
+        )
+        result = result.at[..., ell, indices].set(values)
+    return result
+
+
+@jax.jit
+def rotate_alm_batched(alm, rotations, dl_arrays):
+    """Rotate one alm batch through a dynamic time axis of Euler angles."""
+    return jax.vmap(
+        lambda rotation, dl_array: _rotate_alm_with_dl(
+            alm,
+            rotation,
+            dl_array,
+        )
+    )(rotations, dl_arrays)
+
+
 def jd_to_et(jd):
     """
     Convert a Julian Date to SPICE ephemeris time (seconds past J2000).

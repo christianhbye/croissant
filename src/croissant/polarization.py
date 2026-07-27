@@ -285,7 +285,7 @@ class PolarizedSky(eqx.Module):
     ):
         convention = _normalize_convention(convention)
         self.stokes = _validate_stokes(stokes)
-        if coord not in {"galactic", "equatorial", "mepa"}:
+        if coord not in {"galactic", "equatorial", "mepa", "topo"}:
             raise ValueError(f"Unsupported coordinate system: {coord}.")
         data = jnp.asarray(data)
         if not jnp.issubdtype(data.dtype, jnp.floating):
@@ -337,6 +337,12 @@ class PolarizedSky(eqx.Module):
         """Return the contraction dual in the requested equatorial frame."""
         if world not in {"moon", "earth"}:
             raise ValueError("world must be either 'moon' or 'earth'.")
+        if self.coord == "topo":
+            raise ValueError(
+                "A topocentric sky cannot be transported by compute_alm_eq() "
+                "without a concrete observer location and reference epoch; "
+                "use compute_alm() to keep it in the local frame."
+            )
         alm = self.compute_alm()
         if self.coord != "galactic":
             expected = "mepa" if world == "moon" else "equatorial"

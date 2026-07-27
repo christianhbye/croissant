@@ -5,6 +5,12 @@ convention. Pixel values for `PolarizedSky` are real. Pair-response samples
 may be complex and use layout
 `(pair, frequency, stokes, spatial...)`.
 
+`PolarizedSky` accepts `galactic`, `equatorial`, `mepa`, and `topo`
+coordinates. A topocentric map can be analyzed with `compute_alm()` and stays
+in its local frame. `compute_alm_eq()` rejects topocentric input because a
+bare sky object does not carry the concrete observer location and reference
+epoch needed to transport it into a global frame.
+
 ## Tangent basis and IAU/COSMO conversion
 
 The tangent basis is ordered `(e_theta, e_phi)`, with theta the colatitude.

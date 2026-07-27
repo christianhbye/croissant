@@ -162,6 +162,27 @@ def test_polarized_healpix_objects_accept_low_target_lmax():
     assert jnp.any(jnp.abs(beam_alm) > 0)
 
 
+def test_topocentric_sky_analysis_stays_local():
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    sky_data = np.zeros((1, 4) + shape)
+    sky_data[0, 0] = 1.0
+    sky = PolarizedSky(
+        sky_data,
+        [10.0],
+        sampling="mwss",
+        coord="topo",
+    )
+
+    assert sky.coord == sky.frame == "topo"
+    assert sky.compute_alm().shape == (1, 4, lmax + 1, 2 * lmax + 1)
+    with pytest.raises(
+        ValueError,
+        match="observer location and reference epoch",
+    ):
+        sky.compute_alm_eq(world="moon")
+
+
 def test_polarized_mepa_rotation_matches_scalar_sky():
     lmax = 4
     L = lmax + 1

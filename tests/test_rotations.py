@@ -1,5 +1,7 @@
 import healpy as hp
+import jax.numpy as jnp
 import numpy as np
+import s2fft
 from astropy.coordinates import AltAz, EarthLocation
 from lunarsky import LunarTopo, MoonLocation, SkyCoord, Time
 
@@ -20,6 +22,44 @@ def test_mepa_alias_rotation_accepts_explicit_et():
     )
     assert len(euler) == 3
     assert np.asarray(dl_array).size > 0
+
+
+def test_batched_dynamic_rotation_matches_static_rotations():
+    lmax = 2
+    L = lmax + 1
+    rng = np.random.default_rng(4)
+    alms = rng.normal(size=(2, 4, L, 2 * L - 1))
+    alms = alms + 1j * rng.normal(size=alms.shape)
+    rotations_in = (
+        (0.37, 0.81, -0.24),
+        (-0.11, 1.07, 0.42),
+    )
+    dl_arrays = jnp.stack(
+        [
+            s2fft.generate_rotate_dls(L, rotation[1])
+            for rotation in rotations_in
+        ]
+    )
+    expected = jnp.stack(
+        [
+            rotations.rotate_alm(
+                alms,
+                rotation,
+                dl_array=dl_array,
+            )
+            for rotation, dl_array in zip(
+                rotations_in,
+                dl_arrays,
+                strict=True,
+            )
+        ]
+    )
+    actual = rotations.rotate_alm_batched(
+        alms,
+        jnp.asarray(rotations_in),
+        dl_arrays,
+    )
+    np.testing.assert_allclose(actual, expected, rtol=2e-12, atol=2e-12)
 
 
 def test_get_rot_mat():
