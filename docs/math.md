@@ -1,4 +1,10 @@
-CROISSANT decmposes the spatial dimensions of the sky model and antenna beams to [spherical harmonics](https://en.wikipedia.org/wiki/Spherical_harmonics). CROISSANT follows the [HEALPix]((https://en.wikipedia.org/wiki/Spherical_harmonics)) convention for spherical harmonics. These are orthonormal, that is
+# Mathematical conventions
+
+Full-Stokes harmonic duals, IAU/COSMO conversion, the Stokes-V sign, and
+spin-correct rotations are specified in
+[`polarization.md`](polarization.md).
+
+CROISSANT decmposes the spatial dimensions of the sky model and antenna beams to [spherical harmonics](https://en.wikipedia.org/wiki/Spherical_harmonics). CROISSANT follows the [HEALPix]((https://en.wikipedia.org/wiki/spherical_harmonics)) convention for spherical harmonics. These are orthonormal, that is
 $\int \mathrm{d}\Omega Y_\ell^m \left(Y_{\ell'}^{m'}\right)^* = \delta_{\ell\ell'} \delta_{mm'}$. Moreover, spherical harmonics have the property that their complex conjugate is given by $Y_\ell^{-m} = (-1)^m \left(Y_\ell^m\right)^* $. 
 It follows that for real-valued functions, the spherical harmomnics coefficients have the property $a_\ell^{-m} = (-1)^m \left(a_\ell^m \right)^* $. Hence, the coefficients with $m<0$ can always be reconstructed from the coefficients with $m>0$.
 

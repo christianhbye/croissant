@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "croissant-sim"
-version = "5.2.1"  # x-release-please-version
+version = "6.0.0"  # x-release-please-version
 description = """
 CROISSANT: A differentiable visibility simulator based on spherical harmonics
 """
 readme = "README.md"
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.11, <3.13"
 license = {text = "MIT License"}
 authors = [{name = "Christian H. Bye", email = "chbye@berkeley.edu"}]
 dependencies = [
@@ -18,15 +18,15 @@ dependencies = [
   "jax",
   "lunarsky",
   "numpy",
-  "s2fft",
+  "s2fft @ git+https://github.com/slosar/s2fft.git@cefdf468ec2540818bafb37ed60d7b1fbba2f21f",
   "scipy",
+  "spiceypy",
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable", 
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering",
