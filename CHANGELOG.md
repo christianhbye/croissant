@@ -8,7 +8,8 @@
   kernel (I/V spin-0 plus `(Q -+ iU)` spin `-+2` harmonic duals),
   spin-aware `rotations.rotate_alm`/`rotate_alm_batched`, the
   left-handed-NEU parity fix in `get_rot_mat`, and `croissant.dense`
-  (spin-weighted dense analysis operators). Conventions are documented in
+  (spin-weighted dense analysis operators). Conventions, the pair-response
+  design rationale, and the data model are documented in
   `docs/polarization.md`.
 - Generalize `sphere.compute_alm` to arbitrary leading batch axes and to
   spin-weighted/complex fields via `spin`/`reality` arguments; the dense
