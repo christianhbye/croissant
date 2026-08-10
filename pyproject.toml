@@ -39,6 +39,9 @@ Homepage = "https://github.com/christianhbye/croissant"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+croissant = ["data/*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
