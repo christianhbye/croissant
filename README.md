@@ -38,6 +38,12 @@ refinement count and stores only the independent `m >= 0` coefficients.
 HEALPix inputs may set `lmax` below the usual `2 * nside` default, which is
 particularly useful for high-resolution maps with low-band-limit science.
 
+In CPU benchmarks, the default `engine="s2fft"` remains faster for plain
+`niter=0` transforms. Prefer `engine="dense"` when `niter > 0` — the
+refinement is folded into the cached matrix, giving roughly a 6x speedup at
+`niter=3` — or when `lmax` is set below `2 * nside`, where the dense engine
+computes the transform and applies a low-pass filter in a single step.
+
 `engine="s2fft"` remains the default. Applications that call
 `croissant.sphere.compute_alm` from inside an enclosing `jax.jit` can warm the
 cache explicitly with `croissant.precompute_dense_matrix`; `Beam` and `Sky`
