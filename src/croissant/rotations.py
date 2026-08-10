@@ -7,6 +7,7 @@ import spiceypy as spice
 from astropy.coordinates import AltAz, SkyCoord
 from lunarsky import LunarTopo
 
+from .spice_utils import furnish_lunar_kernels
 from .utils import lmax_from_shape
 
 
@@ -255,6 +256,7 @@ def get_mepa_rotation_matrix(et=0.0):
         The 3x3 rotation matrix from J2000 to MEPA.
 
     """
+    furnish_lunar_kernels()
     return np.array(spice.pxform("J2000", "MOON_ME", et))
 
 
@@ -292,6 +294,7 @@ def _rot_mat_to_mepa(from_frame, et=None):
         R_from_mcmf = get_rot_mat(from_frame, "mcmf")
         # MCMF -> J2000 always uses the frame's observation time
         et_obs = jd_to_et(from_frame.obstime.tdb.jd)
+        furnish_lunar_kernels()
         R_mcmf_j2000 = np.array(spice.pxform("MOON_ME", "J2000", et_obs))
         # J2000 -> MEPA uses the reference epoch (default: obs time)
         et_mepa = et if et is not None else et_obs
