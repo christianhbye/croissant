@@ -8,7 +8,13 @@ import s2fft
 
 from croissant import utils
 from croissant.constants import Y00
-from croissant.sphere import SphBase, compute_alm
+from croissant.sphere import (
+    _DENSE_MATRIX_CACHE,
+    SphBase,
+    clear_dense_matrix_cache,
+    compute_alm,
+    precompute_dense_matrix,
+)
 
 LMAX_PARAMS = [8, 16, 25]
 rng = np.random.default_rng(seed=0)
@@ -200,3 +206,210 @@ def test_compute_alm_monopole(sampling, lmax, disable_jit):
     l_ix, m_ix = utils.getidx(lmax, 0, 0)
     # monopole alm = T / Y00 for a uniform map
     assert jnp.isclose(alm[0, l_ix, m_ix].real, T / Y00, rtol=1e-3)
+
+
+# ---------------------------------------------------------------------------
+# Dense transform engine
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("niter", [0, 1])
+def test_dense_engine_matches_s2fft_healpix(niter):
+    """Dense transforms should reproduce s2fft, including refinement."""
+    nside = 2
+    lmax = 2 * nside
+    data = jnp.asarray(rng.standard_normal((3, 12 * nside**2)))
+
+    expected = compute_alm(
+        data,
+        lmax,
+        "healpix",
+        nside=nside,
+        niter=niter,
+        engine="s2fft",
+    )
+    actual = compute_alm(
+        data,
+        lmax,
+        "healpix",
+        nside=nside,
+        niter=niter,
+        engine="dense",
+    )
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
+def test_dense_engine_matches_s2fft_equiangular():
+    """Dense transforms should retain support for non-HEALPix samplings."""
+    lmax = 4
+    data = jnp.asarray(rng.standard_normal(_make_data(lmax, "dh", 2).shape))
+
+    expected = compute_alm(data, lmax, "dh", engine="s2fft")
+    actual = compute_alm(data, lmax, "dh", engine="dense")
+
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
+def test_dense_matrix_is_packed_and_cached():
+    """Only independent coefficients are stored and identical keys reuse it."""
+    clear_dense_matrix_cache()
+    matrix1 = precompute_dense_matrix((48,), 4, "healpix", nside=2)
+    matrix2 = precompute_dense_matrix((48,), 4, "healpix", nside=2)
+
+    assert matrix1 is matrix2
+    assert matrix1.shape == (15, 48)
+
+
+@pytest.mark.parametrize("sampling", ["healpix", "dh"])
+def test_dense_engine_matches_s2fft_dtype(sampling):
+    """The matrix precision must track s2fft's output, not the map dtype."""
+    lmax = 4
+    nside = 2 if sampling == "healpix" else None
+    if sampling == "healpix":
+        data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+    else:
+        shape = _make_data(lmax, "dh", 2).shape
+        data = jnp.asarray(rng.standard_normal(shape))
+
+    # float32 maps round differently in the two engines, so only the
+    # output dtype is compared exactly.
+    for dtype, tol in ((jnp.float32, 1e-6), (jnp.float64, 1e-11)):
+        maps = data.astype(dtype)
+        expected = compute_alm(maps, lmax, sampling, nside=nside)
+        actual = compute_alm(maps, lmax, sampling, nside=nside, engine="dense")
+        assert actual.dtype == expected.dtype
+        np.testing.assert_allclose(actual, expected, rtol=tol, atol=tol)
+
+
+def test_dense_matrix_cache_is_dtype_independent():
+    """float32 and float64 maps must share one cached matrix."""
+    clear_dense_matrix_cache()
+    npix = 48
+    data = jnp.asarray(rng.standard_normal((1, npix)))
+    for dtype in (jnp.float64, jnp.float32):
+        compute_alm(data.astype(dtype), 4, "healpix", nside=2, engine="dense")
+
+    assert len(_DENSE_MATRIX_CACHE) == 1
+
+
+def test_dense_engine_is_jittable_after_precompute():
+    """A precomputed matrix can be reused from an enclosing jax.jit."""
+    nside = 2
+    lmax = 4
+    npix = 12 * nside**2
+    data = jnp.asarray(rng.standard_normal((2, npix)))
+    precompute_dense_matrix((npix,), lmax, "healpix", nside=nside)
+
+    transform = jax.jit(
+        lambda maps: compute_alm(
+            maps,
+            lmax,
+            "healpix",
+            nside=nside,
+            engine="dense",
+        )
+    )
+
+    expected = compute_alm(data, lmax, "healpix", nside=nside, engine="s2fft")
+    np.testing.assert_allclose(
+        transform(data), expected, rtol=1e-12, atol=1e-12
+    )
+
+
+def test_dense_engine_gradient_matches_s2fft():
+    """Dense matrix multiplication should preserve end-to-end gradients."""
+    nside = 2
+    lmax = 4
+    data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+
+    # Warm the cache before tracing, as production SphBase objects do.
+    compute_alm(
+        data, lmax, "healpix", nside=nside, engine="dense"
+    ).block_until_ready()
+
+    def loss(maps, engine):
+        alm = compute_alm(maps, lmax, "healpix", nside=nside, engine=engine)
+        return jnp.sum(jnp.abs(alm) ** 2)
+
+    expected = jax.grad(loss)(data, "s2fft")
+    actual = jax.grad(loss)(data, "dense")
+    np.testing.assert_allclose(actual, expected, rtol=1e-11, atol=1e-11)
+
+
+def test_sphbase_dense_engine_precomputes_matrix():
+    """SphBase should make dense transforms safe inside jitted methods."""
+    data = jnp.asarray(rng.standard_normal((1, 48)))
+    obj = SphBase(data, jnp.array([50.0]), "healpix", engine="dense")
+
+    assert obj.engine == "dense"
+    assert obj._dense_matrix.shape == (15, 48)
+
+
+def test_invalid_sht_engine():
+    """Unknown engine names should fail before any matrix construction."""
+    with pytest.raises(ValueError, match="Unsupported SHT engine"):
+        SphBase(jnp.ones((1, 48)), [50.0], "healpix", engine="unknown")
+
+
+def test_explicit_lmax_is_healpix_only():
+    """HEALPix can be truncated independently of its pixel resolution."""
+    obj = SphBase(
+        jnp.ones((1, 48)),
+        jnp.array([50.0]),
+        "healpix",
+        lmax=3,
+    )
+    assert obj.lmax == 3
+    assert obj._L == 4
+
+    data = _make_data(4, "dh", 1)
+    with pytest.raises(ValueError, match="only supported for HEALPix"):
+        SphBase(data, jnp.array([50.0]), "dh", lmax=3)
+
+    with pytest.raises(ValueError, match="non-negative"):
+        SphBase(
+            jnp.ones((1, 48)),
+            jnp.array([50.0]),
+            "healpix",
+            lmax=-1,
+        )
+
+
+def test_dense_engine_supports_lmax_below_two_nside():
+    """Dense HEALPix transforms should not inherit s2fft's low-L limit."""
+    nside = 4
+    lmax = 3
+    temperature = 500.0
+    data = temperature * jnp.ones((1, 12 * nside**2))
+
+    alm = compute_alm(
+        data,
+        lmax,
+        "healpix",
+        nside=nside,
+        engine="dense",
+    )
+
+    assert alm.shape == (1, lmax + 1, 2 * lmax + 1)
+    assert jnp.isclose(alm[0, 0, lmax].real, temperature / Y00, rtol=1e-12)
+
+
+def test_dense_truncated_lmax_matches_truncated_s2fft():
+    """A truncated dense transform is transform + low-pass in one step.
+
+    With niter=0 every coefficient is an independent quadrature sum, so
+    the dense engine at lmax < 2 * nside must equal the full-band s2fft
+    transform truncated to the same lmax.
+    """
+    nside = 4
+    lmax_full = 2 * nside
+    lmax = 3
+    data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+
+    full = compute_alm(data, lmax_full, "healpix", nside=nside)
+    truncated = full[:, : lmax + 1, lmax_full - lmax : lmax_full + lmax + 1]
+
+    actual = compute_alm(data, lmax, "healpix", nside=nside, engine="dense")
+
+    np.testing.assert_allclose(actual, truncated, rtol=1e-12, atol=1e-12)

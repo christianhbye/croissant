@@ -13,6 +13,49 @@ Moreover, the time evolution of the simulation is very natural in this represent
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
 
+### Dense low-band-limit transforms
+
+For repeated transforms at low spherical-harmonic band-limits, `Beam` and
+`Sky` accept `engine="dense"`:
+
+```python
+sky = croissant.Sky(
+    maps,
+    frequencies,
+    sampling="healpix",
+    engine="dense",
+    lmax=30,
+)
+alm = sky.compute_alm()
+```
+
+On first construction, Croissant evaluates the spherical-harmonic basis in
+bounded chunks and caches the resulting analysis matrix on the current JAX
+device. Later transforms are native JAX matrix multiplications, so they
+support JIT compilation, batching, and automatic differentiation without
+external callbacks. The cached matrix includes the selected `niter`
+refinement count and stores only the independent `m >= 0` coefficients.
+HEALPix inputs may set `lmax` below the usual `2 * nside` default, which is
+particularly useful for high-resolution maps with low-band-limit science.
+
+In CPU benchmarks, the default `engine="s2fft"` remains faster for plain
+`niter=0` transforms. Prefer `engine="dense"` when `niter > 0` — the
+refinement is folded into the cached matrix, giving roughly a 6x speedup at
+`niter=3` — or when `lmax` is set below `2 * nside`, where the dense engine
+computes the transform and applies a low-pass filter in a single step.
+
+`engine="s2fft"` remains the default. Applications that call
+`croissant.sphere.compute_alm` from inside an enclosing `jax.jit` should
+build the matrix once with `croissant.precompute_dense_matrix` and pass it
+to the jitted function as an argument via `dense_matrix=...`, so it enters
+the trace as a runtime input. (A pre-warmed cache alone also works — the
+matrix is then captured as a compile-time constant, which can increase
+compilation time and keeps the matrix alive as long as the compiled
+function.) `Beam` and `Sky` handle this automatically: they precompute the
+matrix during initialization and thread it through their jitted methods as
+a dynamic argument. Use `croissant.clear_dense_matrix_cache()` to release
+Croissant's in-process matrix references.
+
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:
 

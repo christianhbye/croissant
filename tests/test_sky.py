@@ -65,6 +65,37 @@ def test_sky_alm_monopole_uniform():
     assert jnp.isclose(alm[0, l_ix, m_ix].real, _T_SKY / Y00, rtol=1e-3)
 
 
+def test_sky_dense_engine_matches_s2fft():
+    """Sky should carry its precomputed dense matrix through jax.jit."""
+    nside = 2
+    lmax = 3
+    data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+    freqs = jnp.array([50.0, 100.0])
+
+    expected = Sky(
+        data,
+        freqs,
+        coord="mepa",
+        niter=1,
+        engine="s2fft",
+        lmax=lmax,
+    ).compute_alm()
+    sky = Sky(
+        data,
+        freqs,
+        coord="mepa",
+        niter=1,
+        engine="dense",
+        lmax=lmax,
+    )
+    actual = sky.compute_alm()
+
+    assert sky.engine == "dense"
+    assert sky.lmax == lmax
+    assert sky._dense_matrix.shape == (10, 48)
+    np.testing.assert_allclose(actual, expected, rtol=1e-12, atol=1e-12)
+
+
 # ---------------------------------------------------------------------------
 # compute_alm_eq – rotation to equatorial / mepa
 # ---------------------------------------------------------------------------

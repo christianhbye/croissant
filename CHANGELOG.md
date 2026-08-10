@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Add an optional `engine="dense"` spherical harmonic transform backend for
+  repeated low-band-limit workloads. It builds the exact configured `s2fft`
+  analysis operator once in bounded chunks, caches only independent
+  coefficients on the JAX device, and preserves JIT compilation, batching,
+  iterative refinement, and automatic differentiation.
+- Allow HEALPix `Beam` and `Sky` objects to set an explicit lower `lmax`
+  independently of their pixel resolution.
+
 ## [5.2.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.0...croissant-sim-v5.2.1) (2026-04-06)
 
 
