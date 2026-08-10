@@ -365,7 +365,7 @@ toml = [
 
 [[package]]
 name = "croissant-sim"
-version = "6.0.0"
+version = "5.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "astropy" },
