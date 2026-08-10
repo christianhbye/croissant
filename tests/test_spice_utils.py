@@ -17,9 +17,17 @@ spice.kclear()
 
 from croissant.rotations import get_mepa_rotation_matrix
 
-R = get_mepa_rotation_matrix(0.0)
-np.testing.assert_allclose(R @ R.T, np.eye(3), atol=1e-12)
-np.testing.assert_allclose(np.linalg.det(R), 1.0, atol=1e-12)
+R1 = get_mepa_rotation_matrix(0.0)
+np.testing.assert_allclose(R1 @ R1.T, np.eye(3), atol=1e-12)
+np.testing.assert_allclose(np.linalg.det(R1), 1.0, atol=1e-12)
+
+# User code may clear the shared kernel pool between croissant calls;
+# the pool, not croissant-side bookkeeping, is the source of truth, so
+# the next uncached MEPA call must re-furnish and succeed.
+spice.kclear()
+get_mepa_rotation_matrix.cache_clear()
+R2 = get_mepa_rotation_matrix(0.0)
+np.testing.assert_allclose(R2, R1, atol=1e-15)
 """
 
 

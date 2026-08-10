@@ -25,23 +25,28 @@ LUNAR_KERNELS = (
 )
 
 _furnish_lock = Lock()
-_furnished = False
+
+
+def _loaded_kernel_files():
+    """Return the file paths currently in the SPICE kernel pool."""
+    return {spice.kdata(i, "ALL")[0] for i in range(spice.ktotal("ALL"))}
 
 
 def furnish_lunar_kernels():
     """
     Furnish the SPICE kernels that define the MOON_ME frame.
 
-    Idempotent and thread-safe: the kernels are loaded into the global
-    SPICE kernel pool at most once per process. Call this before any
-    direct ``spiceypy`` computation involving MOON_ME; it is invoked
-    automatically by the rotation helpers in ``croissant.rotations``.
+    Idempotent and thread-safe. The SPICE kernel pool itself is the
+    source of truth: only kernels missing from the pool are furnished,
+    so MEPA computations keep working even if user code clears or
+    reloads the pool (e.g. with ``spice.kclear``) between croissant
+    calls. Invoked automatically by the rotation helpers in
+    ``croissant.rotations``.
     """
-    global _furnished
     with _furnish_lock:
-        if _furnished:
-            return
         data = files("croissant") / "data"
+        loaded = _loaded_kernel_files()
         for name in LUNAR_KERNELS:
-            spice.furnsh(str(data / name))
-        _furnished = True
+            path = str(data / name)
+            if path not in loaded:
+                spice.furnsh(path)
