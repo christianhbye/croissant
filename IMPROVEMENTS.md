@@ -47,9 +47,9 @@ low-priority improvement.
 The ground contribution is currently:
 
 ```python
-vis_gnd = beam.compute_fgnd() * Tgnd          # in Simulator.sim()
-vis_sky /= beam.compute_norm()                 # normalise by full-sphere integral
-vis = vis_sky + vis_gnd                        # add ground
+vis_gnd = beam.compute_fgnd() * Tgnd  # in Simulator.sim()
+vis_sky /= beam.compute_norm()  # normalise by full-sphere integral
+vis = vis_sky + vis_gnd  # add ground
 ```
 
 This is a simple model with known limitations:

@@ -48,12 +48,23 @@ refinement count and stores only the independent `m >= 0` coefficients.
 HEALPix inputs may set `lmax` below the usual `2 * nside` default, which is
 particularly useful for high-resolution maps with low-band-limit science.
 
+In CPU benchmarks, the default `engine="s2fft"` remains faster for plain
+`niter=0` transforms. Prefer `engine="dense"` when `niter > 0` — the
+refinement is folded into the cached matrix, giving roughly a 6x speedup at
+`niter=3` — or when `lmax` is set below `2 * nside`, where the dense engine
+computes the transform and applies a low-pass filter in a single step.
+
 `engine="s2fft"` remains the default. Applications that call
-`croissant.sphere.compute_alm` from inside an enclosing `jax.jit` can warm the
-cache explicitly with `croissant.precompute_dense_matrix`; `Beam` and `Sky`
-do this automatically during initialization. Use
-`croissant.clear_dense_matrix_cache()` to release Croissant's in-process
-matrix references.
+`croissant.sphere.compute_alm` from inside an enclosing `jax.jit` should
+build the matrix once with `croissant.precompute_dense_matrix` and pass it
+to the jitted function as an argument via `dense_matrix=...`, so it enters
+the trace as a runtime input. (A pre-warmed cache alone also works — the
+matrix is then captured as a compile-time constant, which can increase
+compilation time and keeps the matrix alive as long as the compiled
+function.) `Beam` and `Sky` handle this automatically: they precompute the
+matrix during initialization and thread it through their jitted methods as
+a dynamic argument. Use `croissant.clear_dense_matrix_cache()` to release
+Croissant's in-process matrix references.
 
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:

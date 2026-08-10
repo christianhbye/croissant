@@ -12,11 +12,13 @@ on:
 
 jobs:
   claude-review:
-    # Optional: Filter by PR author
-    # if: |
-    #   github.event.pull_request.user.login == 'external-contributor' ||
-    #   github.event.pull_request.user.login == 'new-developer' ||
-    #   github.event.pull_request.author_association == 'FIRST_TIME_CONTRIBUTOR'
+    # Skip runs that cannot authenticate: fork PRs get no secrets or OIDC
+    # token, and the app-token exchange rejects actors without write
+    # access (e.g. Copilot-pushed commits). Fork PRs can still be
+    # reviewed on demand by commenting @claude (see claude.yml).
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'Copilot'
 
     runs-on: ubuntu-latest
     permissions:

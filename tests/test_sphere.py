@@ -9,6 +9,7 @@ import s2fft
 from croissant import utils
 from croissant.constants import Y00
 from croissant.sphere import (
+    _DENSE_MATRIX_CACHE,
     SphBase,
     clear_dense_matrix_cache,
     compute_alm,
@@ -253,15 +254,43 @@ def test_dense_engine_matches_s2fft_equiangular():
 def test_dense_matrix_is_packed_and_cached():
     """Only independent coefficients are stored and identical keys reuse it."""
     clear_dense_matrix_cache()
-    matrix1 = precompute_dense_matrix(
-        (48,), 4, "healpix", nside=2, dtype=jnp.float64
-    )
-    matrix2 = precompute_dense_matrix(
-        (48,), 4, "healpix", nside=2, dtype=jnp.float64
-    )
+    matrix1 = precompute_dense_matrix((48,), 4, "healpix", nside=2)
+    matrix2 = precompute_dense_matrix((48,), 4, "healpix", nside=2)
 
     assert matrix1 is matrix2
     assert matrix1.shape == (15, 48)
+
+
+@pytest.mark.parametrize("sampling", ["healpix", "dh"])
+def test_dense_engine_matches_s2fft_dtype(sampling):
+    """The matrix precision must track s2fft's output, not the map dtype."""
+    lmax = 4
+    nside = 2 if sampling == "healpix" else None
+    if sampling == "healpix":
+        data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+    else:
+        shape = _make_data(lmax, "dh", 2).shape
+        data = jnp.asarray(rng.standard_normal(shape))
+
+    # float32 maps round differently in the two engines, so only the
+    # output dtype is compared exactly.
+    for dtype, tol in ((jnp.float32, 1e-6), (jnp.float64, 1e-11)):
+        maps = data.astype(dtype)
+        expected = compute_alm(maps, lmax, sampling, nside=nside)
+        actual = compute_alm(maps, lmax, sampling, nside=nside, engine="dense")
+        assert actual.dtype == expected.dtype
+        np.testing.assert_allclose(actual, expected, rtol=tol, atol=tol)
+
+
+def test_dense_matrix_cache_is_dtype_independent():
+    """float32 and float64 maps must share one cached matrix."""
+    clear_dense_matrix_cache()
+    npix = 48
+    data = jnp.asarray(rng.standard_normal((1, npix)))
+    for dtype in (jnp.float64, jnp.float32):
+        compute_alm(data.astype(dtype), 4, "healpix", nside=2, engine="dense")
+
+    assert len(_DENSE_MATRIX_CACHE) == 1
 
 
 def test_dense_engine_is_jittable_after_precompute():
@@ -270,9 +299,7 @@ def test_dense_engine_is_jittable_after_precompute():
     lmax = 4
     npix = 12 * nside**2
     data = jnp.asarray(rng.standard_normal((2, npix)))
-    precompute_dense_matrix(
-        (npix,), lmax, "healpix", nside=nside, dtype=data.dtype
-    )
+    precompute_dense_matrix((npix,), lmax, "healpix", nside=nside)
 
     transform = jax.jit(
         lambda maps: compute_alm(
@@ -366,3 +393,23 @@ def test_dense_engine_supports_lmax_below_two_nside():
 
     assert alm.shape == (1, lmax + 1, 2 * lmax + 1)
     assert jnp.isclose(alm[0, 0, lmax].real, temperature / Y00, rtol=1e-12)
+
+
+def test_dense_truncated_lmax_matches_truncated_s2fft():
+    """A truncated dense transform is transform + low-pass in one step.
+
+    With niter=0 every coefficient is an independent quadrature sum, so
+    the dense engine at lmax < 2 * nside must equal the full-band s2fft
+    transform truncated to the same lmax.
+    """
+    nside = 4
+    lmax_full = 2 * nside
+    lmax = 3
+    data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+
+    full = compute_alm(data, lmax_full, "healpix", nside=nside)
+    truncated = full[:, : lmax + 1, lmax_full - lmax : lmax_full + lmax + 1]
+
+    actual = compute_alm(data, lmax, "healpix", nside=nside, engine="dense")
+
+    np.testing.assert_allclose(actual, truncated, rtol=1e-12, atol=1e-12)
