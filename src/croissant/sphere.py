@@ -451,9 +451,7 @@ def compute_alm(
 
     if dense_matrix is None:
         spatial_shape = tuple(data.shape[-spatial_ndim:])
-        key = _dense_matrix_key(
-            spatial_shape, lmax, sampling, nside, niter, data.dtype
-        )
+        key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
         if isinstance(data, jax.core.Tracer):
             with _DENSE_MATRIX_CACHE_LOCK:
                 dense_matrix = _DENSE_MATRIX_CACHE.get(key)
