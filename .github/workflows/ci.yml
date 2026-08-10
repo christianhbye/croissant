@@ -10,6 +10,8 @@ jobs:
   lint-and-format:
     name: Lint and Format
     runs-on: ubuntu-latest
+    env:
+      RUFF_VERSION: "0.15.1"
     steps:
       - uses: actions/checkout@v6
       
@@ -18,12 +20,12 @@ jobs:
       - name: Run Ruff Linter
         uses: astral-sh/ruff-action@v3
         with:
-          version: "0.15.1"
+          version: ${{ env.RUFF_VERSION }}
 
       - name: Run Ruff Formatter
         uses: astral-sh/ruff-action@v3
         with:
-          version: "0.15.1"
+          version: ${{ env.RUFF_VERSION }}
           args: "format --check"
 
   test:
