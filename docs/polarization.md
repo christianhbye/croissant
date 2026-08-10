@@ -236,11 +236,13 @@ applies scalar-ground assumptions to Q, U, or V.
 The pinned s2fft revision fixes HEALPix spin recursion at exact HEALPix nodes.
 The failure mode involves zero Wigner-d recursion entries and produces
 percent-level spin-2 inaccuracies, so it is not optional for the polarized
-path. A dedicated regression test that fails on the affected release and
-passes at the pinned revision is still owed. It must not be a forward/inverse
-round trip, since related forward and inverse errors partially cancel; it has
-to compare against an independent construction or a known analytic spin
-field.
+path. `tests/test_s2fft_pin.py` certifies the pin: the forward transform is
+checked against analytically sampled spin-weighted harmonics and the inverse
+against s2fft's independent Turok-recursion base implementation. Neither is
+a forward/inverse round trip (related forward and inverse errors partially
+cancel). The file fails on s2fft 1.4.0 and passes at the pinned revision;
+it doubles as the acceptance test for switching to the upstream release
+once astro-informatics/s2fft#387 is merged.
 
 The git pin in `pyproject.toml` is a development expedient, not a proposal for
 release. It should be replaced with an upstream s2fft release containing the
