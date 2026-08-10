@@ -1,10 +1,13 @@
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
 import s2fft
 
 from croissant import simulator, utils
+from croissant.beam import Beam
 from croissant.constants import Y00, sidereal_day
+from croissant.sky import Sky
 
 rng = np.random.default_rng(0)
 
@@ -170,3 +173,40 @@ def test_rot_alm_z_with_times_parameter(lmax, world):
         emm = m_index - lmax
         expected = jnp.exp(-1j * emm * phi)
         assert jnp.isclose(phases_two[1, m_index], expected)
+
+
+def test_sim_dense_engine_matches_s2fft():
+    """End-to-end visibilities and gradients agree across SHT engines."""
+    nside = 2
+    npix = 12 * nside**2
+    freqs = jnp.array([50.0, 100.0])
+    times_jd = jnp.linspace(2459580.5, 2459580.6, 3)
+    beam_data = jnp.asarray(rng.standard_normal((freqs.size, npix))) ** 2
+    sky_data = jnp.asarray(rng.standard_normal((freqs.size, npix))) ** 2
+
+    def make_sim(engine, data):
+        beam = Beam(
+            beam_data, freqs, sampling="healpix", niter=1, engine=engine
+        )
+        sky = Sky(
+            data,
+            freqs,
+            sampling="healpix",
+            coord="galactic",
+            niter=1,
+            engine=engine,
+        )
+        return simulator.Simulator(
+            beam, sky, times_jd, freqs, 0.0, 0.0, world="moon", Tgnd=0.0
+        )
+
+    expected = make_sim("s2fft", sky_data).sim()
+    actual = make_sim("dense", sky_data).sim()
+    np.testing.assert_allclose(actual, expected, rtol=1e-9, atol=1e-12)
+
+    def loss(data, engine):
+        return jnp.sum(make_sim(engine, data).sim().real)
+
+    grad_s2fft = jax.grad(loss)(sky_data, "s2fft")
+    grad_dense = jax.grad(loss)(sky_data, "dense")
+    np.testing.assert_allclose(grad_dense, grad_s2fft, rtol=1e-9, atol=1e-12)

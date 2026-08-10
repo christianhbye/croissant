@@ -13,12 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       
+      # Pin ruff to the version locked in uv.lock so CI does not drift
+      # from the local toolchain when new ruff releases come out
       - name: Run Ruff Linter
         uses: astral-sh/ruff-action@v3
-        
+        with:
+          version: "0.15.1"
+
       - name: Run Ruff Formatter
         uses: astral-sh/ruff-action@v3
         with:
+          version: "0.15.1"
           args: "format --check"
 
   test:

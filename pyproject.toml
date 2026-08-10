@@ -19,6 +19,7 @@ dependencies = [
   "lunarsky",
   "numpy",
   "s2fft",
+  "scipy",
 ]
 classifiers = [
   "Development Status :: 5 - Production/Stable", 

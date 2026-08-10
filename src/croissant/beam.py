@@ -19,6 +19,8 @@ class Beam(sphere.SphBase):
         beam_rot=0.0,
         beam_tilt=0.0,
         niter=0,
+        engine="s2fft",
+        lmax=None,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -64,9 +66,23 @@ class Beam(sphere.SphBase):
             when using iterative methods. Default is 0 for all sampling
             schemes. For healpix, setting niter=3 improves accuracy
             but significantly increases JIT compile time.
+        engine : {"s2fft", "dense"}
+            Spherical harmonic transform engine. Default is ``"s2fft"``.
+            The ``"dense"`` engine caches an exact transform matrix and is
+            optimized for repeated low-band-limit transforms.
+        lmax : int or None
+            Maximum spherical harmonic degree. For HEALPix data this may be
+            lower than the default ``2 * nside``. Default is None.
 
         """
-        super().__init__(data, freqs, sampling, niter=niter)
+        super().__init__(
+            data,
+            freqs,
+            sampling,
+            niter=niter,
+            engine=engine,
+            lmax=lmax,
+        )
 
         if not jnp.isclose(beam_tilt, 0.0):
             raise NotImplementedError("Beam tilt is not yet implemented.")
@@ -171,6 +187,8 @@ class Beam(sphere.SphBase):
             self.sampling,
             nside=self.nside,
             niter=self._niter,
+            engine=self._engine,
+            dense_matrix=self._dense_matrix,
         )
         # apply azimuthal rotation, N→E convention (no-op when beam_rot == 0)
         emms = jnp.arange(-self.lmax, self.lmax + 1)
