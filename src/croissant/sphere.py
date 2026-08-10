@@ -13,15 +13,29 @@ _DENSE_MATRIX_CACHE = {}
 _DENSE_MATRIX_CACHE_LOCK = RLock()
 
 
-def _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter, dtype):
+def _dense_dtypes():
+    """Return the real and complex dtypes of a dense SHT matrix.
+
+    The dense engine reproduces ``s2fft.forward``, which always outputs
+    complex128 alms on an x64-enabled runtime (float32 maps included) and
+    complex64 otherwise. The matrix precision therefore follows JAX's x64
+    setting rather than the dtype of the input maps.
+    """
+    if jax.config.x64_enabled:
+        return jnp.float64, jnp.complex128
+    return jnp.float32, jnp.complex64
+
+
+def _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter):
     """Return a hashable key for a cached dense SHT analysis matrix."""
+    _, complex_dtype = _dense_dtypes()
     return (
         tuple(spatial_shape),
         int(lmax),
         str(sampling),
         None if nside is None else int(nside),
         int(niter),
-        np.dtype(dtype).str,
+        np.dtype(complex_dtype).str,
         jax.default_backend(),
     )
 
@@ -61,7 +75,6 @@ def _build_dense_matrix_healpix(
     lmax,
     nside,
     niter,
-    dtype,
     chunk_size,
 ):
     """Build a HEALPix matrix by evaluating spherical harmonics directly."""
@@ -73,7 +86,7 @@ def _build_dense_matrix_healpix(
 
     ell, emm = _positive_lm_indices(lmax)
     nalm = len(ell)
-    complex_dtype = jnp.complex128 if jax.config.x64_enabled else jnp.complex64
+    _, complex_dtype = _dense_dtypes()
     if chunk_size is None:
         # Limit each host-side spherical-harmonic block to roughly 64 MiB.
         complex_itemsize = np.dtype(complex_dtype).itemsize
@@ -167,12 +180,12 @@ def _build_dense_matrix_from_pixels(
     sampling,
     nside,
     niter,
-    dtype,
     chunk_size=None,
 ):
     """Materialize a general s2fft analysis operator from pixel bases."""
     npix = int(np.prod(spatial_shape))
-    itemsize = np.dtype(dtype).itemsize
+    real_dtype, _ = _dense_dtypes()
+    itemsize = np.dtype(real_dtype).itemsize
     if chunk_size is None:
         # Keep each identity-map chunk below 64 MiB. A ceiling of 256 gives
         # enough batch parallelism on a GPU without making s2fft's vmapped
@@ -187,7 +200,7 @@ def _build_dense_matrix_from_pixels(
     for start in range(0, npix, chunk_size):
         stop = min(start + chunk_size, npix)
         indices = jnp.arange(start, stop)
-        basis = jax.nn.one_hot(indices, npix, dtype=dtype)
+        basis = jax.nn.one_hot(indices, npix, dtype=real_dtype)
         basis = basis.reshape((stop - start,) + tuple(spatial_shape))
         dense = _compute_alm_s2fft(
             basis,
@@ -210,7 +223,6 @@ def _build_dense_matrix(
     sampling,
     nside,
     niter,
-    dtype,
     chunk_size=None,
 ):
     """Materialize the exact s2fft analysis operator in bounded chunks."""
@@ -220,7 +232,6 @@ def _build_dense_matrix(
             lmax,
             nside,
             niter,
-            dtype,
             chunk_size,
         )
     return _build_dense_matrix_from_pixels(
@@ -229,7 +240,6 @@ def _build_dense_matrix(
         sampling,
         nside,
         niter,
-        dtype,
         chunk_size=chunk_size,
     )
 
@@ -240,7 +250,6 @@ def precompute_dense_matrix(
     sampling,
     nside=None,
     niter=0,
-    dtype=jnp.float64,
     chunk_size=None,
 ):
     """
@@ -249,7 +258,10 @@ def precompute_dense_matrix(
     The returned matrix stores only the independent ``m >= 0`` coefficients
     and has shape ``((lmax + 1) * (lmax + 2) // 2, prod(spatial_shape))``.
     It exactly represents Croissant's standard ``s2fft`` transform, including
-    the requested iterative-refinement count.
+    the requested iterative-refinement count. Its precision follows JAX's
+    x64 setting, matching the alm dtype that ``s2fft`` produces: complex128
+    when x64 is enabled and complex64 otherwise, independently of the dtype
+    of the maps it is applied to.
 
     Parameters
     ----------
@@ -263,8 +275,6 @@ def precompute_dense_matrix(
         HEALPix nside, required for HEALPix sampling.
     niter : int
         Number of s2fft iterative-refinement steps to fold into the matrix.
-    dtype : dtype
-        Real input-map dtype.
     chunk_size : int or None
         Number of basis rows generated together while building the matrix.
         The default bounds each input chunk to roughly 64 MiB, with a ceiling
@@ -275,8 +285,7 @@ def precompute_dense_matrix(
     matrix : jax.Array
         Cached dense analysis matrix on the current default JAX device.
     """
-    dtype = jax.dtypes.canonicalize_dtype(dtype)
-    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter, dtype)
+    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
     with _DENSE_MATRIX_CACHE_LOCK:
         matrix = _DENSE_MATRIX_CACHE.get(key)
         if matrix is None:
@@ -286,7 +295,6 @@ def precompute_dense_matrix(
                 sampling,
                 nside,
                 niter,
-                dtype,
                 chunk_size=chunk_size,
             )
             _DENSE_MATRIX_CACHE[key] = matrix
@@ -388,9 +396,7 @@ def compute_alm(
 
     if dense_matrix is None:
         spatial_shape = tuple(data.shape[1:])
-        key = _dense_matrix_key(
-            spatial_shape, lmax, sampling, nside, niter, data.dtype
-        )
+        key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
         if isinstance(data, jax.core.Tracer):
             with _DENSE_MATRIX_CACHE_LOCK:
                 dense_matrix = _DENSE_MATRIX_CACHE.get(key)
@@ -407,7 +413,6 @@ def compute_alm(
                 sampling,
                 nside=nside,
                 niter=niter,
-                dtype=data.dtype,
             )
     return _apply_dense_matrix(data, dense_matrix, lmax)
 
@@ -535,7 +540,6 @@ class SphBase(eqx.Module):
                     self.sampling,
                     self.nside,
                     self._niter,
-                    self.data.dtype,
                 )
                 with _DENSE_MATRIX_CACHE_LOCK:
                     self._dense_matrix = _DENSE_MATRIX_CACHE.get(key)
@@ -553,7 +557,6 @@ class SphBase(eqx.Module):
                     self.sampling,
                     nside=self.nside,
                     niter=self._niter,
-                    dtype=self.data.dtype,
                 )
         else:
             self._dense_matrix = None
