@@ -366,3 +366,23 @@ def test_dense_engine_supports_lmax_below_two_nside():
 
     assert alm.shape == (1, lmax + 1, 2 * lmax + 1)
     assert jnp.isclose(alm[0, 0, lmax].real, temperature / Y00, rtol=1e-12)
+
+
+def test_dense_truncated_lmax_matches_truncated_s2fft():
+    """A truncated dense transform is transform + low-pass in one step.
+
+    With niter=0 every coefficient is an independent quadrature sum, so
+    the dense engine at lmax < 2 * nside must equal the full-band s2fft
+    transform truncated to the same lmax.
+    """
+    nside = 4
+    lmax_full = 2 * nside
+    lmax = 3
+    data = jnp.asarray(rng.standard_normal((2, 12 * nside**2)))
+
+    full = compute_alm(data, lmax_full, "healpix", nside=nside)
+    truncated = full[:, : lmax + 1, lmax_full - lmax : lmax_full + lmax + 1]
+
+    actual = compute_alm(data, lmax, "healpix", nside=nside, engine="dense")
+
+    np.testing.assert_allclose(actual, truncated, rtol=1e-12, atol=1e-12)
