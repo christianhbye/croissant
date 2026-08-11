@@ -10,47 +10,70 @@ jobs:
   lint-and-format:
     name: Lint and Format
     runs-on: ubuntu-latest
-    env:
-      RUFF_VERSION: "0.15.1"
     steps:
-      - uses: actions/checkout@v6
-      
-      # Pin ruff to the version locked in uv.lock so CI does not drift
-      # from the local toolchain when new ruff releases come out
+      - uses: actions/checkout@v7
+
+      # Read the ruff version from uv.lock so CI does not drift from
+      # the local toolchain when new ruff releases come out
       - name: Run Ruff Linter
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@v4.1.0
         with:
-          version: ${{ env.RUFF_VERSION }}
+          version-file: "uv.lock"
 
       - name: Run Ruff Formatter
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@v4.1.0
         with:
-          version: ${{ env.RUFF_VERSION }}
+          version-file: "uv.lock"
           args: "format --check"
 
   test:
     name: Test on Python ${{ matrix.python-version }}
     runs-on: ubuntu-latest
+    env:
+      # astropy >= 8 resolves its download cache via XDG dirs, not the
+      # legacy ~/.astropy/cache; pin the location so the pygdsm cache
+      # step below and astropy can never disagree about it
+      ASTROPY_CACHE_DIR: /home/runner/.cache/astropy
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Install uv and dynamically fetch the matrix Python version
+      # (setup-uv publishes no floating major tags since v8; pin exact)
       - name: Install uv and set up Python ${{ matrix.python-version }}
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      # --locked fails loudly if uv.lock is stale instead of silently
+      # re-resolving on every CI run
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras --dev --locked
 
+      # pygdsm downloads ~300 MB of GSM sky model data from a slow
+      # mirror on first use; without this cache the download eats into
+      # the 120s per-test timeout and intermittently kills the physics
+      # test fixtures. hashFiles key + restore-keys so the cache
+      # carries forward (and can pick up new data files) across
+      # lockfile changes.
+      - name: Cache pygdsm sky model data
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.ASTROPY_CACHE_DIR }}
+          key: pygdsm-data-${{ hashFiles('uv.lock') }}
+          restore-keys: pygdsm-data-
+
+      # astropy ignores ASTROPY_CACHE_DIR unless the directory exists,
+      # so create it before the first download on cache-miss runs
       - name: Run pytest
-        run: uv run pytest --cov-report=xml
+        run: |
+          mkdir -p "$ASTROPY_CACHE_DIR"
+          uv run pytest --cov-report=xml
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
@@ -59,8 +82,14 @@ jobs:
           # Fork PRs have no token; don't fail their CI on upload errors
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
 
+      # test-results-action is deprecated; codecov-action with
+      # report_type replaces it
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
+          report_type: test_results
+          files: "junit.xml"
+          disable_search: true
           token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}

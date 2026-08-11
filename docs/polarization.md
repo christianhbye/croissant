@@ -168,8 +168,7 @@ with the same spin labels. Since the sky pixels are physical real Stokes
 values, `P- = conj(P+)`. The harmonic contraction
 
 ```python
-jnp.einsum("fclm,tm,pfclm->tpf",
-           sky_alm.conj(), phases, beam_alm)
+jnp.einsum("fclm,tm,pfclm->tpf", sky_alm.conj(), phases, beam_alm)
 ```
 
 is then exactly the pixel-space IQUV integral for arbitrary complex pair
