@@ -1,6 +1,6 @@
 # Full-Stokes conventions
 
-Croissant 6 uses public Stokes order `(I, Q, U, V)` and the IAU tangent-basis
+Croissant uses public Stokes order `(I, Q, U, V)` and the IAU tangent-basis
 convention. Pixel values for `PolarizedSky` are real. Pair-response samples
 may be complex and use layout
 `(pair, frequency, stokes, spatial...)`.
