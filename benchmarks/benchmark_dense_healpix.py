@@ -1,6 +1,5 @@
 """Benchmark the low-bandlimit HEALPix dense-analysis cache."""
 
-import multiprocessing
 import os
 from time import perf_counter
 
@@ -61,5 +60,4 @@ def main():
 
 
 if __name__ == "__main__":
-    multiprocessing.freeze_support()
     main()
