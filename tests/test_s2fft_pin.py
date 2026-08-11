@@ -64,7 +64,8 @@ def wigner_d(ell, m, n, beta):
 def spin_spherical_harmonic(spin, ell, m, theta, phi):
     """Spin-weighted spherical harmonic sYlm in the Goldberg /
     McEwen & Wiaux convention used by s2fft (Condon-Shortley phase
-    included): (-1)^s sqrt((2l+1)/4pi) d^l_{m,-s}(theta) e^{i m phi}.
+    included): (-1)^s sqrt((2l+1)/4pi) d^l_{m,-s}(theta) *
+    e^{i m phi}.
 
     An earlier version computed the transposed d^l_{n,m} and
     compensated with a (-1)^(s+|m|) prefactor; the cancellation is
