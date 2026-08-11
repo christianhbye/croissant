@@ -8,9 +8,10 @@ complex Stokes combination is the spin +2 object:
 
     Q - i U_IAU = Q + i U_COSMO = sum_lm -(E + iB)_lm 2Y_lm,
 
-the standard CMB relation, certified against healpy's alm2map(pol=True)
-at machine precision. So Q - iU must be analyzed at spin +2 and Q + iU
-at spin -2. If the labels are mismatched, statics remain exact (a
+the standard CMB relation, certified against healpy's
+alm2map(pol=True) at machine precision. So Q - iU must be analyzed at
+spin +2 and Q + iU at spin -2. If the labels are mismatched,
+statics remain exact (a
 fixed-spin harmonic contraction is complete for any spin, and sky and
 beam use matching labels) and z-rotations commute with the error (zero
 transport phase) -- but frame rotations with beta != 0 apply the complex
