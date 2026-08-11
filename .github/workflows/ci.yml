@@ -50,6 +50,19 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras --dev --locked
 
+      # pygdsm downloads ~300 MB of GSM sky model data from a slow
+      # mirror on first use; without this cache the download eats into
+      # the 120s per-test timeout and intermittently kills the physics
+      # test fixtures. hashFiles key + restore-keys so the cache
+      # carries forward (and can pick up new data files) across
+      # lockfile changes.
+      - name: Cache pygdsm sky model data
+        uses: actions/cache@v6
+        with:
+          path: ~/.astropy/cache
+          key: pygdsm-data-${{ hashFiles('uv.lock') }}
+          restore-keys: pygdsm-data-
+
       - name: Run pytest
         run: uv run pytest --cov-report=xml
 
