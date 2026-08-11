@@ -10,22 +10,20 @@ jobs:
   lint-and-format:
     name: Lint and Format
     runs-on: ubuntu-latest
-    env:
-      RUFF_VERSION: "0.15.1"
     steps:
-      - uses: actions/checkout@v6
-      
-      # Pin ruff to the version locked in uv.lock so CI does not drift
-      # from the local toolchain when new ruff releases come out
+      - uses: actions/checkout@v7
+
+      # Read the ruff version from uv.lock so CI does not drift from
+      # the local toolchain when new ruff releases come out
       - name: Run Ruff Linter
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@v4.1.0
         with:
-          version: ${{ env.RUFF_VERSION }}
+          version-file: "uv.lock"
 
       - name: Run Ruff Formatter
-        uses: astral-sh/ruff-action@v3
+        uses: astral-sh/ruff-action@v4.1.0
         with:
-          version: ${{ env.RUFF_VERSION }}
+          version-file: "uv.lock"
           args: "format --check"
 
   test:
@@ -36,18 +34,21 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
     
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # Install uv and dynamically fetch the matrix Python version
+      # (setup-uv publishes no floating major tags since v8; pin exact)
       - name: Install uv and set up Python ${{ matrix.python-version }}
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9.0.0
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
+      # --locked fails loudly if uv.lock is stale instead of silently
+      # re-resolving on every CI run
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --all-extras --dev --locked
 
       - name: Run pytest
         run: uv run pytest --cov-report=xml
@@ -59,8 +60,12 @@ jobs:
           # Fork PRs have no token; don't fail their CI on upload errors
           fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
 
+      # test-results-action is deprecated; codecov-action with
+      # report_type replaces it
       - name: Upload test results to Codecov
         if: ${{ !cancelled() }}
-        uses: codecov/test-results-action@v1
+        uses: codecov/codecov-action@v7
         with:
+          report_type: test_results
           token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: ${{ secrets.CODECOV_TOKEN != '' }}
