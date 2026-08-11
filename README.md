@@ -21,7 +21,7 @@ Moreover, the time evolution of the simulation is very natural in this represent
 > transformations, rotations, and the simulator can all be differentiated
 > using JAX autograd.
 
-Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of propsed designs before choosing an antenna for an experiment.
+Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of proposed designs before choosing an antenna for an experiment.
 
 ### Dense low-band-limit transforms
 
