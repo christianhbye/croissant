@@ -9,7 +9,7 @@ description = """
 CROISSANT: A differentiable visibility simulator based on spherical harmonics
 """
 readme = "README.md"
-requires-python = ">=3.11, <3.13"
+requires-python = ">=3.11, <3.14"
 license = {text = "MIT License"}
 authors = [{name = "Christian H. Bye", email = "chbye@berkeley.edu"}]
 dependencies = [
