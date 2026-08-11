@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Add the full-Stokes polarization layer (merged from
+  `codex/full-stokes-pair-response-topo`): `PolarizedSky` and
+  `PairStokesBeam` containers, the component-aware `polarized_convolve`
+  kernel (I/V spin-0 plus `(Q -+ iU)` spin `-+2` harmonic duals),
+  spin-aware `rotations.rotate_alm`/`rotate_alm_batched`, the
+  left-handed-NEU parity fix in `get_rot_mat`, and `croissant.dense`
+  (spin-weighted dense analysis operators). Conventions, the pair-response
+  design rationale, and the data model are documented in
+  `docs/polarization.md`.
+- Generalize `sphere.compute_alm` to arbitrary leading batch axes and to
+  spin-weighted/complex fields via `spin`/`reality` arguments; the dense
+  engine dispatches spin-0 real input to the packed cached-matrix path and
+  everything else to `croissant.dense`.
+- Pin `s2fft` to the `slosar/s2fft` HEALPix spin-recursion fix until it is
+  released upstream; add `scipy` and `spiceypy` dependencies.
 - Add an optional `engine="dense"` spherical harmonic transform backend for
   repeated low-band-limit workloads. It builds the exact configured `s2fft`
   analysis operator once in bounded chunks, caches only independent

@@ -52,22 +52,34 @@ def _positive_lm_indices(lmax):
 
 
 @eqx.filter_jit
-def _compute_alm_s2fft(data, lmax, sampling, nside=None, niter=0):
-    """Compute alms with the standard matrix-free s2fft engine."""
+def _compute_alm_s2fft(
+    data, lmax, sampling, nside=None, niter=0, spin=0, reality=True
+):
+    """Compute alms with the standard matrix-free s2fft engine.
+
+    Every axis before the spatial axes is treated as a batch axis. The
+    scalar defaults are identical to the original Croissant API.
+    """
+    data = jnp.asarray(data)
+    spatial_ndim = 1 if sampling == "healpix" else 2
+    spatial_shape = data.shape[-spatial_ndim:]
+    batch_shape = data.shape[:-spatial_ndim]
+    flat_data = data.reshape((-1,) + spatial_shape)
     m2alm = partial(
         s2fft.forward,
         L=lmax + 1,
-        spin=0,
+        spin=spin,
         nside=nside,
         sampling=sampling,
         method="jax",
-        reality=True,
+        reality=reality,
         precomps=None,
         spmd=False,
         L_lower=0,
         iter=niter,
     )
-    return jax.vmap(m2alm)(data)
+    flat_alm = jax.vmap(m2alm)(flat_data)
+    return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
 
 
 def _build_dense_matrix_healpix(
@@ -308,14 +320,18 @@ def clear_dense_matrix_cache():
 
 
 @partial(eqx.filter_jit, inline=True)
-def _apply_dense_matrix(data, matrix, lmax):
+def _apply_dense_matrix(data, matrix, lmax, spatial_ndim=None):
     """Apply a packed dense analysis matrix and restore s2fft's layout."""
-    flat_data = data.reshape((data.shape[0], -1))
+    if spatial_ndim is None:
+        batch_shape = data.shape[:1]
+    else:
+        batch_shape = data.shape[:-spatial_ndim]
+    flat_data = data.reshape((int(np.prod(batch_shape, dtype=int)), -1))
     packed = flat_data @ matrix.T
 
     ell, emm = _positive_lm_indices(lmax)
     alm = jnp.zeros(
-        (data.shape[0], lmax + 1, 2 * lmax + 1),
+        (flat_data.shape[0], lmax + 1, 2 * lmax + 1),
         dtype=packed.dtype,
     )
     alm = alm.at[:, ell, lmax + emm].set(packed)
@@ -324,7 +340,8 @@ def _apply_dense_matrix(data, matrix, lmax):
     ell_neg = ell[positive]
     emm_neg = emm[positive]
     negative = ((-1) ** emm_neg)[None, :] * jnp.conj(packed[:, positive])
-    return alm.at[:, ell_neg, lmax - emm_neg].set(negative)
+    alm = alm.at[:, ell_neg, lmax - emm_neg].set(negative)
+    return alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
 
 
 def compute_alm(
@@ -333,15 +350,22 @@ def compute_alm(
     sampling,
     nside=None,
     niter=0,
+    spin=0,
+    reality=True,
     engine="s2fft",
     *,
     dense_matrix=None,
 ):
     """
-    Compute the spherical harmonic coefficients of a scalar field on the
-    sphere. The default ``"s2fft"`` engine wraps ``s2fft.forward``. The
-    ``"dense"`` engine materializes that same linear transform once and
+    Compute the spherical harmonic coefficients of a scalar or spin field
+    on the sphere. The default ``"s2fft"`` engine wraps ``s2fft.forward``.
+    The ``"dense"`` engine materializes that same linear transform once and
     subsequently evaluates it as a native JAX matrix multiplication.
+
+    Every axis before the spatial axes is treated as a batch axis. For
+    nonzero spin (or complex scalar input) set ``reality=False``; the dense
+    engine then dispatches to :mod:`croissant.dense`, which builds the
+    spin-weighted operator in the full 2D harmonic layout.
 
     Parameters
     ----------
@@ -364,6 +388,11 @@ def compute_alm(
         improve accuracy at the cost of increased computation time.
         Default is 0, which corresponds to the default behavior of
         s2fft.
+    spin : int
+        Spin weight of the input field. Default is 0.
+    reality : bool
+        Whether to use the real-valued scalar transform optimization.
+        Set to False for complex inputs and all nonzero-spin transforms.
     engine : {"s2fft", "dense"}
         Spherical harmonic transform engine. ``"s2fft"`` is the existing
         matrix-free implementation. ``"dense"`` caches the exact transform
@@ -380,6 +409,16 @@ def compute_alm(
         (len(data), lmax+1, 2*lmax+1)
 
     """
+    data = jnp.asarray(data)
+    spatial_ndim = 1 if sampling == "healpix" else 2
+    if data.ndim < spatial_ndim:
+        raise ValueError(
+            f"Data for {sampling!r} sampling must have at least "
+            f"{spatial_ndim} spatial dimension(s)."
+        )
+    if spin != 0 and reality:
+        raise ValueError("Nonzero-spin transforms require reality=False.")
+
     if engine == "s2fft":
         return _compute_alm_s2fft(
             data,
@@ -387,6 +426,8 @@ def compute_alm(
             sampling,
             nside=nside,
             niter=niter,
+            spin=spin,
+            reality=reality,
         )
     if engine != "dense":
         raise ValueError(
@@ -394,8 +435,22 @@ def compute_alm(
             "{'s2fft', 'dense'}."
         )
 
+    if spin != 0 or not reality:
+        # Complex and spin-weighted dense analysis uses the full-layout
+        # operator from croissant.dense (no packed-real optimization).
+        from . import dense as _dense
+
+        return _dense.dense_compute_alm(
+            data,
+            lmax,
+            sampling,
+            nside=nside,
+            spin=spin,
+            niter=niter,
+        )
+
     if dense_matrix is None:
-        spatial_shape = tuple(data.shape[1:])
+        spatial_shape = tuple(data.shape[-spatial_ndim:])
         key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
         if isinstance(data, jax.core.Tracer):
             with _DENSE_MATRIX_CACHE_LOCK:
@@ -414,7 +469,7 @@ def compute_alm(
                 nside=nside,
                 niter=niter,
             )
-    return _apply_dense_matrix(data, dense_matrix, lmax)
+    return _apply_dense_matrix(data, dense_matrix, lmax, spatial_ndim)
 
 
 class SphBase(eqx.Module):
