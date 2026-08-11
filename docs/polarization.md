@@ -95,11 +95,11 @@ primed Stokes parameters are measured in the rotated basis. With this
 orientation a spin-`s` quantity acquires `exp(-i s psi)`, matching the
 McEwen & Wiaux spin convention implemented by s2fft.
 
-Therefore
+Therefore, with `U` in the COSMO convention used by this derivation,
 
 ```text
-P+ = Q + i U    has spin +2
-P- = Q - i U    has spin -2.
+Q + i U_COSMO    has spin +2
+Q - i U_COSMO    has spin -2.
 ```
 
 IAU and COSMO inputs differ only by
@@ -107,6 +107,20 @@ IAU and COSMO inputs differ only by
 ```text
 U_IAU = -U_COSMO.
 ```
+
+Croissant stores Stokes parameters internally in the IAU convention, so
+in terms of the internal `U` the spin assignments swap:
+
+```text
+Q - i U    has spin +2
+Q + i U    has spin -2.
+```
+
+The spin labels and the `U` sign convention must flip together: an
+opposite-spin analysis still inverts (each fixed-spin harmonic family is
+complete), but it is not band-limited for band-limited `E`/`B` skies,
+and Wigner-D frame rotation then applies the complex conjugate of the
+physical transport phase.
 
 The same sign change is applied to a Q/U response vector. This is the
 contragredient response conversion and leaves the physical contraction
@@ -158,14 +172,18 @@ Croissant stores the sky contraction dual
 (I, V, P-, P+)
 ```
 
-with spins `(0, 0, -2, +2)`, and the response dual
+with spins `(0, 0, -2, +2)`, where `P-` is the spin `-2` analysis of
+`Q + i U` and `P+` the spin `+2` analysis of `Q - i U` (internal IAU
+`U`; each combination analyzed at its physical spin per the previous
+section), and the response dual
 
 ```text
-(BI, BV, 1/2 (BQ - i BU), 1/2 (BQ + i BU))
+(BI, BV, 1/2 (BQ + i BU), 1/2 (BQ - i BU))
 ```
 
 with the same spin labels. Since the sky pixels are physical real Stokes
-values, `P- = conj(P+)`. The harmonic contraction
+values, the two polarized sky fields are complex conjugates of each
+other. The harmonic contraction
 
 ```python
 jnp.einsum("fclm,tm,pfclm->tpf", sky_alm.conj(), phases, beam_alm)
