@@ -80,13 +80,20 @@ from its own simulator.
 
 ## Tangent basis and IAU/COSMO conversion
 
-The tangent basis is ordered `(e_theta, e_phi)`, with theta the colatitude.
-Under the HEALPix/COSMO basis-rotation convention,
+The tangent basis is ordered `(e_theta, e_phi)`, with theta the colatitude,
+so that `e_theta x e_phi = n` with `n` the outward radial direction. Under
+the HEALPix/COSMO basis-rotation convention,
 
 ```text
 Q' =  cos(2 psi) Q + sin(2 psi) U
-U' = -sin(2 psi) Q + cos(2 psi) U.
+U' = -sin(2 psi) Q + cos(2 psi) U,
 ```
+
+where `psi > 0` is a right-handed rotation of the tangent basis about the
+outward radial direction `n` (rotating `e_theta` towards `e_phi`) and the
+primed Stokes parameters are measured in the rotated basis. With this
+orientation a spin-`s` quantity acquires `exp(-i s psi)`, matching the
+McEwen & Wiaux spin convention implemented by s2fft.
 
 Therefore
 
@@ -121,6 +128,19 @@ to `(1, +i)` in this basis. When viewed toward the arriving wave source, the
 real electric vector rotates from `+e_theta` toward `-e_phi` as time
 increases. This fixture, rather than an informal right/left label, is the
 normative sign definition used by both packages.
+
+In IEEE/IAU labels the fixture is right-hand circular: with arrival
+direction `n` (observer towards source) the wave propagates along `-n`, and
+the fixture's electric vector `e_theta cos(wt) - e_phi sin(wt)` rotates
+right-handedly about `-n`, i.e. about the propagation direction. Positive
+Stokes V therefore denotes IEEE/IAU right-hand circular polarization,
+
+```text
+V = RCP - LCP,   equivalently   V = (RR - LL) / 2
+```
+
+for circular feed products, matching the IAU radio convention used by
+common interferometry software.
 
 ## Harmonic dual
 
