@@ -105,6 +105,51 @@ def test_dense_transform_supports_low_lmax_healpix_and_gradients():
     )
 
 
+def test_dense_transform_matches_s2fft_for_complex_input():
+    """Direct comparison on complex input at tight tolerance.
+
+    Complex input distinguishes the analysis matrix from its conjugate,
+    certifying the VJP row-extraction convention in
+    ``_build_analysis_matrix``; the 1j-scaled batch entry would flip
+    sign under a conjugating apply path.
+    """
+    nside = 8
+    lmax = 6
+    spin = 2
+    rng = np.random.default_rng(41)
+    npix = 12 * nside**2
+    data = jnp.asarray(rng.normal(size=npix) + 1j * rng.normal(size=npix))
+    transform = DenseSphericalTransform(
+        lmax,
+        "healpix",
+        nside=nside,
+        spin=spin,
+        dtype=jnp.complex128,
+    )
+    dense = transform(data)
+    transform_L = max(lmax, 2 * nside - 1) + 1
+    reference = utils.reduce_lmax(
+        s2fft.forward(
+            data,
+            L=transform_L,
+            spin=spin,
+            nside=nside,
+            sampling="healpix",
+            method="jax",
+            reality=False,
+            iter=0,
+        ),
+        lmax,
+    )
+    assert jnp.allclose(dense, reference, rtol=1e-12, atol=1e-12)
+
+    batch = jnp.stack([data, 1j * data]).reshape(2, 1, npix)
+    batched = transform(batch)
+    assert batched.shape == (2, 1, lmax + 1, 2 * lmax + 1)
+    assert jnp.allclose(batched[0, 0], dense, rtol=1e-12, atol=1e-12)
+    assert jnp.allclose(batched[1, 0], 1j * dense, rtol=1e-12, atol=1e-12)
+
+
 def test_dense_cache_reuses_matrix_for_identical_geometry():
     hits_before = _build_analysis_matrix.cache_info().hits
     first = DenseSphericalTransform(3, "mwss", spin=0)
