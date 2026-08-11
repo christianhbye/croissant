@@ -13,7 +13,7 @@ from croissant.polarization import (
     convert_stokes_convention,
     polarized_convolve,
 )
-from croissant.simulator import rot_alm_z
+from croissant.simulator import convolve, rot_alm_z
 from croissant.sky import Sky
 from croissant.sphere import compute_alm
 
@@ -245,6 +245,61 @@ def test_pair_beam_rotation_matches_scalar_beam_convention():
         scalar_beam.compute_alm()[0],
         rtol=2e-6,
         atol=2e-6,
+    )
+
+
+def test_unpolarized_reduction_matches_scalar_pipeline():
+    """An (I, 0, 0, 0) sky through an I-only pair response reproduces
+    the scalar croissant visibility end to end, phases included."""
+    lmax = 6
+    L = lmax + 1
+    ntheta, nphi = _mwss_shape(lmax)
+    theta = s2fft.sampling.s2_samples.thetas(L=L, sampling="mwss")
+    phi = s2fft.sampling.s2_samples.phis_equiang(L=L, sampling="mwss")
+    tt, pp = np.meshgrid(theta, phi, indexing="ij")
+    freqs = [10.0, 20.0]
+
+    intensity = np.stack(
+        [
+            2.0 + 0.3 * np.sin(tt) * np.cos(pp),
+            1.5 + 0.2 * np.cos(tt) * np.sin(2 * pp),
+        ]
+    )
+    response = np.stack(
+        [
+            1.0 + 0.4 * np.sin(tt) ** 2 * np.cos(pp),
+            0.8 + 0.3 * np.cos(tt) ** 2,
+        ]
+    )
+    sky_maps = np.zeros((2, 4, ntheta, nphi))
+    sky_maps[:, 0] = intensity
+    beam_maps = np.zeros((1, 2, 4, ntheta, nphi), dtype=np.complex128)
+    beam_maps[0, :, 0] = response
+    horizon = np.ones((ntheta, nphi), dtype=bool)
+
+    polarized_sky = PolarizedSky(
+        sky_maps, freqs, sampling="mwss", coord="mepa"
+    )
+    pair_beam = PairStokesBeam(
+        beam_maps, freqs, [(0, 0)], sampling="mwss", horizon=horizon
+    )
+    scalar_sky = Sky(
+        intensity, jnp.asarray(freqs), sampling="mwss", coord="mepa"
+    )
+    scalar_beam = Beam(
+        response, jnp.asarray(freqs), sampling="mwss", horizon=horizon
+    )
+
+    phases = rot_alm_z(lmax, times=jnp.asarray([0.0, 3600.0, 7200.0]))
+    polarized_vis = polarized_convolve(
+        pair_beam.compute_alm(), polarized_sky.compute_alm(), phases
+    )
+    scalar_vis = convolve(
+        scalar_beam.compute_alm(), scalar_sky.compute_alm(), phases
+    )
+    assert polarized_vis.shape == (3, 1, 2)
+    np.testing.assert_allclose(
+        polarized_vis[:, 0, :], scalar_vis, rtol=1e-10, atol=1e-10
     )
 
 
