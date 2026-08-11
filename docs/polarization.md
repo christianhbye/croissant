@@ -231,10 +231,16 @@ reference epoch. It is not the body-fixed MCMF frame: retaining the reference
 epoch is what preserves the Moon's initial spin phase.
 
 Positive `beam_rot` follows the astronomical azimuth convention, measured
-from local North towards East. It acts on every response component through
-the same `exp(+i m beam_rot)` harmonic phase.
+from local North towards East, and is given in degrees (matching the
+scalar `Beam`). It acts on every response component through the same
+`exp(+i m beam_rot)` harmonic phase.
 
 ## Calibration and ground
+
+`PairStokesBeam` multiplies its response by a horizon mask before every
+analysis (default: the upper hemisphere, `theta <= pi/2`; pass `horizon=`
+to override), so below-horizon response is excluded from all four
+components' coefficients alike.
 
 `PairStokesBeam` performs no physical normalization. Its first luseepy
 consumer supplies open-circuit effective-length products in `m^2`, then
