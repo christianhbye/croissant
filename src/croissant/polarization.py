@@ -151,6 +151,29 @@ def _analysis_alm(
     return utils.reduce_lmax(result, target_lmax)
 
 
+# Samplings whose forward transform is a plain quadrature (real weights
+# on a fixed pixel set), which commutes with complex conjugation of the
+# input map. The mw/mwss sampling-theorem transforms alias out-of-band
+# power asymmetrically between spins +2 and -2, so for generic pixel
+# data the conjugation identity below fails there at order unity near
+# the band limit and they must keep the explicit second transform.
+_CONJUGATE_EXACT_SAMPLINGS = frozenset({"healpix", "dh", "gl"})
+
+
+def _conjugate_spin_flip(alm, lmax):
+    """Spin +2 analysis of conj(f) from the spin -2 analysis of f.
+
+    For any field f with spin -2 coefficients a_lm, the spin +2
+    analysis of its complex conjugate is b_lm = (-1)^m conj(a_l,-m),
+    by the conjugation relation sY*_lm = (-1)^(s+m) -sY_l,-m. For a
+    real-pixel IQUV sky this yields the P_PLUS dual directly from the
+    P_MINUS one.
+    """
+    emms = jnp.arange(-lmax, lmax + 1)
+    phase = jnp.where(emms % 2 == 0, 1.0, -1.0)
+    return phase * jnp.conjugate(alm[..., ::-1])
+
+
 def _qu_spin_combination(stokes_q, stokes_u, spin):
     """Return the complex Q/U combination that carries ``spin``.
 
@@ -195,20 +218,36 @@ def _compute_sky_dual_alm(
         reality=True,
     )
     # The P_MINUS and P_PLUS slots, in POLARIZATION_COMPONENTS order.
-    polarized = [
-        _analysis_alm(
-            _qu_spin_combination(stokes_q, stokes_u, spin),
+    p_minus_spin, p_plus_spin = POLARIZATION_SPINS[2:]
+    p_minus = _analysis_alm(
+        _qu_spin_combination(stokes_q, stokes_u, p_minus_spin),
+        target_lmax,
+        native_lmax,
+        sampling,
+        nside,
+        niter,
+        spin=p_minus_spin,
+        reality=False,
+    )
+    if sampling in _CONJUGATE_EXACT_SAMPLINGS:
+        # Real sky pixels make the P_PLUS input the exact conjugate of
+        # the P_MINUS input, and on quadrature samplings the discrete
+        # analysis commutes with that conjugation, so the second spin-2
+        # transform (and, on the dense HEALPix path, its whole cached
+        # analysis matrix) is redundant.
+        p_plus = _conjugate_spin_flip(p_minus, target_lmax)
+    else:
+        p_plus = _analysis_alm(
+            _qu_spin_combination(stokes_q, stokes_u, p_plus_spin),
             target_lmax,
             native_lmax,
             sampling,
             nside,
             niter,
-            spin=spin,
+            spin=p_plus_spin,
             reality=False,
         )
-        for spin in POLARIZATION_SPINS[2:]
-    ]
-    return jnp.stack((spin0[:, 0], spin0[:, 1], *polarized), axis=1)
+    return jnp.stack((spin0[:, 0], spin0[:, 1], p_minus, p_plus), axis=1)
 
 
 def _compute_response_dual_alm(

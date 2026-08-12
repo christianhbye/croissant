@@ -186,7 +186,13 @@ section), and the response dual
 
 with the same spin labels. Since the sky pixels are physical real Stokes
 values, the two polarized sky fields are complex conjugates of each
-other. The harmonic contraction
+other. On quadrature samplings (healpix, dh, gl) croissant therefore
+derives the sky `P+` dual from the `P-` analysis through the
+conjugation identity `P+_lm = (-1)^m conj(P-_l,-m)` instead of a
+second spin transform; the mw/mwss sampling-theorem transforms alias
+out-of-band power asymmetrically between the spins, so they keep the
+explicit transform. Complex pair responses admit no such identity and
+always use both transforms. The harmonic contraction
 
 ```python
 jnp.einsum("fclm,tm,pfclm->tpf", sky_alm.conj(), phases, beam_alm)
