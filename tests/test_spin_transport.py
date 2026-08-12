@@ -30,6 +30,7 @@ import healpy as hp
 import numpy as np
 import s2fft
 
+from croissant import utils
 from croissant.polarization import PolarizedSky
 
 from .test_s2fft_pin import spin_spherical_harmonic
@@ -39,10 +40,8 @@ L = LMAX + 1
 
 
 def _mwss_grid():
-    theta = np.asarray(s2fft.sampling.s2_samples.thetas(L=L, sampling="mwss"))
-    phi = np.asarray(
-        s2fft.sampling.s2_samples.phis_equiang(L=L, sampling="mwss")
-    )
+    theta = np.asarray(utils.generate_theta(lmax=LMAX, sampling="mwss"))
+    phi = np.asarray(utils.generate_phi(lmax=LMAX, sampling="mwss"))
     return theta[:, None], phi[None, :]
 
 

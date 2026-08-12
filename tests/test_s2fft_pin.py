@@ -27,6 +27,8 @@ import pytest
 import s2fft
 from s2fft.base_transforms import spherical as s2fft_base
 
+from croissant import utils
+
 NSIDE = 16
 L = 2 * NSIDE  # s2fft's HEALPix transforms require L >= 2 * nside
 
@@ -137,12 +139,8 @@ def test_mwss_odd_spin_forward_recovers_analytic_harmonic(spin, ell, emm):
     prefactor cancellation flipped the global sign; MWSS sampling
     keeps the certification independent of the HEALPix pin."""
     L_mwss = 8
-    theta = np.asarray(
-        s2fft.sampling.s2_samples.thetas(L=L_mwss, sampling="mwss")
-    )
-    phi = np.asarray(
-        s2fft.sampling.s2_samples.phis_equiang(L=L_mwss, sampling="mwss")
-    )
+    theta = np.asarray(utils.generate_theta(lmax=L_mwss - 1, sampling="mwss"))
+    phi = np.asarray(utils.generate_phi(lmax=L_mwss - 1, sampling="mwss"))
     f = spin_spherical_harmonic(spin, ell, emm, theta[:, None], phi[None, :])
     flm = np.asarray(
         s2fft.forward(
