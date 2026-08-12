@@ -151,6 +151,26 @@ def _analysis_alm(
     return utils.reduce_lmax(result, target_lmax)
 
 
+def _qu_spin_combination(stokes_q, stokes_u, spin):
+    """Return the complex Q/U combination that carries ``spin``.
+
+    With croissant's internal IAU ``U``, the spin -2 object is
+    ``Q + iU`` and the spin +2 object is ``Q - iU`` in s2fft's
+    Goldberg basis (see docs/polarization.md). Analyzing each
+    combination at its physical spin keeps the duals of band-limited
+    E/B skies band-limited and makes Wigner-D frame rotation apply
+    the physical transport phase (a mismatched label applies its
+    complex conjugate). The same pairing applies to a Q/U response
+    vector, so sky and response duals stay in lockstep by
+    construction.
+    """
+    if spin == -2:
+        return stokes_q + 1j * stokes_u
+    if spin == 2:
+        return stokes_q - 1j * stokes_u
+    raise ValueError(f"No Q/U combination carries spin {spin}.")
+
+
 def _compute_sky_dual_alm(
     data,
     target_lmax,
@@ -174,33 +194,21 @@ def _compute_sky_dual_alm(
         spin=0,
         reality=True,
     )
-    # Internally U is IAU (= -U_COSMO), so Q + iU is the spin -2 object
-    # and Q - iU the spin +2 object in s2fft's Goldberg basis. Each
-    # combination must be analyzed at its physical spin: this keeps the
-    # duals of band-limited E/B skies band-limited and makes Wigner-D
-    # frame rotation apply the physical transport phase (a mismatched
-    # label applies its complex conjugate). See docs/polarization.md.
-    p_minus = _analysis_alm(
-        stokes_q + 1j * stokes_u,
-        target_lmax,
-        native_lmax,
-        sampling,
-        nside,
-        niter,
-        spin=-2,
-        reality=False,
-    )
-    p_plus = _analysis_alm(
-        stokes_q - 1j * stokes_u,
-        target_lmax,
-        native_lmax,
-        sampling,
-        nside,
-        niter,
-        spin=2,
-        reality=False,
-    )
-    return jnp.stack((spin0[:, 0], spin0[:, 1], p_minus, p_plus), axis=1)
+    # The P_MINUS and P_PLUS slots, in POLARIZATION_COMPONENTS order.
+    polarized = [
+        _analysis_alm(
+            _qu_spin_combination(stokes_q, stokes_u, spin),
+            target_lmax,
+            native_lmax,
+            sampling,
+            nside,
+            niter,
+            spin=spin,
+            reality=False,
+        )
+        for spin in POLARIZATION_SPINS[2:]
+    ]
+    return jnp.stack((spin0[:, 0], spin0[:, 1], *polarized), axis=1)
 
 
 def _compute_response_dual_alm(
@@ -226,38 +234,24 @@ def _compute_response_dual_alm(
         spin=0,
         reality=False,
     )
-    # The spin -2 slot carries (BQ + iBU)/2, which the conjugated
-    # einsum contracts with the spin -2 sky analysis of Q + iU (and
-    # mirror for spin +2), reproducing the physical integral
-    # BQ*Q + BU*U. Like the sky dual, each combination is analyzed at
-    # its physical spin so frame rotation transports it correctly.
-    q_plus_dual = _analysis_alm(
-        0.5 * (response_q + 1j * response_u),
-        target_lmax,
-        native_lmax,
-        sampling,
-        nside,
-        niter,
-        spin=-2,
-        reality=False,
-    )
-    q_minus_dual = _analysis_alm(
-        0.5 * (response_q - 1j * response_u),
-        target_lmax,
-        native_lmax,
-        sampling,
-        nside,
-        niter,
-        spin=2,
-        reality=False,
-    )
+    # Each polarized slot carries half the response combination at its
+    # spin, which the conjugated einsum contracts with the same-spin
+    # sky analysis, reproducing the physical integral BQ*Q + BU*U.
+    polarized = [
+        _analysis_alm(
+            0.5 * _qu_spin_combination(response_q, response_u, spin),
+            target_lmax,
+            native_lmax,
+            sampling,
+            nside,
+            niter,
+            spin=spin,
+            reality=False,
+        )
+        for spin in POLARIZATION_SPINS[2:]
+    ]
     return jnp.stack(
-        (
-            spin0[:, :, 0],
-            spin0[:, :, 1],
-            q_plus_dual,
-            q_minus_dual,
-        ),
+        (spin0[:, :, 0], spin0[:, :, 1], *polarized),
         axis=2,
     )
 
