@@ -112,9 +112,12 @@ Croissant stores Stokes parameters internally in the IAU convention, so
 in terms of the internal `U` the spin assignments swap:
 
 ```text
-Q - i U    has spin +2
-Q + i U    has spin -2.
+Q - i U_IAU    has spin +2
+Q + i U_IAU    has spin -2.
 ```
+
+Everywhere else in this document an unsubscripted `U` denotes this
+internal IAU `U`.
 
 The spin labels and the `U` sign convention must flip together: an
 opposite-spin analysis still inverts (each fixed-spin harmonic family is
