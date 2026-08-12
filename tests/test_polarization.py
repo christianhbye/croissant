@@ -7,6 +7,7 @@ import pytest
 import s2fft
 
 from croissant.beam import Beam
+from croissant.dense import dense_compute_alm
 from croissant.polarization import (
     PairStokesBeam,
     PolarizedSky,
@@ -160,6 +161,77 @@ def test_polarized_healpix_objects_accept_low_target_lmax():
     assert beam_alm.shape == (1, 1, 4, 3, 5)
     assert jnp.any(jnp.abs(sky_alm) > 0)
     assert jnp.any(jnp.abs(beam_alm) > 0)
+
+
+def test_sky_p_plus_dual_matches_direct_transform_on_healpix():
+    """On quadrature samplings the P_PLUS dual is derived from the
+    P_MINUS analysis by the conjugate-flip identity
+    P+_lm = (-1)^m conj(P-_l,-m) instead of a second transform; it
+    must equal the explicit spin +2 analysis of Q - iU to machine
+    precision on both the native-lmax and low-lmax dense paths."""
+    nside = 8
+    npix = 12 * nside**2
+    rng = np.random.default_rng(133)
+    data = rng.standard_normal((1, 4, npix))
+    sky = PolarizedSky(data, [10.0], sampling="healpix")
+    q_minus_iu = jnp.asarray(data[:, 1] - 1j * data[:, 2])
+
+    alm = np.asarray(sky.compute_alm())
+    direct = np.asarray(
+        compute_alm(
+            q_minus_iu,
+            sky.lmax,
+            "healpix",
+            nside=nside,
+            spin=2,
+            reality=False,
+        )
+    )
+    scale = np.abs(direct).max()
+    np.testing.assert_allclose(alm[:, 3], direct, atol=1e-12 * scale)
+
+    low_lmax = 6
+    alm_low = np.asarray(sky.compute_alm(lmax=low_lmax))
+    direct_low = np.asarray(
+        dense_compute_alm(
+            q_minus_iu, low_lmax, "healpix", nside=nside, spin=2, niter=0
+        )
+    )
+    scale_low = np.abs(direct_low).max()
+    np.testing.assert_allclose(
+        alm_low[:, 3], direct_low, atol=1e-12 * scale_low
+    )
+
+
+def test_sky_p_plus_dual_keeps_explicit_transform_on_mwss():
+    """The mw/mwss sampling-theorem transforms alias out-of-band power
+    asymmetrically between spins +2 and -2, so the conjugate-flip
+    identity fails for generic pixel data and the P_PLUS dual must
+    come from the explicit spin +2 transform. The final assertion is
+    the non-vacuity guard: on this input the flip misses at order
+    percent or worse, so this test discriminates a de-gated
+    implementation."""
+    lmax = 8
+    shape = _mwss_shape(lmax)
+    rng = np.random.default_rng(2026)
+    data = rng.standard_normal((1, 4) + shape)
+    sky = PolarizedSky(data, [10.0], sampling="mwss")
+    alm = np.asarray(sky.compute_alm())
+    direct = np.asarray(
+        compute_alm(
+            jnp.asarray(data[:, 1] - 1j * data[:, 2]),
+            lmax,
+            "mwss",
+            spin=2,
+            reality=False,
+        )
+    )
+    scale = np.abs(direct).max()
+    np.testing.assert_allclose(alm[:, 3], direct, atol=1e-12 * scale)
+
+    emms = np.arange(-lmax, lmax + 1)
+    flip = (-1.0) ** emms * np.conj(alm[:, 2][..., ::-1])
+    assert np.abs(flip - direct).max() > 1e-2 * scale
 
 
 def test_topocentric_sky_analysis_stays_local():
