@@ -51,9 +51,9 @@ def _to_2d(packed):
     for ell in range(L):
         for emm in range(ell + 1):
             val = packed[hp.Alm.getidx(LMAX, ell, emm)]
-            out[ell, LMAX + emm] = val
+            out[utils.getidx(LMAX, ell, emm)] = val
             if emm > 0:
-                out[ell, LMAX - emm] = (-1) ** emm * np.conj(val)
+                out[utils.getidx(LMAX, ell, -emm)] = (-1) ** emm * np.conj(val)
     return out
 
 
@@ -161,7 +161,7 @@ def test_gal_to_fk5_rotation_transports_polarization():
             L,
             spin=-2,
             sampling="mwss",
-            method="jax",
+            method="numpy",
             reality=False,
         )
     )
