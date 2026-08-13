@@ -115,6 +115,11 @@ per call at `niter > 0`, gated on whether its footprint is affordable.
 
 ## File Structure
 
+- **Create `src/croissant/footprints.py`** — pure "predict a precomputed
+  object's size without building it" helpers: `transform_lmax`,
+  `kernel_nbytes`, `dense_nbytes`. Imported by `kernel.py`,
+  `engine_select.py` and `benchmarks/benchmark_engines.py`, so all three share
+  one formula. It imports nothing from croissant, so it cannot create a cycle.
 - **Create `src/croissant/kernel.py`** — the kernel engine: build, bounded
   cache, apply, croissant-side refinement. A separate module because it is a
   distinct mechanism with its own cache, mirroring how `dense.py` is separate
@@ -284,16 +289,34 @@ git commit -m "test: pin cross-engine SHT equivalence including niter>0"
 ## Task 2: Build and cache the Wigner-d kernel
 
 **Files:**
+- Create: `src/croissant/footprints.py`
 - Create: `src/croissant/kernel.py`
 - Test: `tests/test_kernel_engine.py` (create)
 
 **Interfaces:**
 - Consumes: nothing from earlier tasks.
-- Produces:
-  - `kernel_nbytes(lmax, sampling, nside=None) -> int`
-  - `precompute_kernel(lmax, sampling, nside=None, spin=0, forward=True) -> jax.Array`
+- Produces, in `footprints.py`:
+  - `transform_lmax(lmax, sampling, nside=None) -> int`
+  - `kernel_nbytes(lmax, sampling, nside=None, reality=False) -> int`
+  - `dense_nbytes(lmax, sampling, nside=None, spin=0, reality=True) -> int`
+- Produces, in `kernel.py`:
+  - `precompute_kernel(lmax, sampling, nside=None, spin=0, reality=False,
+    forward=True) -> jax.Array`
   - `clear_kernel_cache() -> None`
   - `_KERNEL_CACHE_MAXSIZE` (int, 8)
+  - re-exports `transform_lmax` and `kernel_nbytes` from `footprints`, so
+    `croissant.kernel.kernel_nbytes` also resolves.
+
+**Note on `reality` (controller ruling R2, verified empirically).** The kernel's
+`m` extent depends on the `reality` flag: with `reality=True` s2fft's precompute
+path slices `ftm` to `m >= 0` and expects a kernel of shape
+`(ntheta, L, L)` rather than `(ntheta, L, 2L-1)`. Building with one flag and
+applying with the other raises
+`ValueError: Size of label 'm' for operand 1 (31) does not match previous terms
+(16)`. So `reality` is a build parameter and part of the cache key, and
+`kernel_compute_alm` (Task 3) must pass the same value to both. Matching flags
+also halve the kernel for real scalar fields — 124 KiB against 240 KiB at
+nside=8/L=16 — at identical accuracy (1.4e-15).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -325,13 +348,22 @@ NSIDE = 8
 LMAX = 2 * NSIDE - 1
 
 
-def test_kernel_shape_and_size_prediction():
-    """The cached kernel has s2fft's (ntheta, L, 2L-1) shape, and
-    kernel_nbytes predicts its footprint without building it."""
-    predicted = kernel.kernel_nbytes(LMAX, "healpix", nside=NSIDE)
-    k = kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, spin=0)
+@pytest.mark.parametrize("reality", [False, True])
+def test_kernel_shape_and_size_prediction(reality):
+    """kernel_nbytes predicts the footprint without building it.
+
+    The last axis depends on ``reality``: a real-field kernel stores only
+    m >= 0, so it is L wide rather than 2L-1.
+    """
+    predicted = kernel.kernel_nbytes(
+        LMAX, "healpix", nside=NSIDE, reality=reality
+    )
+    k = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, spin=0, reality=reality
+    )
     ntheta = 4 * NSIDE - 1
-    assert k.shape == (ntheta, LMAX + 1, 2 * LMAX + 1)
+    nm = (LMAX + 1) if reality else (2 * LMAX + 1)
+    assert k.shape == (ntheta, LMAX + 1, nm)
     assert predicted == k.nbytes
 
 
@@ -413,7 +445,142 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'croissant.kernel'`
 
 - [ ] **Step 3: Write the minimal implementation**
 
-Create `src/croissant/kernel.py`:
+First create `src/croissant/footprints.py`:
+
+```python
+"""
+Predict the size of a precomputed transform without building it.
+
+Croissant's engines precompute different amounts of the pixels-to-alm
+map, and both the automatic engine policy and the benchmarks need to know
+what a choice would cost before paying for it. These helpers are pure
+arithmetic over the transform's geometry; they import nothing from
+croissant, so any module may use them.
+"""
+
+import numpy as np
+import s2fft
+
+_COMPLEX_ITEMSIZE = np.dtype(np.complex128).itemsize
+
+
+def transform_lmax(lmax, sampling, nside=None):
+    """
+    Band-limit a transform must actually be performed at.
+
+    s2fft's HEALPix FFT requires ``L >= 2 * nside`` even when only lower
+    modes are wanted, the same floor ``croissant.dense`` handles at
+    ``dense.py:52``.
+
+    Parameters
+    ----------
+    lmax : int
+        Requested maximum spherical harmonic degree.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+
+    Returns
+    -------
+    int
+        The band-limit to transform at, always ``>= lmax``.
+
+    """
+    if sampling != "healpix":
+        return int(lmax)
+    if nside is None:
+        raise ValueError("nside is required for HEALPix transforms.")
+    return max(int(lmax), 2 * int(nside) - 1)
+
+
+def _ntheta(lmax, sampling, nside=None):
+    """Number of latitude rings for a sampling scheme."""
+    if sampling == "healpix":
+        if nside is None:
+            raise ValueError("nside is required for HEALPix transforms.")
+        return 4 * int(nside) - 1
+    return s2fft.sampling.s2_samples.ntheta(L=lmax + 1, sampling=sampling)
+
+
+def _npix(lmax, sampling, nside=None):
+    """Number of spatial samples for a sampling scheme."""
+    if sampling == "healpix":
+        if nside is None:
+            raise ValueError("nside is required for HEALPix transforms.")
+        return 12 * int(nside) ** 2
+    L = lmax + 1
+    return s2fft.sampling.s2_samples.ntheta(
+        L=L, sampling=sampling
+    ) * s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling)
+
+
+def kernel_nbytes(lmax, sampling, nside=None, reality=False):
+    """
+    Predict a Wigner-d kernel's memory footprint.
+
+    Reports the footprint at the band-limit the kernel would really be
+    built at, i.e. after applying the HEALPix ``L >= 2 * nside`` floor.
+    Reporting the requested ``lmax`` instead would under-predict by
+    ``(2 * nside / (lmax + 1)) ** 2`` whenever a caller asks for a low
+    band-limit on a high-resolution map.
+
+    Parameters
+    ----------
+    lmax : int
+        Requested maximum spherical harmonic degree.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+    reality : bool
+        Whether the kernel is built for a real field. Real kernels store
+        only ``m >= 0``, halving the last axis.
+
+    Returns
+    -------
+    int
+        Size in bytes of the complex128 kernel.
+
+    """
+    L = transform_lmax(lmax, sampling, nside=nside) + 1
+    nm = L if reality else 2 * L - 1
+    return _ntheta(lmax, sampling, nside) * L * nm * _COMPLEX_ITEMSIZE
+
+
+def dense_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
+    """
+    Predict the dense analysis operator's memory footprint.
+
+    Parameters
+    ----------
+    lmax : int
+        Maximum spherical harmonic degree.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+    spin : int
+        Spin weight of the field.
+    reality : bool
+        Whether the field is real. Real scalar fields store only the
+        independent ``m >= 0`` coefficients.
+
+    Returns
+    -------
+    int
+        Size in bytes of the complex128 operator.
+
+    """
+    L = lmax + 1
+    if spin == 0 and reality:
+        ncoeff = (lmax + 1) * (lmax + 2) // 2
+    else:
+        ncoeff = L * L - spin * spin
+    return ncoeff * _npix(lmax, sampling, nside) * _COMPLEX_ITEMSIZE
+```
+
+Then create `src/croissant/kernel.py`:
 
 ```python
 """
@@ -445,92 +612,25 @@ from collections import OrderedDict
 from threading import Lock
 
 import jax.numpy as jnp
-import numpy as np
 import s2fft
+
+from .footprints import kernel_nbytes, transform_lmax
+
+__all__ = [
+    "clear_kernel_cache",
+    "kernel_compute_alm",
+    "kernel_nbytes",
+    "precompute_kernel",
+    "transform_lmax",
+]
 
 _KERNEL_CACHE_MAXSIZE = 8
 _KERNEL_CACHE = OrderedDict()
 _KERNEL_CACHE_LOCK = Lock()
 
 
-def transform_lmax(lmax, sampling, nside=None):
-    """
-    Band-limit the kernel must actually be built at.
-
-    s2fft's HEALPix FFT requires ``L >= 2 * nside`` even when only lower
-    modes are wanted, the same floor ``croissant.dense`` handles at
-    ``dense.py:52``. Unlike the dense engine, the kernel engine cannot
-    cheaply discard the extra rows -- the kernel is indexed by
-    ``(theta, ell, m)`` and the whole ``ell`` range is contracted at
-    once -- so a request below the floor is raised on rather than
-    silently upgraded. ``engine_select`` routes those configurations to
-    the dense engine instead.
-
-    Parameters
-    ----------
-    lmax : int
-        Requested maximum spherical harmonic degree.
-    sampling : str
-        Sampling scheme understood by s2fft.
-    nside : int or None
-        HEALPix resolution parameter, required for ``"healpix"``.
-
-    Returns
-    -------
-    int
-        The band-limit to build at, always ``>= lmax``.
-
-    """
-    if sampling != "healpix":
-        return int(lmax)
-    if nside is None:
-        raise ValueError("nside is required for HEALPix kernels.")
-    return max(int(lmax), 2 * int(nside) - 1)
-
-
-def _ntheta(lmax, sampling, nside=None):
-    """Number of latitude rings for a sampling scheme."""
-    if sampling == "healpix":
-        if nside is None:
-            raise ValueError("nside is required for HEALPix kernels.")
-        return 4 * int(nside) - 1
-    return s2fft.sampling.s2_samples.ntheta(
-        L=lmax + 1, sampling=sampling
-    )
-
-
-def kernel_nbytes(lmax, sampling, nside=None):
-    """
-    Predict a kernel's memory footprint without building it.
-
-    Reports the footprint at the band-limit the kernel would really be
-    built at, i.e. after applying the HEALPix ``L >= 2 * nside`` floor.
-    Reporting the requested ``lmax`` instead would under-predict by
-    ``(2 * nside / (lmax + 1)) ** 2`` whenever a caller asks for a low
-    band-limit on a high-resolution map.
-
-    Parameters
-    ----------
-    lmax : int
-        Requested maximum spherical harmonic degree.
-    sampling : str
-        Sampling scheme understood by s2fft.
-    nside : int or None
-        HEALPix resolution parameter, required for ``"healpix"``.
-
-    Returns
-    -------
-    int
-        Size in bytes of the complex128 kernel.
-
-    """
-    L = transform_lmax(lmax, sampling, nside=nside) + 1
-    ntheta = _ntheta(lmax, sampling, nside)
-    return ntheta * L * (2 * L - 1) * np.dtype(np.complex128).itemsize
-
-
 def precompute_kernel(
-    lmax, sampling, nside=None, spin=0, forward=True
+    lmax, sampling, nside=None, spin=0, reality=False, forward=True
 ):
     """
     Build and cache the Wigner-d kernel for one transform configuration.
@@ -545,6 +645,15 @@ def precompute_kernel(
         HEALPix resolution parameter, required for ``"healpix"``.
     spin : int
         Spin weight of the field.
+    reality : bool
+        Whether the kernel is for a real field. This is a BUILD
+        parameter, not only an apply-time one: with ``reality=True``
+        s2fft's precompute path slices ``ftm`` to ``m >= 0`` and expects
+        a kernel whose last axis is ``L`` rather than ``2L - 1``.
+        Building with one value and applying with the other raises
+        ``ValueError: Size of label 'm' ... does not match previous
+        terms``, so it is part of the cache key and callers must pass the
+        same value here and at apply time.
     forward : bool
         Build the analysis kernel if True, the synthesis kernel if
         False. The synthesis kernel is only needed for iterative
@@ -553,7 +662,9 @@ def precompute_kernel(
     Returns
     -------
     jax.Array
-        Kernel of shape ``(ntheta, lmax + 1, 2 * lmax + 1)``.
+        Kernel of shape ``(ntheta, L, L)`` when ``reality`` is True and
+        ``(ntheta, L, 2L - 1)`` otherwise, where ``L`` is
+        ``transform_lmax(...) + 1``.
 
     """
     key = (
@@ -561,6 +672,7 @@ def precompute_kernel(
         str(sampling),
         None if nside is None else int(nside),
         int(spin),
+        bool(reality),
         bool(forward),
     )
     with _KERNEL_CACHE_LOCK:
@@ -570,9 +682,9 @@ def precompute_kernel(
 
     # NOTE: the numpy builder, deliberately. See the module docstring.
     built = s2fft.precompute_transforms.construct.spin_spherical_kernel(
-        L=lmax + 1,
+        L=transform_lmax(lmax, sampling, nside=nside) + 1,
         spin=int(spin),
-        reality=False,
+        reality=bool(reality),
         sampling=sampling,
         nside=nside,
         forward=bool(forward),
@@ -764,7 +876,21 @@ def kernel_compute_alm(
             "the required band-limit and keeps only the low-ell rows, or "
             "engine='s2fft'."
         )
+    # Croissant's engines share a dtype contract, owned and documented by
+    # sphere._dense_dtypes: they reproduce s2fft.forward, which returns
+    # complex128 on an x64 runtime even for float32 maps. s2fft's
+    # PRECOMPUTE path instead inherits the input dtype, so a float32 map
+    # would come back complex64 with ~1e-7 relative error. Promote the
+    # input rather than casting the result: casting the result would keep
+    # that error. Imported lazily because sphere imports this module.
+    from .sphere import _dense_dtypes
+
+    real_dtype, _ = _dense_dtypes()
     data = jnp.asarray(data)
+    if data.dtype.kind == "c":
+        data = data.astype(jnp.result_type(real_dtype, 1j))
+    else:
+        data = data.astype(real_dtype)
     spatial_ndim = _spatial_ndim(sampling)
     spatial_shape = data.shape[-spatial_ndim:]
     batch_shape = data.shape[:-spatial_ndim]
@@ -773,7 +899,8 @@ def kernel_compute_alm(
     reality = bool(reality) and spin == 0
     L = lmax + 1
     forward_kernel = precompute_kernel(
-        lmax, sampling, nside=nside, spin=spin, forward=True
+        lmax, sampling, nside=nside, spin=spin, reality=reality,
+        forward=True
     )
     analyse = partial(
         s2fft.precompute_transforms.spherical.forward,
@@ -936,7 +1063,8 @@ with:
     # flm <- flm + F(f - I(flm)), the same one sphere.py applies to the
     # scalar dense matrix in gram form.
     inverse_kernel = precompute_kernel(
-        lmax, sampling, nside=nside, spin=spin, forward=False
+        lmax, sampling, nside=nside, spin=spin, reality=reality,
+        forward=False
     )
     synthesise = partial(
         s2fft.precompute_transforms.spherical.inverse,
@@ -1263,7 +1391,7 @@ def main():
 
     import jax.numpy as jnp
 
-    from croissant import engine_select, kernel, sphere
+    from croissant import footprints, kernel, sphere
 
     jax.config.update("jax_enable_x64", True)
     rows = []
@@ -1282,7 +1410,7 @@ def main():
             kernel_mib = kernel.kernel_nbytes(
                 lmax, "healpix", nside=nside
             ) / 2**20
-            dense_mib = engine_select.dense_nbytes(
+            dense_mib = footprints.dense_nbytes(
                 lmax, "healpix", nside=nside, spin=spin, reality=reality
             ) / 2**20
 
@@ -1429,7 +1557,7 @@ cannot pay for itself.
 
 import pytest
 
-from croissant import engine_select
+from croissant import engine_select, footprints
 
 
 def test_single_transform_uses_the_matrix_free_engine():
@@ -1503,7 +1631,7 @@ def test_nothing_exceeds_the_memory_cap():
         )
         if engine == "dense":
             assert (
-                engine_select.dense_nbytes(lmax, "healpix", nside=nside)
+                footprints.dense_nbytes(lmax, "healpix", nside=nside)
                 <= engine_select.DEFAULT_MEMORY_CAP_BYTES
             )
         elif engine == "kernel":
@@ -1531,10 +1659,10 @@ def test_dense_footprint_beats_kernel_only_at_small_nside():
     """The O(nside**4) vs O(nside**3) crossover the policy relies on."""
     from croissant import kernel
 
-    small = engine_select.dense_nbytes(
+    small = footprints.dense_nbytes(
         15, "healpix", nside=8
     ) / kernel.kernel_nbytes(15, "healpix", nside=8)
-    large = engine_select.dense_nbytes(
+    large = footprints.dense_nbytes(
         127, "healpix", nside=64
     ) / kernel.kernel_nbytes(127, "healpix", nside=64)
     assert large > small
@@ -1581,9 +1709,9 @@ later calls, so ``batch_size`` stands in for the amortisation factor --
 for ``Beam`` and ``Sky`` that is the number of frequencies.
 """
 
-import numpy as np
+from .footprints import dense_nbytes, kernel_nbytes, transform_lmax
 
-from . import kernel as _kernel
+__all__ = ["DEFAULT_MEMORY_CAP_BYTES", "ENGINES", "resolve_engine"]
 
 DEFAULT_MEMORY_CAP_BYTES = 512 * 1024**2
 
@@ -1594,48 +1722,6 @@ DEFAULT_MEMORY_CAP_BYTES = 512 * 1024**2
 _AMORTISATION_THRESHOLD = 8
 
 ENGINES = ("s2fft", "kernel", "dense")
-
-
-def dense_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
-    """
-    Predict the dense operator's memory footprint without building it.
-
-    Parameters
-    ----------
-    lmax : int
-        Maximum spherical harmonic degree.
-    sampling : str
-        Sampling scheme understood by s2fft.
-    nside : int or None
-        HEALPix resolution parameter, required for ``"healpix"``.
-    spin : int
-        Spin weight of the field.
-    reality : bool
-        Whether the field is real. Real scalar fields store only the
-        independent ``m >= 0`` coefficients.
-
-    Returns
-    -------
-    int
-        Size in bytes of the complex128 operator.
-
-    """
-    import s2fft
-
-    L = lmax + 1
-    if sampling == "healpix":
-        if nside is None:
-            raise ValueError("nside is required for HEALPix operators.")
-        npix = 12 * int(nside) ** 2
-    else:
-        npix = s2fft.sampling.s2_samples.ntheta(
-            L=L, sampling=sampling
-        ) * s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling)
-    if spin == 0 and reality:
-        ncoeff = (lmax + 1) * (lmax + 2) // 2
-    else:
-        ncoeff = L * L - spin * spin
-    return ncoeff * npix * np.dtype(np.complex128).itemsize
 
 
 def resolve_engine(
@@ -1694,7 +1780,7 @@ def resolve_engine(
     cap = (
         DEFAULT_MEMORY_CAP_BYTES if memory_cap is None else int(memory_cap)
     )
-    kernel_bytes = _kernel.kernel_nbytes(lmax, sampling, nside=nside)
+    kernel_bytes = kernel_nbytes(lmax, sampling, nside=nside, reality=reality)
     dense_bytes = dense_nbytes(
         lmax, sampling, nside=nside, spin=spin, reality=reality
     )
@@ -1705,7 +1791,7 @@ def resolve_engine(
     # L >= 2*nside floor; the dense engine can, by building at the floor
     # and keeping only the requested low-ell rows. That row selection is
     # dense's clearest remaining advantage, so it is checked first.
-    needs_row_selection = _kernel.transform_lmax(
+    needs_row_selection = transform_lmax(
         lmax, sampling, nside=nside
     ) != int(lmax)
     if needs_row_selection:
@@ -2114,7 +2200,7 @@ test step names the command and the expected outcome. Task 1 is the one step
 expected to pass rather than fail, and says so along with what to do if it does
 not.
 
-**Type consistency.** `precompute_kernel(lmax, sampling, nside, spin, forward)`
+**Type consistency.** `precompute_kernel(lmax, sampling, nside, spin, reality, forward)`
 is called with exactly those keywords in Tasks 3 and 4. `kernel_compute_alm`'s
 signature matches `sphere.compute_alm`'s parameter names and its
 `batch + (lmax+1, 2*lmax+1)` return layout, checked explicitly in Task 3.
