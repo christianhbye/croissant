@@ -21,7 +21,7 @@ NSIDE = 8
 # s2fft's HEALPix transforms require L = lmax + 1 >= 2 * nside.
 LMAX = 2 * NSIDE - 1
 
-ENGINES = ["s2fft", "dense"]
+ENGINES = ["s2fft", "dense", "kernel"]
 
 
 def _healpix_data(rng, nfreq=2, complex_=False):

@@ -109,6 +109,16 @@ def precompute_kernel(
     )
     array = jnp.asarray(built)
 
+    if isinstance(array, jax.core.Tracer):
+        # Built for the first time from inside an active jax trace
+        # (e.g. SphBase's jitted compute_alm on first use, or a
+        # caller's own jax.jit). The Wigner-d recursion above never
+        # depends on a traced value, but this converted array is only
+        # valid within the current trace: caching it would let a later,
+        # unrelated trace read back a leaked tracer. Return it directly
+        # for immediate use in this trace only; do not persist it.
+        return array
+
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE[key] = array
         _KERNEL_CACHE.move_to_end(key)

@@ -393,10 +393,11 @@ def compute_alm(
     reality : bool
         Whether to use the real-valued scalar transform optimization.
         Set to False for complex inputs and all nonzero-spin transforms.
-    engine : {"s2fft", "dense"}
+    engine : {"s2fft", "kernel", "dense"}
         Spherical harmonic transform engine. ``"s2fft"`` is the existing
-        matrix-free implementation. ``"dense"`` caches the exact transform
-        matrix and is intended for low band-limits.
+        matrix-free implementation. ``"kernel"`` caches the Wigner-d
+        kernel and contracts it per call. ``"dense"`` caches the exact
+        transform matrix and is intended for low band-limits.
     dense_matrix : jax.Array or None
         Precomputed packed dense matrix. This is primarily used internally
         by :class:`SphBase` so its jitted methods never build a matrix while
@@ -429,10 +430,22 @@ def compute_alm(
             spin=spin,
             reality=reality,
         )
+    if engine == "kernel":
+        from . import kernel as _kernel
+
+        return _kernel.kernel_compute_alm(
+            data,
+            lmax,
+            sampling,
+            nside=nside,
+            niter=niter,
+            spin=spin,
+            reality=reality,
+        )
     if engine != "dense":
         raise ValueError(
             f"Unsupported SHT engine {engine!r}. Supported engines are "
-            "{'s2fft', 'dense'}."
+            "{'s2fft', 'kernel', 'dense'}."
         )
 
     if spin != 0 or not reality:
@@ -525,11 +538,12 @@ class SphBase(eqx.Module):
             time. Default is 0 for all sampling schemes. For healpix
             sampling, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
-        engine : {"s2fft", "dense"}
+        engine : {"s2fft", "kernel", "dense"}
             Spherical harmonic transform engine. The default ``"s2fft"``
-            preserves the existing matrix-free behavior. ``"dense"`` builds
-            and caches an exact transform matrix for fast repeated low-lmax
-            transforms.
+            preserves the existing matrix-free behavior. ``"kernel"``
+            caches the Wigner-d kernel and contracts it per call.
+            ``"dense"`` builds and caches an exact transform matrix for
+            fast repeated low-lmax transforms.
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             set below the default ``2 * nside`` to reduce transform work and
@@ -544,10 +558,10 @@ class SphBase(eqx.Module):
             `data` is not valid for healpix sampling.
 
         """
-        if engine not in {"s2fft", "dense"}:
+        if engine not in {"s2fft", "kernel", "dense"}:
             raise ValueError(
                 f"Unsupported SHT engine {engine!r}. Supported engines are "
-                "{'s2fft', 'dense'}."
+                "{'s2fft', 'kernel', 'dense'}."
             )
 
         self.data = jnp.asarray(data)

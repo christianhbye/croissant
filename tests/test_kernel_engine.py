@@ -284,3 +284,101 @@ def test_inverse_kernel_is_not_built_when_niter_is_zero():
     )
     forwards = [key[-1] for key in kernel._KERNEL_CACHE]
     assert forwards == [True]
+
+
+def test_sphbase_accepts_the_kernel_engine():
+    """Beam construction works with engine="kernel" and reports it."""
+    from croissant import Beam
+
+    rng = np.random.default_rng(9)
+    data = rng.normal(size=(2, 12 * NSIDE**2)) ** 2
+    beam = Beam(
+        data,
+        freqs=np.array([50.0, 60.0]),
+        sampling="healpix",
+        engine="kernel",
+        niter=0,
+    )
+    assert beam.engine == "kernel"
+    alm = beam.compute_alm()
+    assert alm.shape[-2:] == (beam.lmax + 1, 2 * beam.lmax + 1)
+
+
+def test_full_pipeline_visibilities_agree_across_engines():
+    """One end-to-end check that the engines are interchangeable.
+
+    The transform-level equivalence tests already pin the alm values, and
+    everything downstream of the transform -- the convolve einsum, the
+    phase rotation, the beam-integral normalisation -- is
+    engine-independent, so this cannot fail on alm values alone. It is
+    here to catch what those tests structurally cannot: dtype
+    promotion through the pipeline, tracer/jit interaction (the dense
+    engine raises inside jit unless precomputed, the kernel engine
+    builds lazily), and cache side effects across repeated calls.
+
+    Deliberately ONE test rather than parametrising
+    ``tests/test_physics.py`` over engines: the physics file is
+    ground-truth and is not to be modified, and tripling it would cost
+    ~90 s to re-test a corollary of the equivalence theorem.
+    """
+    import jax.numpy as jnp
+    from astropy.time import Time as AstroTime
+
+    from croissant import Beam, Simulator, Sky
+
+    npix = 12 * 8**2
+    freqs = jnp.linspace(50.0, 250.0, 3)
+    t0 = AstroTime("2022-01-01 00:00:00")
+    times_jd = jnp.linspace(t0.jd, t0.jd + 0.5, 4, endpoint=False)
+    beam_data = jnp.ones((len(freqs), npix))
+    tsky = 1e4 * (freqs / 150.0) ** (-2.5)
+    sky_data = tsky[:, None] * jnp.ones((npix,))
+
+    visibilities = {}
+    for engine in ("s2fft", "kernel", "dense"):
+        beam = Beam(
+            beam_data,
+            freqs,
+            sampling="healpix",
+            niter=0,
+            engine=engine,
+        )
+        sky = Sky(
+            sky_data,
+            freqs,
+            sampling="healpix",
+            coord="galactic",
+            niter=0,
+            engine=engine,
+        )
+        sim = Simulator(beam, sky, times_jd, freqs, 0.0, 0.0, world="earth")
+        visibilities[engine] = np.asarray(sim.sim())
+
+    reference = visibilities["s2fft"]
+    for engine, got in visibilities.items():
+        assert got.dtype == reference.dtype, (
+            f"engine {engine!r} changed the visibility dtype: "
+            f"{got.dtype} vs {reference.dtype}"
+        )
+        np.testing.assert_allclose(
+            got,
+            reference,
+            rtol=0,
+            atol=1e-9 * np.abs(reference).max(),
+            err_msg=f"engine {engine!r} changed the visibilities",
+        )
+
+
+def test_unknown_engine_is_rejected_with_the_full_list():
+    from croissant import sphere
+
+    rng = np.random.default_rng(10)
+    data = rng.normal(size=(1, 12 * NSIDE**2))
+    with pytest.raises(ValueError, match="kernel"):
+        sphere.compute_alm(
+            data,
+            lmax=LMAX,
+            sampling="healpix",
+            nside=NSIDE,
+            engine="nonsense",
+        )

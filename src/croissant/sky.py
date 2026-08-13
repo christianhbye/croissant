@@ -44,10 +44,12 @@ class Sky(sphere.SphBase):
             transform. Default is 0 for all sampling schemes. For
             healpix, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
-        engine : {"s2fft", "dense"}
+        engine : {"s2fft", "kernel", "dense"}
             Spherical harmonic transform engine. Default is ``"s2fft"``.
-            The ``"dense"`` engine caches an exact transform matrix and is
-            optimized for repeated low-band-limit transforms.
+            The ``"kernel"`` engine caches the Wigner-d kernel and
+            contracts it per call. The ``"dense"`` engine caches an
+            exact transform matrix and is optimized for repeated
+            low-band-limit transforms.
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             lower than the default ``2 * nside``. Default is None.
