@@ -113,7 +113,9 @@ def resolve_engine(
         return requested, f"explicit request for {requested!r}"
 
     cap = DEFAULT_MEMORY_CAP_BYTES if memory_cap is None else int(memory_cap)
-    kernel_bytes = kernel_nbytes(lmax, sampling, nside=nside, reality=reality)
+    kernel_bytes = kernel_nbytes(
+        lmax, sampling, nside=nside, spin=spin, reality=reality
+    )
     dense_bytes = dense_nbytes(
         lmax, sampling, nside=nside, spin=spin, reality=reality
     )
@@ -138,7 +140,8 @@ def resolve_engine(
         return (
             "s2fft",
             f"lmax={lmax} is below the HEALPix floor for nside={nside} "
-            f"and the dense operator needs {dense_bytes >> 20} MiB",
+            "and the dense operator needs "
+            f"{dense_bytes / 1024**2:.1f} MiB",
         )
 
     threshold = _amortisation_threshold(kernel_bytes)
@@ -153,24 +156,31 @@ def resolve_engine(
     # NOTE, and this is the one place a per-call benchmark misleads.
     # Dense does win on cached-apply at niter > 0 -- 2.4x to 8.3x in
     # Task 6 -- because its refinement folds into the cached matrix while
-    # the kernel engine pays 2*niter+1 passes. But its BUILD costs 2x to
-    # 25x more, and the break-even call counts computed from the same
-    # table are 168, 803, 7926 and 11929 calls (and 92338 for
-    # spin 2/nside 16/niter 0). Croissant transforms once at
-    # construction, batched over frequencies -- one call. So selecting
-    # dense for per-call speed would trade a 25 s build for a 0.03 s
-    # saving that is never repaid. Dense-for-throughput is therefore an
-    # explicit user override, not an automatic choice: only the caller
-    # knows it will re-apply the same transform thousands of times. The
-    # structural case above (a band-limit below the HEALPix floor) is the
-    # only reason auto reaches for dense.
+    # the kernel engine pays 2*niter+1 passes. But what decides whether
+    # that win is worth having is the BUILD cost, and build ratios
+    # (dense/kernel) across the niter=3 configs in the same table span
+    # only roughly 1.0x to 25x, not a fixed multiple: nside=16/scalar
+    # builds are near-identical (1.02x) while nside=16/spin=2 costs
+    # 24.8x more. The resulting break-even call counts span 7 to 92338
+    # calls -- 7 for the near-identical nside=16/scalar build (the
+    # smallest gap the table has, and the case the build-cost range
+    # above must not omit), up to 92338 for spin=2/nside=16/niter=0.
+    # Croissant transforms once at construction, batched over
+    # frequencies -- one call, below even that smallest break-even. So
+    # selecting dense for per-call speed would routinely trade a build
+    # whose extra cost is never repaid in a single call.
+    # Dense-for-throughput is therefore an explicit user override, not
+    # an automatic choice: only the caller knows it will re-apply the
+    # same transform thousands of times. The structural case above (a
+    # band-limit below the HEALPix floor) is the only reason auto
+    # reaches for dense.
     if kernel_fits:
         return (
             "kernel",
-            f"{kernel_bytes >> 20} MiB kernel amortises over "
+            f"{kernel_bytes / 1024**2:.1f} MiB kernel amortises over "
             f"{batch_size} transforms"
             + (
-                f"; dense would need {dense_bytes >> 20} MiB"
+                f"; dense would need {dense_bytes / 1024**2:.1f} MiB"
                 if not dense_fits
                 else ""
             ),
@@ -178,7 +188,7 @@ def resolve_engine(
 
     return (
         "s2fft",
-        f"no precomputed engine fits under {cap >> 20} MiB "
-        f"(kernel {kernel_bytes >> 20} MiB, dense "
-        f"{dense_bytes >> 20} MiB)",
+        f"no precomputed engine fits under {cap / 1024**2:.1f} MiB "
+        f"(kernel {kernel_bytes / 1024**2:.1f} MiB, dense "
+        f"{dense_bytes / 1024**2:.1f} MiB)",
     )

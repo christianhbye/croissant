@@ -65,7 +65,7 @@ def _npix(lmax, sampling, nside=None):
     ) * s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling)
 
 
-def kernel_nbytes(lmax, sampling, nside=None, reality=False):
+def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=False):
     """
     Predict a Wigner-d kernel's memory footprint.
 
@@ -75,6 +75,19 @@ def kernel_nbytes(lmax, sampling, nside=None, reality=False):
     ``(2 * nside / (lmax + 1)) ** 2`` whenever a caller asks for a low
     band-limit on a high-resolution map.
 
+    ``reality`` is downgraded to ``False`` whenever ``spin != 0``, even
+    if the caller passes ``reality=True``. This deliberately mirrors
+    ``kernel.kernel_compute_alm``, which forces the same
+    ``reality = reality and spin == 0`` rule because s2fft's real-field
+    precompute path is only valid for spin 0: a spin field has no
+    ``m -> -m`` Hermitian symmetry to exploit, so its kernel always
+    stores the full ``m`` range. Predicting sizes for spin fields
+    without applying this rule under-predicts by very close to 2x (the
+    ratio of ``2 * L - 1`` to ``L``) -- this has been the source of a
+    recurring, silent mismatch between predicted and built kernel sizes,
+    so the rule is enforced once here rather than left for every caller
+    to repeat correctly.
+
     Parameters
     ----------
     lmax : int
@@ -83,9 +96,12 @@ def kernel_nbytes(lmax, sampling, nside=None, reality=False):
         Sampling scheme understood by s2fft.
     nside : int or None
         HEALPix resolution parameter, required for ``"healpix"``.
+    spin : int
+        Spin weight of the field.
     reality : bool
         Whether the kernel is built for a real field. Real kernels store
-        only ``m >= 0``, halving the last axis.
+        only ``m >= 0``, halving the last axis. Ignored (treated as
+        ``False``) whenever ``spin != 0``; see above.
 
     Returns
     -------
@@ -93,6 +109,7 @@ def kernel_nbytes(lmax, sampling, nside=None, reality=False):
         Size in bytes of the complex128 kernel.
 
     """
+    reality = bool(reality) and spin == 0
     L = transform_lmax(lmax, sampling, nside=nside) + 1
     nm = L if reality else 2 * L - 1
     return _ntheta(lmax, sampling, nside) * L * nm * _COMPLEX_ITEMSIZE

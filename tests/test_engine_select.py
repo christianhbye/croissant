@@ -35,9 +35,11 @@ def test_refinement_does_not_by_itself_select_dense(niter):
     """niter>0 is not a reason for auto to pay for the dense operator.
 
     Dense does win on per-call cost at niter>0 (2.4x-8.3x in Task 6),
-    but its build costs 2x-25x more, and the break-even call counts from
-    the same measurements are 168 to 11929 calls. Croissant transforms
-    once at construction, so that per-call saving is never repaid.
+    but its build costs roughly 1.0x-25x more (nside=16/scalar builds
+    are near-identical; nside=16/spin=2 costs 24.8x more), and the
+    break-even call counts from the same measurements span 7 to 92338
+    calls. Croissant transforms once at construction, below even the
+    smallest of those, so that per-call saving is never repaid.
     Choosing dense for throughput needs knowledge only the caller has,
     and stays an explicit override.
     """
@@ -93,33 +95,82 @@ def test_low_bandlimit_falls_back_when_dense_will_not_fit():
 
 def test_nothing_exceeds_the_memory_cap():
     """No configuration may auto-select a precomputing engine whose
-    footprint exceeds the cap."""
+    footprint exceeds the cap.
+
+    Covers both spin=0 and spin=2 at every nside: a spin field's kernel
+    cannot use the real-valued (m >= 0) storage (see
+    ``footprints.kernel_nbytes``), so the spin=2 cases exercise the path
+    where an under-prediction would most easily slip past the cap.
+    """
+    from croissant import kernel
+
     for nside in (8, 16, 32, 64, 128):
         lmax = 2 * nside - 1
-        engine, _ = engine_select.resolve_engine(
-            lmax=lmax,
-            sampling="healpix",
-            nside=nside,
-            niter=3,
-            batch_size=1024,
-        )
-        if engine == "dense":
-            assert (
-                footprints.dense_nbytes(lmax, "healpix", nside=nside)
-                <= engine_select.DEFAULT_MEMORY_CAP_BYTES
+        for spin in (0, 2):
+            engine, _ = engine_select.resolve_engine(
+                lmax=lmax,
+                sampling="healpix",
+                nside=nside,
+                spin=spin,
+                niter=3,
+                batch_size=1024,
             )
-        elif engine == "kernel":
-            from croissant import kernel
-
-            # reality=True to match resolve_engine's own default, which
-            # is what it actually used to decide "kernel"; kernel_nbytes
-            # itself defaults to reality=False and would over-predict.
-            assert (
-                kernel.kernel_nbytes(
-                    lmax, "healpix", nside=nside, reality=True
+            if engine == "dense":
+                assert (
+                    footprints.dense_nbytes(
+                        lmax, "healpix", nside=nside, spin=spin
+                    )
+                    <= engine_select.DEFAULT_MEMORY_CAP_BYTES
                 )
-                <= engine_select.DEFAULT_MEMORY_CAP_BYTES
-            )
+            elif engine == "kernel":
+                # reality=True to match resolve_engine's own default,
+                # which is what it actually used to decide "kernel";
+                # kernel_nbytes itself defaults to reality=False and
+                # would over-predict for spin=0.
+                assert (
+                    kernel.kernel_nbytes(
+                        lmax,
+                        "healpix",
+                        nside=nside,
+                        spin=spin,
+                        reality=True,
+                    )
+                    <= engine_select.DEFAULT_MEMORY_CAP_BYTES
+                )
+
+
+@pytest.mark.parametrize("spin", [0, 2])
+def test_kernel_nbytes_matches_a_built_kernel(spin):
+    """Ground truth check: the prediction must match a real build.
+
+    test_nothing_exceeds_the_memory_cap only re-derives the expected
+    byte count with the same footprints function resolve_engine calls
+    internally, so a wrong formula there could pass unnoticed by that
+    test alone. This test instead builds the kernel with
+    precompute_kernel and compares the prediction against its actual
+    ``.nbytes``, at nside=8 so the build is fast.
+
+    This is the test that would have caught kernel_nbytes lacking a
+    ``spin`` parameter: ``kernel_compute_alm`` forces
+    ``reality = reality and spin == 0`` because s2fft's real-valued
+    (m >= 0) storage has no meaning for a spin field, so the kernel
+    actually built for a requested ``reality=True`` at spin=2 is twice
+    the size a prediction that ignored spin would give.
+    """
+    from croissant import kernel
+
+    nside = 8
+    lmax = 2 * nside - 1
+    # What kernel_compute_alm actually builds for a caller requesting
+    # reality=True: downgraded to False whenever spin != 0.
+    built_reality = spin == 0
+    built = kernel.precompute_kernel(
+        lmax, "healpix", nside=nside, spin=spin, reality=built_reality
+    )
+    predicted = kernel.kernel_nbytes(
+        lmax, "healpix", nside=nside, spin=spin, reality=True
+    )
+    assert predicted == built.nbytes
 
 
 def test_a_tiny_cap_forces_the_matrix_free_engine():
