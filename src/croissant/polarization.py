@@ -174,8 +174,14 @@ def _compute_sky_dual_alm(
         spin=0,
         reality=True,
     )
+    # Internally U is IAU (= -U_COSMO), so Q + iU is the spin -2 object
+    # and Q - iU the spin +2 object in s2fft's Goldberg basis. Each
+    # combination must be analyzed at its physical spin: this keeps the
+    # duals of band-limited E/B skies band-limited and makes Wigner-D
+    # frame rotation apply the physical transport phase (a mismatched
+    # label applies its complex conjugate). See docs/polarization.md.
     p_minus = _analysis_alm(
-        stokes_q - 1j * stokes_u,
+        stokes_q + 1j * stokes_u,
         target_lmax,
         native_lmax,
         sampling,
@@ -185,7 +191,7 @@ def _compute_sky_dual_alm(
         reality=False,
     )
     p_plus = _analysis_alm(
-        stokes_q + 1j * stokes_u,
+        stokes_q - 1j * stokes_u,
         target_lmax,
         native_lmax,
         sampling,
@@ -220,8 +226,13 @@ def _compute_response_dual_alm(
         spin=0,
         reality=False,
     )
+    # The spin -2 slot carries (BQ + iBU)/2, which the conjugated
+    # einsum contracts with the spin -2 sky analysis of Q + iU (and
+    # mirror for spin +2), reproducing the physical integral
+    # BQ*Q + BU*U. Like the sky dual, each combination is analyzed at
+    # its physical spin so frame rotation transports it correctly.
     q_plus_dual = _analysis_alm(
-        0.5 * (response_q - 1j * response_u),
+        0.5 * (response_q + 1j * response_u),
         target_lmax,
         native_lmax,
         sampling,
@@ -231,7 +242,7 @@ def _compute_response_dual_alm(
         reality=False,
     )
     q_minus_dual = _analysis_alm(
-        0.5 * (response_q + 1j * response_u),
+        0.5 * (response_q - 1j * response_u),
         target_lmax,
         native_lmax,
         sampling,

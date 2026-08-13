@@ -27,40 +27,53 @@ import pytest
 import s2fft
 from s2fft.base_transforms import spherical as s2fft_base
 
+from croissant import utils
+
 NSIDE = 16
 L = 2 * NSIDE  # s2fft's HEALPix transforms require L >= 2 * nside
 
 
 def wigner_d(ell, m, n, beta):
-    """Wigner small-d matrix element from the explicit sum formula."""
+    """Wigner small-d matrix element d^ell_{m,n}(beta) from the
+    explicit sum formula (Wikipedia/Varshalovich convention). The
+    factorial products are cast to float before sqrt/division since
+    they exceed int64 for ell + |m| >= 21."""
     pref = np.sqrt(
-        factorial(ell + m)
-        * factorial(ell - m)
-        * factorial(ell + n)
-        * factorial(ell - n)
+        float(
+            factorial(ell + m)
+            * factorial(ell - m)
+            * factorial(ell + n)
+            * factorial(ell - n)
+        )
     )
     d = np.zeros_like(beta)
-    for k in range(max(0, m - n), min(ell + m, ell - n) + 1):
-        denom = (
-            factorial(ell + m - k)
+    for k in range(max(0, n - m), min(ell + n, ell - m) + 1):
+        denom = float(
+            factorial(ell + n - k)
             * factorial(k)
-            * factorial(ell - n - k)
-            * factorial(n - m + k)
+            * factorial(ell - m - k)
+            * factorial(m - n + k)
         )
         d = d + (
-            (-1) ** (n - m + k)
+            (-1) ** (m - n + k)
             / denom
-            * np.cos(beta / 2) ** (2 * ell + m - n - 2 * k)
-            * np.sin(beta / 2) ** (n - m + 2 * k)
+            * np.cos(beta / 2) ** (2 * ell + n - m - 2 * k)
+            * np.sin(beta / 2) ** (m - n + 2 * k)
         )
     return pref * d
 
 
 def spin_spherical_harmonic(spin, ell, m, theta, phi):
-    """Spin-weighted spherical harmonic sYlm (McEwen & Wiaux convention,
-    as used by s2fft, including the Condon-Shortley phase)."""
+    """Spin-weighted spherical harmonic sYlm in the Goldberg /
+    McEwen & Wiaux convention used by s2fft (Condon-Shortley phase
+    included): (-1)^s sqrt((2l+1)/4pi) d^l_{m,-s}(theta) *
+    e^{i m phi}.
+
+    An earlier version computed the transposed d^l_{n,m} and
+    compensated with a (-1)^(s+|m|) prefactor; the cancellation is
+    exact only for even spin and flipped the sign at odd spin."""
     return (
-        (-1) ** (spin + abs(m))
+        (-1) ** spin
         * np.sqrt((2 * ell + 1) / (4 * np.pi))
         * wigner_d(ell, m, -spin, theta)
         * np.exp(1j * m * phi)
@@ -115,3 +128,30 @@ def test_healpix_spin_inverse_matches_base_transform(spin):
         flm, L, spin=spin, nside=NSIDE, sampling="healpix"
     )
     np.testing.assert_allclose(f, f_base, atol=1e-12)
+
+
+@pytest.mark.parametrize("spin", [-1, 1])
+@pytest.mark.parametrize("ell, emm", [(1, 0), (1, 1), (3, 1), (5, -3)])
+def test_mwss_odd_spin_forward_recovers_analytic_harmonic(spin, ell, emm):
+    """Forward odd-spin transform on MWSS of an analytically sampled
+    sYlm must return a delta with amplitude +1. This certifies the
+    analytic helpers at odd spin, where the former transposed-d /
+    prefactor cancellation flipped the global sign; MWSS sampling
+    keeps the certification independent of the HEALPix pin."""
+    L_mwss = 8
+    theta = np.asarray(utils.generate_theta(lmax=L_mwss - 1, sampling="mwss"))
+    phi = np.asarray(utils.generate_phi(lmax=L_mwss - 1, sampling="mwss"))
+    f = spin_spherical_harmonic(spin, ell, emm, theta[:, None], phi[None, :])
+    flm = np.asarray(
+        s2fft.forward(
+            f,
+            L_mwss,
+            spin=spin,
+            sampling="mwss",
+            method="numpy",
+            reality=False,
+        )
+    )
+    expected = np.zeros((L_mwss, 2 * L_mwss - 1), dtype=complex)
+    expected[ell, L_mwss - 1 + emm] = 1.0
+    np.testing.assert_allclose(flm, expected, atol=1e-10)
