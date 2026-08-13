@@ -85,6 +85,8 @@ class Sky(sphere.SphBase):
             niter=self._niter,
             engine=self._engine,
             dense_matrix=self._dense_matrix,
+            kernel=self._kernel,
+            inverse_kernel=self._inverse_kernel,
         )
 
     def compute_alm_eq(self, world="moon", et=None):

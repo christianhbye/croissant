@@ -382,3 +382,85 @@ def test_unknown_engine_is_rejected_with_the_full_list():
             nside=NSIDE,
             engine="nonsense",
         )
+
+
+def test_beam_construction_populates_the_kernel_cache():
+    """Regression test: constructing a kernel-engine Beam must actually
+    cache a kernel, not merely return correct results.
+
+    Beam.compute_alm is @jax.jit, so building the kernel lazily from
+    inside it (the first implementation of this task) built the kernel
+    as a jax tracer bound to that one trace and had to drop it rather
+    than cache it, leaving _KERNEL_CACHE empty forever: correct output
+    via XLA constant-folding, but none of precompute_kernel's cross-
+    object sharing, and a multi-hundred-MiB kernel baked into every
+    compiled executable at high nside. SphBase.__init__ now builds the
+    kernel eagerly, before compute_alm ever runs, so the cache must be
+    warm right after construction.
+    """
+    from croissant import Beam
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(11)
+    data = rng.normal(size=(2, 12 * NSIDE**2)) ** 2
+    Beam(
+        data,
+        freqs=np.array([50.0, 60.0]),
+        sampling="healpix",
+        engine="kernel",
+        niter=0,
+    )
+    assert len(kernel._KERNEL_CACHE) > 0
+
+
+def test_two_beams_share_the_same_cached_kernel_object():
+    """Cross-object sharing is the point of caching: two Beams with the
+    same transform configuration must reuse one cached kernel array
+    rather than each building (and each jit trace re-embedding) its
+    own."""
+    from croissant import Beam
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(12)
+    data = rng.normal(size=(2, 12 * NSIDE**2)) ** 2
+    freqs = np.array([50.0, 60.0])
+    beam1 = Beam(
+        data, freqs=freqs, sampling="healpix", engine="kernel", niter=0
+    )
+    beam2 = Beam(
+        data, freqs=freqs, sampling="healpix", engine="kernel", niter=0
+    )
+    shared = kernel.precompute_kernel(
+        beam1.lmax, "healpix", nside=beam1.nside, spin=0, reality=True
+    )
+    assert beam1._kernel is shared
+    assert beam2._kernel is shared
+
+
+def test_compute_alm_inside_jit_without_precompute_raises():
+    """engine="kernel" must refuse to build inside a caller's own
+    jax.jit rather than silently caching a leaked tracer (the bug this
+    fix round addresses). The caller must precompute_kernel(...)
+    outside jax.jit and pass it in, exactly as engine="dense" requires
+    for precompute_dense_matrix.
+    """
+    import jax
+
+    from croissant import sphere
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(14)
+    data = rng.normal(size=(1, 12 * NSIDE**2))
+
+    @jax.jit
+    def call(x):
+        return sphere.compute_alm(
+            x,
+            lmax=LMAX,
+            sampling="healpix",
+            nside=NSIDE,
+            engine="kernel",
+        )
+
+    with pytest.raises(RuntimeError, match="precompute_kernel"):
+        call(data)

@@ -53,6 +53,15 @@ def precompute_kernel(
     """
     Build and cache the Wigner-d kernel for one transform configuration.
 
+    Must be called outside ``jax.jit``. Converting the numpy-built
+    kernel to a ``jax.Array`` while a trace is active would return a
+    tracer bound to that trace; caching it in the module-level,
+    trace-independent cache would let a later, unrelated call read
+    back a leaked tracer. Callers reaching this from inside a trace
+    (:func:`kernel_compute_alm`, :class:`croissant.sphere.SphBase`)
+    raise ``RuntimeError`` instead of calling this function, and expect
+    the kernel to have been built here first, outside any trace.
+
     Parameters
     ----------
     lmax : int
@@ -109,16 +118,6 @@ def precompute_kernel(
     )
     array = jnp.asarray(built)
 
-    if isinstance(array, jax.core.Tracer):
-        # Built for the first time from inside an active jax trace
-        # (e.g. SphBase's jitted compute_alm on first use, or a
-        # caller's own jax.jit). The Wigner-d recursion above never
-        # depends on a traced value, but this converted array is only
-        # valid within the current trace: caching it would let a later,
-        # unrelated trace read back a leaked tracer. Return it directly
-        # for immediate use in this trace only; do not persist it.
-        return array
-
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE[key] = array
         _KERNEL_CACHE.move_to_end(key)
@@ -146,6 +145,9 @@ def kernel_compute_alm(
     niter=0,
     spin=0,
     reality=True,
+    *,
+    kernel=None,
+    inverse_kernel=None,
 ):
     """
     Compute alm by contracting a cached Wigner-d kernel.
@@ -171,6 +173,17 @@ def kernel_compute_alm(
     reality : bool
         Whether the field is real. Forced False for nonzero spin, which
         s2fft's precompute path requires.
+    kernel : jax.Array or None
+        Precomputed forward (analysis) kernel, as returned by
+        :func:`precompute_kernel` with ``forward=True``. This is
+        primarily used internally by :class:`croissant.sphere.SphBase`
+        so its jitted ``compute_alm`` methods never build a kernel
+        while being traced. If None and ``data`` is not a jax tracer,
+        it is built (and cached) here via :func:`precompute_kernel`.
+    inverse_kernel : jax.Array or None
+        Precomputed synthesis (inverse) kernel, as returned by
+        :func:`precompute_kernel` with ``forward=False``. Only
+        consulted when ``niter > 0``; same fallback as ``kernel``.
 
     Returns
     -------
@@ -212,9 +225,22 @@ def kernel_compute_alm(
 
     reality = bool(reality) and spin == 0
     L = lmax + 1
-    forward_kernel = precompute_kernel(
-        lmax, sampling, nside=nside, spin=spin, reality=reality, forward=True
-    )
+    forward_kernel = kernel
+    if forward_kernel is None:
+        if isinstance(data, jax.core.Tracer):
+            raise RuntimeError(
+                "The kernel must be precomputed before "
+                "kernel_compute_alm is called inside jax.jit. Call "
+                "precompute_kernel(...) once outside jax.jit."
+            )
+        forward_kernel = precompute_kernel(
+            lmax,
+            sampling,
+            nside=nside,
+            spin=spin,
+            reality=reality,
+            forward=True,
+        )
     analyse = partial(
         s2fft.precompute_transforms.spherical.forward,
         L=L,
@@ -235,9 +261,22 @@ def kernel_compute_alm(
     # broken jax builder and diverges for spin != 0. The iteration is
     # flm <- flm + F(f - I(flm)), the same one sphere.py applies to the
     # scalar dense matrix in gram form.
-    inverse_kernel = precompute_kernel(
-        lmax, sampling, nside=nside, spin=spin, reality=reality, forward=False
-    )
+    if inverse_kernel is None:
+        if isinstance(data, jax.core.Tracer):
+            raise RuntimeError(
+                "The inverse kernel must be precomputed before "
+                "kernel_compute_alm is called inside jax.jit with "
+                "niter > 0. Call precompute_kernel(..., forward=False) "
+                "once outside jax.jit."
+            )
+        inverse_kernel = precompute_kernel(
+            lmax,
+            sampling,
+            nside=nside,
+            spin=spin,
+            reality=reality,
+            forward=False,
+        )
     synthesise = partial(
         s2fft.precompute_transforms.spherical.inverse,
         L=L,

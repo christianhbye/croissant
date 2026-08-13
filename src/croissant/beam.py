@@ -191,6 +191,8 @@ class Beam(sphere.SphBase):
             niter=self._niter,
             engine=self._engine,
             dense_matrix=self._dense_matrix,
+            kernel=self._kernel,
+            inverse_kernel=self._inverse_kernel,
         )
         # apply azimuthal rotation, N→E convention (no-op when beam_rot == 0)
         emms = jnp.arange(-self.lmax, self.lmax + 1)

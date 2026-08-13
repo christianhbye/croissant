@@ -355,6 +355,8 @@ def compute_alm(
     engine="s2fft",
     *,
     dense_matrix=None,
+    kernel=None,
+    inverse_kernel=None,
 ):
     """
     Compute the spherical harmonic coefficients of a scalar or spin field
@@ -402,6 +404,17 @@ def compute_alm(
         Precomputed packed dense matrix. This is primarily used internally
         by :class:`SphBase` so its jitted methods never build a matrix while
         being traced.
+    kernel : jax.Array or None
+        Precomputed forward Wigner-d kernel for ``engine="kernel"``, as
+        returned by :func:`croissant.kernel.precompute_kernel` with
+        ``forward=True``. Same jit-safety role as ``dense_matrix``, and
+        passed straight through to
+        :func:`croissant.kernel.kernel_compute_alm`.
+    inverse_kernel : jax.Array or None
+        Precomputed synthesis Wigner-d kernel for ``engine="kernel"``
+        with ``niter > 0``, as returned by
+        :func:`croissant.kernel.precompute_kernel` with
+        ``forward=False``.
 
     Returns
     -------
@@ -441,6 +454,8 @@ def compute_alm(
             niter=niter,
             spin=spin,
             reality=reality,
+            kernel=kernel,
+            inverse_kernel=inverse_kernel,
         )
     if engine != "dense":
         raise ValueError(
@@ -494,6 +509,8 @@ class SphBase(eqx.Module):
     _niter: int = eqx.field(static=True)  # niter for sht
     _engine: str = eqx.field(static=True)  # spherical harmonic engine
     _dense_matrix: jax.Array | None
+    _kernel: jax.Array | None
+    _inverse_kernel: jax.Array | None
     nside: int | None = eqx.field(static=True)
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
@@ -627,8 +644,48 @@ class SphBase(eqx.Module):
                     nside=self.nside,
                     niter=self._niter,
                 )
+            self._kernel = None
+            self._inverse_kernel = None
+        elif self._engine == "kernel":
+            self._dense_matrix = None
+            # Mirrors the dense branch above: build outside any trace so
+            # the cached array is concrete, never a leaked tracer (see
+            # kernel.precompute_kernel's docstring). Unlike dense, the
+            # kernel engine has no manual per-key tracer fallback here:
+            # a SphBase built with engine="kernel" inside jax.jit must
+            # precompute explicitly first, same as kernel_compute_alm
+            # requires when called directly inside a trace.
+            if isinstance(self.data, jax.core.Tracer):
+                raise RuntimeError(
+                    "The kernel must be precomputed before a kernel "
+                    "SphBase object is constructed inside jax.jit. Call "
+                    "precompute_kernel(...) once outside jax.jit."
+                )
+            from . import kernel as _kernel
+
+            self._kernel = _kernel.precompute_kernel(
+                self.lmax,
+                self.sampling,
+                nside=self.nside,
+                spin=0,
+                reality=True,
+                forward=True,
+            )
+            if self._niter > 0:
+                self._inverse_kernel = _kernel.precompute_kernel(
+                    self.lmax,
+                    self.sampling,
+                    nside=self.nside,
+                    spin=0,
+                    reality=True,
+                    forward=False,
+                )
+            else:
+                self._inverse_kernel = None
         else:
             self._dense_matrix = None
+            self._kernel = None
+            self._inverse_kernel = None
 
         self.phi = utils.generate_phi(
             lmax=self.lmax, sampling=self.sampling, nside=self.nside
