@@ -33,7 +33,7 @@ import s2fft
 from croissant import utils
 from croissant.polarization import PolarizedSky
 
-from .test_s2fft_pin import spin_spherical_harmonic
+from .harmonics_reference import spin_spherical_harmonic
 
 LMAX = 8
 L = LMAX + 1
