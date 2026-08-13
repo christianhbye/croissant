@@ -1577,35 +1577,23 @@ def test_repeated_transforms_prefer_the_kernel():
     assert engine == "kernel"
 
 
-@pytest.mark.parametrize("niter", [1, 3])
-def test_refinement_selects_dense_when_the_operator_fits(niter):
-    """At niter>0 dense folds refinement into its cached matrix.
+@pytest.mark.parametrize("niter", [0, 1, 3])
+def test_refinement_does_not_by_itself_select_dense(niter):
+    """niter>0 is not a reason for auto to pay for the dense operator.
 
-    Measured in Task 6: dense beats the kernel engine's per-call cost by
-    1.29x-6.65x at niter=3 across every benchmarked configuration. A flop
-    count predicts the opposite, because dense moves ~1.5*nside times
-    more data per pass, but constant factors dominate at these sizes.
+    Dense does win on per-call cost at niter>0 (2.4x-8.3x in Task 6),
+    but its build costs 2x-25x more, and the break-even call counts from
+    the same measurements are 168 to 11929 calls. Croissant transforms
+    once at construction, so that per-call saving is never repaid.
+    Choosing dense for throughput needs knowledge only the caller has,
+    and stays an explicit override.
     """
-    engine, reason = engine_select.resolve_engine(
+    engine, _ = engine_select.resolve_engine(
         lmax=31,
         sampling="healpix",
         nside=16,
         niter=niter,
         batch_size=64,
-    )
-    assert engine == "dense"
-    assert "niter" in reason
-
-
-def test_refinement_falls_back_to_kernel_when_dense_will_not_fit():
-    """The niter>0 preference for dense is gated on affordability."""
-    engine, _ = engine_select.resolve_engine(
-        lmax=127,
-        sampling="healpix",
-        nside=64,
-        niter=3,
-        batch_size=64,
-        memory_cap=200 * 1024**2,
     )
     assert engine == "kernel"
 
@@ -1877,26 +1865,20 @@ def resolve_engine(
             f"(needs {threshold})",
         )
 
-    # MEASURED, and it contradicts the flop count. Dense wins per call at
-    # niter > 0 by 1.29x-6.65x across every configuration benchmarked in
-    # Task 6, because its refinement is folded into the cached matrix
-    # while the kernel engine pays 2*niter+1 passes. A flop count says
-    # the opposite -- dense moves ~1.5*nside times more data per pass --
-    # but at nside <= 32 that is swamped by constant factors: dense is one
-    # BLAS call with ideal arithmetic intensity, whereas the kernel path
-    # is an FFT plus an einsum plus 2*niter+1 sequential round trips
-    # through a synthesis step. See conclusion 2 of
-    # benchmarks/results/engines-2026-08-13.md. At large nside flops
-    # should eventually dominate, but dense does not fit there anyway
-    # (~12 GiB at nside=64), so the memory cap excludes it first.
-    if niter > 0 and dense_fits:
-        return (
-            "dense",
-            f"niter={niter} folds into a "
-            f"{dense_bytes / 1024**2:.1f} MiB operator, measured "
-            "cheapest per call",
-        )
-
+    # NOTE, and this is the one place a per-call benchmark misleads.
+    # Dense does win on cached-apply at niter > 0 -- 2.4x to 8.3x in
+    # Task 6 -- because its refinement folds into the cached matrix while
+    # the kernel engine pays 2*niter+1 passes. But its BUILD costs 2x to
+    # 25x more, and the break-even call counts computed from the same
+    # table are 168, 803, 7926 and 11929 calls (and 92338 for
+    # spin 2/nside 16/niter 0). Croissant transforms once at
+    # construction, batched over frequencies -- one call. So selecting
+    # dense for per-call speed would trade a 25 s build for a 0.03 s
+    # saving that is never repaid. Dense-for-throughput is therefore an
+    # explicit user override, not an automatic choice: only the caller
+    # knows it will re-apply the same transform thousands of times. The
+    # structural case above (a band-limit below the HEALPix floor) is the
+    # only reason auto reaches for dense.
     if kernel_fits:
         return (
             "kernel",
