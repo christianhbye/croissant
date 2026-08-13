@@ -134,3 +134,65 @@ def test_kernel_matches_on_the_fly_transform(spin):
     np.testing.assert_allclose(
         got, expected, rtol=0, atol=1e-12 * np.abs(expected).max()
     )
+
+
+def test_kernel_compute_alm_matches_s2fft_engine_scalar():
+    """The kernel engine reproduces the s2fft engine for real scalars,
+    including the batch axis and the returned layout."""
+    from croissant import sphere
+
+    rng = np.random.default_rng(4)
+    data = rng.normal(size=(3, 12 * NSIDE**2))
+    kwargs = dict(lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0)
+    expected = np.asarray(sphere.compute_alm(data, engine="s2fft", **kwargs))
+    got = np.asarray(kernel.kernel_compute_alm(data, **kwargs))
+    assert got.shape == expected.shape == (3, LMAX + 1, 2 * LMAX + 1)
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-12 * np.abs(expected).max()
+    )
+
+
+def test_kernel_engine_follows_the_dtype_contract():
+    """The engines share a dtype policy, so the kernel engine must too.
+
+    Per ``sphere._dense_dtypes``, croissant's engines reproduce
+    ``s2fft.forward``: complex128 out on an x64 runtime even for float32
+    maps. A kernel engine that instead inherited the input dtype would
+    silently change precision downstream, which the alm-value
+    equivalence tests would not catch because they compare at x64.
+    """
+    from croissant import sphere
+
+    rng = np.random.default_rng(13)
+    for input_dtype in (np.float32, np.float64):
+        data = rng.normal(size=(2, 12 * NSIDE**2)).astype(input_dtype)
+        kwargs = dict(lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0)
+        expected = sphere.compute_alm(data, engine="s2fft", **kwargs)
+        got = kernel.kernel_compute_alm(data, **kwargs)
+        assert got.dtype == expected.dtype, (
+            f"kernel engine returned {got.dtype} for {input_dtype} input, "
+            f"s2fft engine returned {expected.dtype}"
+        )
+
+
+@pytest.mark.parametrize("spin", [2, -2])
+def test_kernel_compute_alm_matches_s2fft_engine_spin(spin):
+    """The kernel engine reproduces the s2fft engine for spin fields."""
+    from croissant import sphere
+
+    rng = np.random.default_rng(5)
+    npix = 12 * NSIDE**2
+    data = rng.normal(size=(2, npix)) + 1j * rng.normal(size=(2, npix))
+    kwargs = dict(
+        lmax=LMAX,
+        sampling="healpix",
+        nside=NSIDE,
+        niter=0,
+        spin=spin,
+        reality=False,
+    )
+    expected = np.asarray(sphere.compute_alm(data, engine="s2fft", **kwargs))
+    got = np.asarray(kernel.kernel_compute_alm(data, **kwargs))
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-12 * np.abs(expected).max()
+    )

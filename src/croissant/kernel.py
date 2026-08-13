@@ -24,8 +24,10 @@ Two s2fft constraints are load-bearing and must not be relaxed:
 """
 
 from collections import OrderedDict
+from functools import partial
 from threading import Lock
 
+import jax
 import jax.numpy as jnp
 import s2fft
 import s2fft.precompute_transforms
@@ -34,6 +36,7 @@ from .footprints import kernel_nbytes, transform_lmax
 
 __all__ = [
     "clear_kernel_cache",
+    "kernel_compute_alm",
     "kernel_nbytes",
     "precompute_kernel",
     "transform_lmax",
@@ -118,3 +121,100 @@ def clear_kernel_cache():
     """Release all cached kernels held by croissant."""
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE.clear()
+
+
+def _spatial_ndim(sampling):
+    """Number of trailing axes that hold the field's spatial samples."""
+    return 1 if sampling == "healpix" else 2
+
+
+def kernel_compute_alm(
+    data,
+    lmax,
+    sampling,
+    nside=None,
+    niter=0,
+    spin=0,
+    reality=True,
+):
+    """
+    Compute alm by contracting a cached Wigner-d kernel.
+
+    Every axis before the spatial axes is treated as a batch axis, and
+    the returned layout matches :func:`croissant.sphere.compute_alm`.
+
+    Parameters
+    ----------
+    data : array_like
+        Field samples, with spatial axes trailing.
+    lmax : int
+        Maximum spherical harmonic degree.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+    niter : int
+        Number of iterative refinement steps. Refinement is run by
+        croissant, not by s2fft; see the module docstring.
+    spin : int
+        Spin weight of the field.
+    reality : bool
+        Whether the field is real. Forced False for nonzero spin, which
+        s2fft's precompute path requires.
+
+    Returns
+    -------
+    jax.Array
+        Coefficients of shape ``batch + (lmax + 1, 2 * lmax + 1)``.
+
+    """
+    if niter < 0:
+        raise ValueError(f"niter must be non-negative, got {niter}.")
+    floor = transform_lmax(lmax, sampling, nside=nside)
+    if floor != lmax:
+        raise ValueError(
+            f"The kernel engine needs lmax >= {floor} for "
+            f"nside={nside} (s2fft's HEALPix FFT requires "
+            "L >= 2 * nside), but lmax="
+            f"{lmax} was requested. Use engine='dense', which builds at "
+            "the required band-limit and keeps only the low-ell rows, or "
+            "engine='s2fft'."
+        )
+    # Croissant's engines share a dtype contract, owned and documented by
+    # sphere._dense_dtypes: they reproduce s2fft.forward, which returns
+    # complex128 on an x64 runtime even for float32 maps. s2fft's
+    # PRECOMPUTE path instead inherits the input dtype, so a float32 map
+    # would come back complex64 with ~1e-7 relative error. Promote the
+    # input rather than casting the result: casting the result would keep
+    # that error. Imported lazily because sphere imports this module.
+    from .sphere import _dense_dtypes
+
+    real_dtype, _ = _dense_dtypes()
+    data = jnp.asarray(data)
+    if data.dtype.kind == "c":
+        data = data.astype(jnp.result_type(real_dtype, 1j))
+    else:
+        data = data.astype(real_dtype)
+    spatial_ndim = _spatial_ndim(sampling)
+    spatial_shape = data.shape[-spatial_ndim:]
+    batch_shape = data.shape[:-spatial_ndim]
+    flat = data.reshape((-1,) + spatial_shape)
+
+    reality = bool(reality) and spin == 0
+    L = lmax + 1
+    forward_kernel = precompute_kernel(
+        lmax, sampling, nside=nside, spin=spin, reality=reality, forward=True
+    )
+    analyse = partial(
+        s2fft.precompute_transforms.spherical.forward,
+        L=L,
+        spin=spin,
+        kernel=forward_kernel,
+        sampling=sampling,
+        reality=reality,
+        method="jax",
+        nside=nside,
+        iter=0,  # never delegate refinement; see the module docstring
+    )
+    flat_alm = jax.vmap(analyse)(flat)
+    return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
