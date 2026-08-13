@@ -16,6 +16,11 @@ whether wall-clock agrees.
 
 Dense configurations whose predicted footprint exceeds MEMORY_CAP_MIB are
 skipped rather than built, and reported as skipped.
+
+Finally, sweeps batch size at one fixed configuration (scalar,
+nside=16, niter=0) to find the crossover where the kernel engine's
+setup-plus-first-call starts beating s2fft's -- the number
+`_AMORTISATION_THRESHOLD` (Task 7) is calibrated from.
 """
 
 import os
@@ -28,6 +33,8 @@ SCALAR_NSIDES = (8, 16, 32)
 SPIN_NSIDES = (8, 16)
 NITERS = (0, 3)
 REPEATS = 3
+BATCH_SWEEP_NSIDE = 16
+BATCH_SWEEP_SIZES = (1, 2, 4, 8, 16)
 
 
 def _time_call(fn, *args, **kwargs):
@@ -66,7 +73,10 @@ def main():
             data = jnp.asarray(data)
 
             kernel_mib = (
-                kernel.kernel_nbytes(lmax, "healpix", nside=nside) / 2**20
+                kernel.kernel_nbytes(
+                    lmax, "healpix", nside=nside, reality=reality
+                )
+                / 2**20
             )
             dense_mib = (
                 footprints.dense_nbytes(
@@ -87,6 +97,7 @@ def main():
                         continue
                     kernel.clear_kernel_cache()
                     sphere.clear_dense_matrix_cache()
+                    jax.clear_caches()
 
                     def run():
                         return sphere.compute_alm(
@@ -134,6 +145,49 @@ def main():
                             agreement,
                         )
                     )
+
+    print()
+    print(
+        f"# batch sweep: scalar, nside={BATCH_SWEEP_NSIDE}, "
+        f"lmax={2 * BATCH_SWEEP_NSIDE - 1}, niter=0"
+    )
+    sweep_nside = BATCH_SWEEP_NSIDE
+    sweep_lmax = 2 * sweep_nside - 1
+    sweep_npix = 12 * sweep_nside**2
+    for batch_size in BATCH_SWEEP_SIZES:
+        rng = np.random.default_rng(0)
+        data = jnp.asarray(rng.normal(size=(batch_size, sweep_npix)))
+        setup_times = {}
+        for engine in ("s2fft", "kernel"):
+            kernel.clear_kernel_cache()
+            sphere.clear_dense_matrix_cache()
+            jax.clear_caches()
+
+            def run():
+                return sphere.compute_alm(
+                    data,
+                    sweep_lmax,
+                    "healpix",
+                    nside=sweep_nside,
+                    niter=0,
+                    spin=0,
+                    reality=True,
+                    engine=engine,
+                )
+
+            setup_and_first, cached = _time_call(run)
+            setup_times[engine] = setup_and_first
+            print(
+                f"batch_size={batch_size} engine={engine} "
+                f"setup_plus_first_seconds={setup_and_first:.4f} "
+                f"cached_apply_seconds={cached:.6f}"
+            )
+        winner = (
+            "kernel"
+            if setup_times["kernel"] < setup_times["s2fft"]
+            else "s2fft"
+        )
+        print(f"batch_size={batch_size} winner={winner}")
 
     print()
     print(
