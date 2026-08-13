@@ -1577,23 +1577,56 @@ def test_repeated_transforms_prefer_the_kernel():
     assert engine == "kernel"
 
 
-@pytest.mark.parametrize("niter", [0, 1, 3])
-def test_refinement_does_not_by_itself_select_dense(niter):
-    """niter>0 is not a reason to pay for the dense operator.
+@pytest.mark.parametrize("niter", [1, 3])
+def test_refinement_selects_dense_when_the_operator_fits(niter):
+    """At niter>0 dense folds refinement into its cached matrix.
 
-    Per-call cost is roughly one pass over the precomputed object, so
-    dense costs ~48*nside**4 against the kernel's ~32*nside**3. Even at
-    niter=3, where the kernel needs 2*niter+1=7 passes and dense needs
-    one, the kernel is cheaper for any nside > 4.
+    Measured in Task 6: dense beats the kernel engine's per-call cost by
+    1.29x-6.65x at niter=3 across every benchmarked configuration. A flop
+    count predicts the opposite, because dense moves ~1.5*nside times
+    more data per pass, but constant factors dominate at these sizes.
     """
-    engine, _ = engine_select.resolve_engine(
-        lmax=63,
+    engine, reason = engine_select.resolve_engine(
+        lmax=31,
         sampling="healpix",
-        nside=32,
+        nside=16,
         niter=niter,
         batch_size=64,
     )
+    assert engine == "dense"
+    assert "niter" in reason
+
+
+def test_refinement_falls_back_to_kernel_when_dense_will_not_fit():
+    """The niter>0 preference for dense is gated on affordability."""
+    engine, _ = engine_select.resolve_engine(
+        lmax=127,
+        sampling="healpix",
+        nside=64,
+        niter=3,
+        batch_size=64,
+        memory_cap=200 * 1024**2,
+    )
     assert engine == "kernel"
+
+
+def test_amortisation_threshold_scales_with_kernel_size():
+    """The batch a kernel needs grows with the kernel, not a constant.
+
+    Measured crossovers: batch 1 at nside=8 and nside=16 (kernels of 0.12
+    and 0.98 MiB), batch 8 at nside=32 (7.94 MiB). A fixed threshold
+    cannot serve both, so a batch of 4 must be enough at nside=16 and not
+    enough at nside=32.
+    """
+    small, _ = engine_select.resolve_engine(
+        lmax=31, sampling="healpix", nside=16, batch_size=4
+    )
+    large, reason = engine_select.resolve_engine(
+        lmax=63, sampling="healpix", nside=32, batch_size=4
+    )
+    assert small == "kernel"
+    assert large == "s2fft"
+    assert "amortise" in reason
 
 
 def test_low_bandlimit_on_a_high_resolution_map_selects_dense():
@@ -1709,17 +1742,44 @@ later calls, so ``batch_size`` stands in for the amortisation factor --
 for ``Beam`` and ``Sky`` that is the number of frequencies.
 """
 
+import math
+
 from .footprints import dense_nbytes, kernel_nbytes, transform_lmax
 
 __all__ = ["DEFAULT_MEMORY_CAP_BYTES", "ENGINES", "resolve_engine"]
 
 DEFAULT_MEMORY_CAP_BYTES = 512 * 1024**2
 
-#: Batch size below which precomputing an engine cannot pay for itself.
-#: Calibrated from benchmarks/results/engines-<date>.md (Task 6): the
-#: crossover where the kernel engine's setup plus first call beats the
-#: matrix-free engine. Re-measure before changing it.
-_AMORTISATION_THRESHOLD = 8
+#: Kernel megabytes that one batched transform can amortise. MEASURED in
+#: Task 6, not reasoned: the batch size at which the kernel engine's
+#: setup-plus-first call overtakes the matrix-free engine tracks the
+#: kernel's own size almost 1:1 -- crossover 1 at nside=8 and nside=16,
+#: where the kernel is 0.12 and 0.98 MiB, and crossover 8 at nside=32,
+#: where it is 7.94 MiB. Both quantities grow as roughly nside**3.
+#: A single fixed batch threshold cannot express this: it would have to be
+#: 1 to serve nside=16 and 8 to serve nside=32. Only three resolutions
+#: were fitted, so treat the 1:1 coefficient as order-of-magnitude, and
+#: re-measure with benchmarks/benchmark_engines.py before changing it.
+_MIB_PER_BATCHED_TRANSFORM = 1.0
+
+
+def _amortisation_threshold(kernel_bytes):
+    """
+    Smallest batch size that can pay for a kernel of this size.
+
+    Parameters
+    ----------
+    kernel_bytes : int
+        Predicted size of the kernel that would be built.
+
+    Returns
+    -------
+    int
+        Minimum batch size, never below 1.
+
+    """
+    mib = kernel_bytes / 1024**2
+    return max(1, math.ceil(mib / _MIB_PER_BATCHED_TRANSFORM))
 
 ENGINES = ("s2fft", "kernel", "dense")
 
@@ -1808,20 +1868,35 @@ def resolve_engine(
             f"and the dense operator needs {dense_bytes >> 20} MiB",
         )
 
-    if batch_size < _AMORTISATION_THRESHOLD:
+    threshold = _amortisation_threshold(kernel_bytes)
+    if batch_size < threshold:
         return (
             "s2fft",
-            f"batch of {batch_size} is too small to amortise a "
-            "precomputed engine",
+            f"batch of {batch_size} cannot amortise a "
+            f"{kernel_bytes / 1024**2:.1f} MiB kernel "
+            f"(needs {threshold})",
         )
 
-    # Deliberately NOT "niter > 0 implies dense". Per-call cost is
-    # essentially one pass over the precomputed object, so dense costs
-    # ~48*nside**4 against the kernel's ~32*nside**3. Even at niter=3,
-    # where the kernel needs 2*niter+1 = 7 passes and dense needs one,
-    # the kernel is cheaper unless 1.5*nside < 2*niter+1 -- that is,
-    # nside <= 4. The dense engine's measured 6x at niter=3 in the README
-    # was against engine="s2fft", not against a kernel engine.
+    # MEASURED, and it contradicts the flop count. Dense wins per call at
+    # niter > 0 by 1.29x-6.65x across every configuration benchmarked in
+    # Task 6, because its refinement is folded into the cached matrix
+    # while the kernel engine pays 2*niter+1 passes. A flop count says
+    # the opposite -- dense moves ~1.5*nside times more data per pass --
+    # but at nside <= 32 that is swamped by constant factors: dense is one
+    # BLAS call with ideal arithmetic intensity, whereas the kernel path
+    # is an FFT plus an einsum plus 2*niter+1 sequential round trips
+    # through a synthesis step. See conclusion 2 of
+    # benchmarks/results/engines-2026-08-13.md. At large nside flops
+    # should eventually dominate, but dense does not fit there anyway
+    # (~12 GiB at nside=64), so the memory cap excludes it first.
+    if niter > 0 and dense_fits:
+        return (
+            "dense",
+            f"niter={niter} folds into a "
+            f"{dense_bytes / 1024**2:.1f} MiB operator, measured "
+            "cheapest per call",
+        )
+
     if kernel_fits:
         return (
             "kernel",
