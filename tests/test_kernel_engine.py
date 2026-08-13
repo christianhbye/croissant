@@ -196,3 +196,91 @@ def test_kernel_compute_alm_matches_s2fft_engine_spin(spin):
     np.testing.assert_allclose(
         got, expected, rtol=0, atol=1e-12 * np.abs(expected).max()
     )
+
+
+def test_refinement_converges_towards_a_band_limited_signal():
+    """Refinement must actually converge, monotonically.
+
+    HEALPix has no exact quadrature, so analysing a synthesised
+    band-limited field does not recover its coefficients exactly. Each
+    refinement step should shrink that error. s2fft's own precompute
+    refinement fails this for spin != 0 -- it diverges -- which is why
+    croissant runs the iteration itself.
+    """
+    L = LMAX + 1
+    spin = 2
+    rng = np.random.default_rng(6)
+    flm = np.asarray(
+        s2fft.utils.signal_generator.generate_flm(
+            rng, L, spin=spin, reality=False
+        )
+    )
+    field = np.asarray(
+        s2fft.inverse(
+            flm,
+            L=L,
+            spin=spin,
+            nside=NSIDE,
+            sampling="healpix",
+            method="jax",
+            reality=False,
+        )
+    )
+    errors = []
+    for niter in (0, 1, 2, 3):
+        got = np.asarray(
+            kernel.kernel_compute_alm(
+                field[None],
+                lmax=LMAX,
+                sampling="healpix",
+                nside=NSIDE,
+                niter=niter,
+                spin=spin,
+                reality=False,
+            )
+        )[0]
+        errors.append(np.abs(got - flm).max())
+    for previous, current in zip(errors, errors[1:]):
+        assert current < previous, f"refinement not converging: {errors}"
+    assert errors[-1] < errors[0] / 10
+
+
+@pytest.mark.parametrize("niter", [1, 3])
+@pytest.mark.parametrize("spin", [0, 2])
+def test_refined_kernel_engine_matches_s2fft_engine(niter, spin):
+    """With refinement on, the kernel engine still matches s2fft's."""
+    from croissant import sphere
+
+    rng = np.random.default_rng(7)
+    npix = 12 * NSIDE**2
+    if spin == 0:
+        data = rng.normal(size=(2, npix))
+        reality = True
+    else:
+        data = rng.normal(size=(2, npix)) + 1j * rng.normal(size=(2, npix))
+        reality = False
+    kwargs = dict(
+        lmax=LMAX,
+        sampling="healpix",
+        nside=NSIDE,
+        niter=niter,
+        spin=spin,
+        reality=reality,
+    )
+    expected = np.asarray(sphere.compute_alm(data, engine="s2fft", **kwargs))
+    got = np.asarray(kernel.kernel_compute_alm(data, **kwargs))
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_inverse_kernel_is_not_built_when_niter_is_zero():
+    """niter=0 must not pay for the synthesis kernel."""
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(8)
+    data = rng.normal(size=(1, 12 * NSIDE**2))
+    kernel.kernel_compute_alm(
+        data, lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0
+    )
+    forwards = [key[-1] for key in kernel._KERNEL_CACHE]
+    assert forwards == [True]

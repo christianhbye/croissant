@@ -216,5 +216,34 @@ def kernel_compute_alm(
         nside=nside,
         iter=0,  # never delegate refinement; see the module docstring
     )
-    flat_alm = jax.vmap(analyse)(flat)
+    if niter == 0:
+        flat_alm = jax.vmap(analyse)(flat)
+        return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
+
+    # Iterative refinement, run here rather than delegated to s2fft:
+    # its precompute refinement branch builds an inverse kernel with the
+    # broken jax builder and diverges for spin != 0. The iteration is
+    # flm <- flm + F(f - I(flm)), the same one sphere.py applies to the
+    # scalar dense matrix in gram form.
+    inverse_kernel = precompute_kernel(
+        lmax, sampling, nside=nside, spin=spin, reality=reality, forward=False
+    )
+    synthesise = partial(
+        s2fft.precompute_transforms.spherical.inverse,
+        L=L,
+        spin=spin,
+        kernel=inverse_kernel,
+        sampling=sampling,
+        reality=reality,
+        method="jax",
+        nside=nside,
+    )
+
+    def refine(field):
+        alm = analyse(field)
+        for _ in range(niter):
+            alm = alm + analyse(field - synthesise(alm))
+        return alm
+
+    flat_alm = jax.vmap(refine)(flat)
     return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
