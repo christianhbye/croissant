@@ -42,6 +42,29 @@ def test_kernel_shape_and_size_prediction(reality):
     assert predicted == k.nbytes
 
 
+@pytest.mark.parametrize("reality", [False, True])
+def test_kernel_is_built_at_the_healpix_floor(reality):
+    """A band-limit below 2*nside-1 must still build at the floor.
+
+    s2fft's HEALPix FFT requires L >= 2 * nside whatever band-limit the
+    caller wants back, so the kernel is larger than the requested lmax
+    implies. A regression dropping the floor would build a kernel s2fft
+    cannot use, and kernel_nbytes would under-predict its size.
+    """
+    low_lmax = NSIDE - 1
+    floor = kernel.transform_lmax(low_lmax, "healpix", nside=NSIDE)
+    assert low_lmax < floor == 2 * NSIDE - 1
+    predicted = kernel.kernel_nbytes(
+        low_lmax, "healpix", nside=NSIDE, reality=reality
+    )
+    k = kernel.precompute_kernel(
+        low_lmax, "healpix", nside=NSIDE, spin=0, reality=reality
+    )
+    nm = (floor + 1) if reality else (2 * floor + 1)
+    assert k.shape == (4 * NSIDE - 1, floor + 1, nm)
+    assert predicted == k.nbytes
+
+
 def test_kernel_cache_returns_identical_object():
     """Repeated requests hit the cache rather than rebuilding."""
     kernel.clear_kernel_cache()
