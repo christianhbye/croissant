@@ -395,11 +395,13 @@ def compute_alm(
     reality : bool
         Whether to use the real-valued scalar transform optimization.
         Set to False for complex inputs and all nonzero-spin transforms.
-    engine : {"s2fft", "kernel", "dense"}
+    engine : {"auto", "s2fft", "kernel", "dense"}
         Spherical harmonic transform engine. ``"s2fft"`` is the existing
         matrix-free implementation. ``"kernel"`` caches the Wigner-d
         kernel and contracts it per call. ``"dense"`` caches the exact
-        transform matrix and is intended for low band-limits.
+        transform matrix and is intended for low band-limits. ``"auto"``
+        resolves to one of the above via
+        :func:`croissant.engine_select.resolve_engine`.
     dense_matrix : jax.Array or None
         Precomputed packed dense matrix. This is primarily used internally
         by :class:`SphBase` so its jitted methods never build a matrix while
@@ -432,6 +434,20 @@ def compute_alm(
         )
     if spin != 0 and reality:
         raise ValueError("Nonzero-spin transforms require reality=False.")
+
+    if engine == "auto":
+        from .engine_select import resolve_engine
+
+        batch_size = int(np.prod(data.shape[:-spatial_ndim], dtype=int))
+        engine, _ = resolve_engine(
+            lmax,
+            sampling,
+            nside=nside,
+            spin=spin,
+            niter=niter,
+            reality=reality,
+            batch_size=batch_size,
+        )
 
     if engine == "s2fft":
         return _compute_alm_s2fft(
@@ -508,6 +524,7 @@ class SphBase(eqx.Module):
     _L: int = eqx.field(static=True)  # L = lmax + 1 for s2fft
     _niter: int = eqx.field(static=True)  # niter for sht
     _engine: str = eqx.field(static=True)  # spherical harmonic engine
+    _engine_reason: str = eqx.field(static=True)
     _dense_matrix: jax.Array | None
     _kernel: jax.Array | None
     _inverse_kernel: jax.Array | None
@@ -517,8 +534,16 @@ class SphBase(eqx.Module):
 
     @property
     def engine(self):
-        """Name of the configured spherical harmonic transform engine."""
+        """Name of the resolved spherical harmonic transform engine.
+
+        Reports the concrete engine that was chosen, never ``"auto"``.
+        """
         return self._engine
+
+    @property
+    def engine_reason(self):
+        """Why the configured engine was chosen (see engine_select)."""
+        return self._engine_reason
 
     def __init__(
         self,
@@ -555,12 +580,15 @@ class SphBase(eqx.Module):
             time. Default is 0 for all sampling schemes. For healpix
             sampling, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
-        engine : {"s2fft", "kernel", "dense"}
+        engine : {"auto", "s2fft", "kernel", "dense"}
             Spherical harmonic transform engine. The default ``"s2fft"``
             preserves the existing matrix-free behavior. ``"kernel"``
             caches the Wigner-d kernel and contracts it per call.
             ``"dense"`` builds and caches an exact transform matrix for
-            fast repeated low-lmax transforms.
+            fast repeated low-lmax transforms. ``"auto"`` lets croissant
+            choose from the band-limit, sampling, niter and batch size;
+            the resolved choice is reported by the ``engine`` and
+            ``engine_reason`` properties.
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             set below the default ``2 * nside`` to reduce transform work and
@@ -575,12 +603,6 @@ class SphBase(eqx.Module):
             `data` is not valid for healpix sampling.
 
         """
-        if engine not in {"s2fft", "kernel", "dense"}:
-            raise ValueError(
-                f"Unsupported SHT engine {engine!r}. Supported engines are "
-                "{'s2fft', 'kernel', 'dense'}."
-            )
-
         self.data = jnp.asarray(data)
         self.freqs = jnp.atleast_1d(freqs)
 
@@ -593,7 +615,6 @@ class SphBase(eqx.Module):
                 )
 
         self._niter = niter
-        self._engine = engine
 
         self.sampling = sampling
         inferred_lmax = utils.lmax_from_ntheta(
@@ -617,6 +638,19 @@ class SphBase(eqx.Module):
             self.nside = utils.hp_npix2nside(self.data.shape[1])
         else:
             self.nside = None
+
+        from .engine_select import resolve_engine
+
+        engine, engine_reason = resolve_engine(
+            self.lmax,
+            self.sampling,
+            nside=self.nside,
+            niter=self._niter,
+            batch_size=int(self.data.shape[0]),
+            requested=engine,
+        )
+        self._engine = engine
+        self._engine_reason = engine_reason
 
         if self._engine == "dense":
             if isinstance(self.data, jax.core.Tracer):

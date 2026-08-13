@@ -208,3 +208,42 @@ def test_explicit_choices_are_returned_unchanged(engine):
     )
     assert got == engine
     assert "explicit" in reason
+
+
+def test_auto_resolves_to_a_concrete_engine_on_the_object():
+    """A Beam built with engine="auto" reports the mechanism it chose,
+    not the word "auto" -- otherwise performance questions and bug
+    reports cannot say which path ran."""
+    import numpy as np
+
+    from croissant import Beam
+
+    nside = 8
+    rng = np.random.default_rng(11)
+    data = rng.normal(size=(2, 12 * nside**2)) ** 2
+    beam = Beam(
+        data,
+        freqs=np.array([50.0, 60.0]),
+        sampling="healpix",
+        engine="auto",
+    )
+    assert beam.engine in {"s2fft", "kernel", "dense"}
+    assert isinstance(beam.engine_reason, str) and beam.engine_reason
+
+
+def test_auto_agrees_with_every_explicit_engine():
+    """auto cannot change results, only cost."""
+    import numpy as np
+
+    from croissant import sphere
+
+    nside, lmax = 8, 15
+    rng = np.random.default_rng(12)
+    data = rng.normal(size=(4, 12 * nside**2))
+    kwargs = dict(lmax=lmax, sampling="healpix", nside=nside, niter=0)
+    auto = np.asarray(sphere.compute_alm(data, engine="auto", **kwargs))
+    for engine in ("s2fft", "kernel", "dense"):
+        got = np.asarray(sphere.compute_alm(data, engine=engine, **kwargs))
+        np.testing.assert_allclose(
+            auto, got, rtol=0, atol=1e-10 * np.abs(got).max()
+        )

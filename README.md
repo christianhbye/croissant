@@ -48,11 +48,86 @@ refinement count and stores only the independent `m >= 0` coefficients.
 HEALPix inputs may set `lmax` below the usual `2 * nside` default, which is
 particularly useful for high-resolution maps with low-band-limit science.
 
-In CPU benchmarks, the default `engine="s2fft"` remains faster for plain
-`niter=0` transforms. Prefer `engine="dense"` when `niter > 0` — the
-refinement is folded into the cached matrix, giving roughly a 6x speedup at
-`niter=3` — or when `lmax` is set below `2 * nside`, where the dense engine
-computes the transform and applies a low-pass filter in a single step.
+### Transform engines
+
+A spherical harmonic transform has two stages: an FFT around each ring of
+constant latitude (phi to m), and a Wigner-d recursion with quadrature weights
+(theta to ell). The second is the expensive one. Croissant's three engines
+compute the same linear map — they agree to ~1e-15, verified in
+`tests/test_engine_equivalence.py` — and differ only in how much of it they
+precompute.
+
+| engine | precomputes | per call | precompute size |
+|:--|:--|:--|:--|
+| `"s2fft"` | nothing | FFT + full recursion | — |
+| `"kernel"` | the theta-to-ell table | FFT + one contraction | `O(nside**3)` |
+| `"dense"` | the whole pixels-to-alm operator | one matrix multiply | `O(nside**4)` |
+
+`"dense"` sits at the far end: its matrix absorbs the FFT, the recursion, the
+quadrature weights *and* any `niter` refinement, which is why it is the most
+expensive to build and reduces each transform to a single `einsum`.
+
+Measured on CPU with x64 enabled (reproduce with
+`uv run python benchmarks/benchmark_engines.py`; recorded output in
+`benchmarks/results/`):
+
+| | nside=8 | nside=16 | nside=32 |
+|:--|---:|---:|---:|
+| memory, dense/kernel (scalar) | 13.3x | 25.3x | 49.1x |
+| memory, dense/kernel (spin) | 12.8x | 24.6x | not tested |
+| setup, dense/kernel (scalar) | 1.15x | 0.82x | 5.9x |
+| setup, dense/kernel (spin) | 22x–25x | 22x–25x | not tested |
+
+Memory ratios grow with `nside` as the `O(nside**4)` vs `O(nside**3)`
+footprints predict. Setup ratios behave differently and are reported
+separately for scalar and spin fields because they differ sharply: for
+scalar fields the dense build is roughly break-even with the kernel build
+at nside=8–16 and only pulls ahead at nside=32, while for spin fields it is
+already 22x–25x more expensive at every tested resolution — the dense
+engine's NumPy spin Wigner-d builder is disproportionately expensive
+relative to the kernel builder.
+
+The footprints differ by a full power of `nside` — `~32*nside**3` for the kernel
+against `~48*nside**4` for the dense operator, a ratio of `~1.5*nside` — so at
+nside=32 the dense operator needs ~768 MiB where the kernel needs ~16 MiB, and
+by nside=64 dense needs ~12 GiB against the kernel's ~130 MiB.
+
+### Choosing an engine
+
+Because the engines agree numerically, the choice is about memory and reuse, not
+results — so `engine="auto"` makes it for you:
+
+1. **A band-limit below the HEALPix floor** (`lmax < 2*nside - 1`) selects
+   `"dense"`. s2fft's HEALPix FFT requires `L >= 2*nside` whatever you want
+   back, and only the dense engine can build at that floor and keep just the
+   requested low-`ell` rows, low-passing in a single step. The kernel engine
+   contracts the whole `ell` range at once and so raises for these
+   configurations.
+2. **A batch too small to amortise a precompute** selects `"s2fft"`. There is
+   nothing to pay the build cost back.
+3. **Otherwise** `"kernel"`, provided it fits the 512 MiB precompute budget,
+   falling back to `"s2fft"` if nothing fits.
+
+Note that `niter > 0` is deliberately *not* a reason to choose `"dense"`. Its
+folded refinement makes per-call cost independent of `niter`, while the kernel
+engine pays `2*niter+1` applications — but per-call cost is essentially one pass
+over the precomputed object, and dense's is `~1.5*nside` times larger, so the
+kernel still wins for any `nside > 4`.
+
+The resolved choice and the reason for it are reported on the object:
+
+```python
+beam = Beam(data, freqs, sampling="healpix", engine="auto")
+print(beam.engine)  # e.g. "kernel"
+print(beam.engine_reason)  # e.g. "16 MiB kernel amortises over 64 transforms"
+```
+
+`"auto"` is a policy, not a promise: it may change between versions. Pin
+`engine=` explicitly to freeze behaviour, and prefer an explicit engine when you
+want the dense operator itself (for a Fisher or gram matrix, or an explicit
+Jacobian), when you have a memory budget croissant cannot see, or when you know
+about reuse it cannot see — for example the same `Beam` driving many thousands of
+likelihood evaluations, where the batch size understates the amortisation.
 
 `engine="s2fft"` remains the default. Applications that call
 `croissant.sphere.compute_alm` from inside an enclosing `jax.jit` should
