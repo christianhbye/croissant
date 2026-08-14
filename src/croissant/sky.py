@@ -82,6 +82,9 @@ class Sky(sphere.SphBase):
             self.sampling,
             nside=self.nside,
             niter=self._niter,
+            # A sky model is a real intensity field, so it can claim the
+            # packed real transform that compute_alm will not assume.
+            reality=True,
             engine=self._engine,
             dense_matrix=self._dense_matrix,
             kernel=self._kernel,

@@ -65,6 +65,20 @@ def test_sky_alm_monopole_uniform():
     assert jnp.isclose(alm[0, l_ix, m_ix].real, _T_SKY / Y00, rtol=1e-3)
 
 
+def test_sky_rejects_complex_data():
+    """A Sky is a real intensity field, and must say so on complex data.
+
+    Sky asks for the packed real transform because it knows its own
+    data is real. Complex data breaks that promise, so it has to fail
+    loudly rather than return silently wrong coefficients.
+    """
+    data = _T_SKY * jnp.ones((1, _NPIX)) * (1 + 1j)
+    sky = Sky(data, jnp.array([50.0]), niter=0)
+
+    with pytest.raises(ValueError, match="Complex input requires"):
+        sky.compute_alm()
+
+
 def test_sky_dense_engine_matches_s2fft():
     """Sky should carry its precomputed dense matrix through jax.jit."""
     nside = 2

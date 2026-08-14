@@ -87,7 +87,7 @@ def _kernel_dtype(sampling):
 
 
 def precompute_kernel(
-    lmax, sampling, nside=None, spin=0, reality=True, forward=True
+    lmax, sampling, nside=None, spin=0, reality=False, forward=True
 ):
     """
     Build and cache the Wigner-d kernel for one transform configuration.
@@ -119,14 +119,14 @@ def precompute_kernel(
         Building with one value and applying with the other raises
         ``ValueError: Size of label 'm' ... does not match previous
         terms``, so it is part of the cache key and callers must pass the
-        same value here and at apply time. Defaults to True to match
+        same value here and at apply time. Defaults to False to match
         :func:`kernel_compute_alm`, :func:`croissant.sphere.compute_alm`
         and :func:`croissant.footprints.kernel_nbytes`: this function is
         the documented way to warm a kernel for a jitted call, and a
-        default that disagreed with the apply path made the documented
-        recipe raise. Forced to False for nonzero spin, the same
-        ``reality and spin == 0`` rule the other three apply, because
-        s2fft's real precompute path is only valid at spin 0.
+        default that disagreed with the apply path would make the
+        documented recipe raise. Forced to False for nonzero spin, the
+        same ``reality and spin == 0`` rule the other three apply,
+        because s2fft's real precompute path is only valid at spin 0.
     forward : bool
         Build the analysis kernel if True, the synthesis kernel if
         False. The synthesis kernel is only needed for iterative
@@ -195,7 +195,7 @@ def kernel_compute_alm(
     nside=None,
     niter=0,
     spin=0,
-    reality=True,
+    reality=False,
     *,
     kernel=None,
     inverse_kernel=None,
@@ -222,8 +222,10 @@ def kernel_compute_alm(
     spin : int
         Spin weight of the field.
     reality : bool
-        Whether the field is real. Forced False for nonzero spin, which
-        s2fft's precompute path requires.
+        Whether the field is real. Defaults to False, matching
+        :func:`croissant.sphere.compute_alm`: only a caller that knows
+        its own data is real may claim the packed transform. Forced
+        False for nonzero spin, which s2fft's precompute path requires.
     kernel : jax.Array or None
         Precomputed forward (analysis) kernel, as returned by
         :func:`precompute_kernel` with ``forward=True``. This is

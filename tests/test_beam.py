@@ -206,6 +206,20 @@ def test_beam_alm_is_real(N_freqs, sampling):
         assert utils.is_real(alm[i])
 
 
+def test_beam_rejects_complex_data():
+    """A Beam is a real power pattern, and must say so on complex data.
+
+    Beam asks for the packed real transform because it knows its own
+    data is real. Complex data breaks that promise, so it has to fail
+    loudly rather than return silently wrong coefficients.
+    """
+    data = jnp.ones((1, _NPIX)) * (1 + 1j)
+    beam = Beam(data, jnp.array([50.0]), sampling="healpix")
+
+    with pytest.raises(ValueError, match="Complex input requires"):
+        beam.compute_alm()
+
+
 # ---------------------------------------------------------------------------
 # beam_rot – azimuthal rotation only changes phases, not power
 # ---------------------------------------------------------------------------

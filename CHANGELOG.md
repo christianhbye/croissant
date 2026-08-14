@@ -15,6 +15,25 @@
   spin-weighted/complex fields via `spin`/`reality` arguments; the dense
   engine dispatches spin-0 real input to the packed cached-matrix path and
   everything else to `croissant.dense`.
+- **Behavior change:** `sphere.compute_alm` now defaults to `reality=False`,
+  matching `s2fft`, and rejects `reality=True` for complex input. The old
+  default silently returned coefficients that were wrong at order unity
+  for any complex map, since it asserted a Hermitian symmetry the data
+  did not have. `Beam` and `Sky` now pass `reality=True` themselves, so
+  their results are unchanged; direct callers of `compute_alm` on real
+  maps should do the same to keep the packed transform, which is
+  otherwise exact but roughly twice the work and, on the dense engine,
+  twice the stored matrix.
+  `kernel.precompute_kernel`, `kernel.kernel_compute_alm`,
+  `engine_select.resolve_engine`, `footprints.kernel_nbytes` and
+  `footprints.dense_nbytes` default to `reality=False` in concert, so
+  that a size predictor and the engine policy describe the transform
+  they are predicting rather than an assumed real field; `SphBase`
+  resolves its engine with `reality=True` to match the packed operator
+  it then builds.
+- Fix `croissant.dense` rejecting single-precision maps: the analysis
+  matrix is materialized through a VJP whose cotangent basis must carry
+  the dtype `s2fft` actually returns, not the requested matrix dtype.
 - Pin `s2fft` to the `slosar/s2fft` HEALPix spin-recursion fix until it is
   released upstream; add `scipy` and `spiceypy` dependencies.
 - Add an optional `engine="dense"` spherical harmonic transform backend for

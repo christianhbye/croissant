@@ -43,6 +43,11 @@ def test_compute_alm_accepts_complex_spin_and_batch_axes():
 
 
 def test_nonzero_spin_rejects_reality_optimization():
+    """A spin field has no real transform, so the pair must be rejected.
+
+    reality=True is passed explicitly here: it is not the default, so
+    spin=2 on its own is an ordinary spin-weighted transform.
+    """
     lmax = 3
     with pytest.raises(ValueError, match="reality=False"):
         compute_alm(
@@ -50,6 +55,7 @@ def test_nonzero_spin_rejects_reality_optimization():
             lmax,
             "mwss",
             spin=2,
+            reality=True,
         )
 
 

@@ -173,14 +173,13 @@ def test_nothing_exceeds_the_memory_cap():
                     <= engine_select.DEFAULT_MEMORY_CAP_BYTES
                 )
             elif engine == "kernel":
-                # reality=True to match resolve_engine's own default,
-                # which is what it actually used to decide "kernel";
-                # kernel_nbytes itself defaults to reality=False and
-                # would over-predict for spin=0. niter=3 above means
-                # kernel_compute_alm builds a forward AND an inverse
-                # kernel of matching size for the refinement iteration
-                # (see engine_select.resolve_engine), so the resident
-                # total is double a single kernel_nbytes call.
+                # Both sides take the shared reality default, which is
+                # what resolve_engine actually used to decide "kernel".
+                # niter=3 above means kernel_compute_alm builds a
+                # forward AND an inverse kernel of matching size for the
+                # refinement iteration (see
+                # engine_select.resolve_engine), so the resident total
+                # is double a single kernel_nbytes call.
                 assert (
                     2
                     * kernel.kernel_nbytes(
@@ -188,7 +187,6 @@ def test_nothing_exceeds_the_memory_cap():
                         "healpix",
                         nside=nside,
                         spin=spin,
-                        reality=True,
                     )
                     <= engine_select.DEFAULT_MEMORY_CAP_BYTES
                 )
@@ -360,32 +358,41 @@ def test_reason_strings_are_readable_for_tiny_and_singular_cases():
     assert "1 transform" in reason, reason
 
 
-def test_kernel_and_dense_size_predictors_share_a_reality_default():
-    """The two footprint predictors must agree on their default.
+def test_size_predictors_share_the_transform_reality_default():
+    """A predictor's default must be the default of what it predicts.
 
-    `reality=True` is the common case (real scalar fields), and
-    `kernel_nbytes` applies the engine's own `reality and spin == 0` rule
-    internally, so a True default is correct for scalar AND for spin,
-    where it is forced back to False. A False default silently
-    over-predicts the scalar kernel by 2x, which is how three separate
-    call sites came to compare a packed dense operator against a
-    full-size kernel.
+    The two predictors have to agree with each other, or a call site
+    that defaults both compares a packed operator against a full-size
+    one -- which is how three separate call sites once came to do
+    exactly that. They also have to agree with `sphere.compute_alm`,
+    which assumes nothing about the caller's data: a `True` default here
+    would under-predict the defaulted transform by 2x, and the objects
+    that do know their field is real (`SphBase`, and the polarized
+    containers) pass `reality=True` explicitly at every site.
     """
     import inspect
 
-    from croissant import footprints
+    from croissant import footprints, sphere
 
     k = inspect.signature(footprints.kernel_nbytes).parameters["reality"]
     d = inspect.signature(footprints.dense_nbytes).parameters["reality"]
-    assert k.default == d.default is True
+    t = inspect.signature(sphere.compute_alm).parameters["reality"]
+    assert k.default == d.default == t.default is False
 
-    # And the defaulted call must match what the scalar engine builds.
+    # And the defaulted call must match what the defaulted engine builds.
     from croissant import kernel
 
-    built = kernel.precompute_kernel(
+    built = kernel.precompute_kernel(15, "healpix", nside=8, spin=0)
+    assert footprints.kernel_nbytes(15, "healpix", nside=8) == built.nbytes
+
+    # The real-field claim must stay consistent end to end too.
+    packed = kernel.precompute_kernel(
         15, "healpix", nside=8, spin=0, reality=True
     )
-    assert footprints.kernel_nbytes(15, "healpix", nside=8) == built.nbytes
+    assert (
+        footprints.kernel_nbytes(15, "healpix", nside=8, reality=True)
+        == packed.nbytes
+    )
 
 
 def test_polarized_fields_reach_the_kernel_engine():
