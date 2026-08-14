@@ -8,17 +8,8 @@ import jax.numpy as jnp
 import numpy as np
 import s2fft
 
-
-def _spatial_shape(lmax, sampling, nside):
-    if sampling == "healpix":
-        if nside is None:
-            raise ValueError("nside is required for HEALPix dense transforms.")
-        return (12 * int(nside) ** 2,)
-    L = lmax + 1
-    return (
-        s2fft.sampling.s2_samples.ntheta(L=L, sampling=sampling),
-        s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling),
-    )
+from .footprints import spatial_shape as _spatial_shape
+from .footprints import transform_lmax
 
 
 def _valid_lm_indices(lmax, spin):
@@ -52,13 +43,11 @@ def _build_analysis_matrix(
     # s2fft's HEALPix FFT requires L >= 2*nside even when only lower modes
     # are retained. Build that supported operator and select the requested
     # low-l rows so low-lmax, high-nside dense analysis remains available.
-    transform_lmax = (
-        max(lmax, 2 * int(nside) - 1) if sampling == "healpix" else lmax
-    )
-    transform_L = transform_lmax + 1
+    build_lmax = transform_lmax(lmax, sampling, nside=nside)
+    transform_L = build_lmax + 1
     selected_m = np.asarray(
         [
-            emm + transform_lmax
+            emm + build_lmax
             for ell in range(abs(spin), lmax + 1)
             for emm in range(-ell, ell + 1)
         ]

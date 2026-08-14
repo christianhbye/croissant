@@ -48,13 +48,111 @@ refinement count and stores only the independent `m >= 0` coefficients.
 HEALPix inputs may set `lmax` below the usual `2 * nside` default, which is
 particularly useful for high-resolution maps with low-band-limit science.
 
-In CPU benchmarks, the default `engine="s2fft"` remains faster for plain
-`niter=0` transforms. Prefer `engine="dense"` when `niter > 0` — the
-refinement is folded into the cached matrix, giving roughly a 6x speedup at
-`niter=3` — or when `lmax` is set below `2 * nside`, where the dense engine
-computes the transform and applies a low-pass filter in a single step.
+### Transform engines
 
-`engine="s2fft"` remains the default. Applications that call
+A spherical harmonic transform has two stages: an FFT around each ring of
+constant latitude (phi to m), and a Wigner-d recursion with quadrature weights
+(theta to ell). The second is the expensive one. Croissant's three engines
+compute the same linear map — they agree to better than 1e-12 in every
+benchmarked configuration (worst case 1.4e-13) and are pinned to 1e-10 by
+`tests/test_engine_equivalence.py` — and differ only in how much of it they
+precompute.
+
+| engine | precomputes | per call | precompute size |
+|:--|:--|:--|:--|
+| `"s2fft"` | nothing | FFT + full recursion | — |
+| `"kernel"` | the theta-to-ell table | FFT + one contraction | `O(nside**3)` |
+| `"dense"` | the whole pixels-to-alm operator | one matrix multiply | `O(nside**4)` |
+
+`"dense"` sits at the far end: its matrix absorbs the FFT, the recursion, the
+quadrature weights *and* any `niter` refinement, which is why it is the most
+expensive to build and reduces each transform to a single `einsum`.
+
+Measured on CPU with x64 enabled (reproduce with
+`uv run python benchmarks/benchmark_engines.py`; recorded output in
+`benchmarks/results/`):
+
+| | nside=8 | nside=16 | nside=32 |
+|:--|---:|---:|---:|
+| memory, dense/kernel (scalar) | 13.3x | 25.3x | 49.1x |
+| memory, dense/kernel (spin) | 12.8x | 24.6x | not tested |
+| setup, dense/kernel (scalar) | 1.15x | 0.82x | 5.9x |
+| setup, dense/kernel (spin) | 14.7x–24.9x | 22.5x–24.8x | not tested |
+
+Memory ratios grow with `nside` as the `O(nside**4)` vs `O(nside**3)`
+footprints predict. Setup ratios behave differently and are reported
+separately for scalar and spin fields because they differ sharply: for
+scalar fields the dense build is roughly break-even with the kernel build
+at nside=8–16 and only pulls ahead at nside=32, while for spin fields it is
+already 14.7x–24.9x more expensive at every tested resolution (as low as
+14.7x at nside=8/niter=3; see
+[`benchmarks/results/engines-2026-08-13.md`](benchmarks/results/engines-2026-08-13.md)
+for the per-configuration figures) — the dense engine's NumPy spin
+Wigner-d builder is disproportionately expensive relative to the kernel
+builder.
+
+The footprints differ by a full power of `nside` — `~32*nside**3` for the kernel
+against `~48*nside**4` for the dense operator, a ratio of `~1.5*nside`. These
+are computed footprints (from `croissant.footprints`, whose formula is
+verified in `tests/test_engine_select.py` against actually-built kernels),
+not timings; the nside=32 row matches the memory table above, and nside=64
+and nside=128 are not benchmarked, only computed the same way:
+
+| nside | kernel (scalar / spin) | dense (scalar / spin) |
+|---:|---:|---:|
+| 32 | 7.9 MiB / 15.8 MiB | 390.0 MiB / 767.2 MiB |
+| 64 | 63.8 MiB / 127.0 MiB | 6.0 GiB / 12.0 GiB |
+| 128 | 511.0 MiB / 1020.0 MiB | 96.4 GiB / 192.0 GiB |
+
+Dense already exceeds the default 512 MiB `engine="auto"` budget by
+nside=32 for spin fields (767.2 MiB) and by nside=64 for scalar fields
+(6.0 GiB), while the kernel is still under it at nside=128 for scalar
+fields (511.0 MiB) and only exceeds it there for spin fields (1020 MiB).
+That gap is why the kernel engine exists at all.
+
+### Choosing an engine
+
+Because the engines agree numerically, the choice is about memory and reuse, not
+results — so `engine="auto"` makes it for you:
+
+1. **A band-limit below the HEALPix floor** (`lmax < 2*nside - 1`) selects
+   `"dense"`. s2fft's HEALPix FFT requires `L >= 2*nside` whatever you want
+   back, and only the dense engine can build at that floor and keep just the
+   requested low-`ell` rows, low-passing in a single step. The kernel engine
+   contracts the whole `ell` range at once and so raises for these
+   configurations.
+2. **A batch too small to amortise a precompute** selects `"s2fft"`. There is
+   nothing to pay the build cost back.
+3. **Otherwise** `"kernel"`, provided it fits the 512 MiB precompute budget,
+   falling back to `"s2fft"` if nothing fits.
+
+Note that `niter > 0` is deliberately *not* a reason for `auto` to choose
+`"dense"`. Dense does win on per-call cost there — its refinement folds into
+the cached matrix, while the kernel engine pays `2*niter+1` applications — but
+its build costs roughly 1.0x to 25x more, and the measured break-even ranges
+from 7 to 92338 calls depending on configuration. Croissant transforms once at
+construction, batched over frequencies, so that per-call saving is never
+repaid. If you re-apply the same transform thousands of times, pin
+`engine="dense"` explicitly — only you know that.
+
+The resolved choice and the reason for it are reported on the object:
+
+```python
+beam = Beam(data, freqs, sampling="healpix", engine="auto")
+print(beam.engine)  # e.g. "kernel"
+print(
+    beam.engine_reason
+)  # e.g. "16.0 MiB kernel amortises over 64 transforms"
+```
+
+`"auto"` is a policy, not a promise: it may change between versions. Pin
+`engine=` explicitly to freeze behaviour, and prefer an explicit engine when you
+want the dense operator itself (for a Fisher or gram matrix, or an explicit
+Jacobian), when you have a memory budget croissant cannot see, or when you know
+about reuse it cannot see — for example the same `Beam` driving many thousands of
+likelihood evaluations, where the batch size understates the amortisation.
+
+Applications that call
 `croissant.sphere.compute_alm` from inside an enclosing `jax.jit` should
 build the matrix once with `croissant.precompute_dense_matrix` and pass it
 to the jitted function as an argument via `dense_matrix=...`, so it enters
@@ -65,6 +163,66 @@ function.) `Beam` and `Sky` handle this automatically: they precompute the
 matrix during initialization and thread it through their jitted methods as
 a dynamic argument. Use `croissant.clear_dense_matrix_cache()` to release
 Croissant's in-process matrix references.
+
+`engine="kernel"` needs the same care, with its own functions:
+`croissant.precompute_kernel(..., forward=True)` for the analysis kernel,
+plus `forward=False` for the synthesis kernel if `niter > 0`, passed to the
+jitted call as `kernel=...` and `inverse_kernel=...`. Its `reality`
+defaults to `True` to match the apply path, and is forced to `False` for
+spin-weighted fields, so the same call is correct for scalar and spin
+blocks alike. Called from inside
+`jax.jit` without a precomputed kernel, `compute_alm(..., engine="kernel")`
+raises `RuntimeError` rather than silently building — and unlike dense,
+there is no pre-warmed-cache escape hatch here: the kernel engine's check
+raises as soon as the input is a tracer and no kernel was passed
+explicitly, even if `precompute_kernel` already warmed the cache earlier.
+`Beam` and `Sky` handle this automatically too, precomputing the forward
+kernel (and the inverse kernel, if `niter > 0`) during initialization. Use
+`croissant.clear_kernel_cache()` to release Croissant's in-process kernel
+references.
+
+`engine="auto"` never turns a working call into a `RuntimeError` this way.
+Call `croissant.sphere.compute_alm` from inside your own `jax.jit` with
+nothing precomputed and an automatic choice of `"kernel"` degrades to an
+engine that can actually run: `"s2fft"` normally, or `"dense"` for a
+band-limit below the HEALPix floor, where the matrix-free engine cannot
+serve the transform at all. Only an *explicit* `engine="kernel"` raises,
+because a named engine is a cost decision croissant will not silently swap
+out. `croissant.kernel.kernel_compute_alm`, which has no `"auto"` to fall
+back on, raises exactly as before.
+
+Constructing a field *inside* a trace — differentiating through the
+construction itself, as `jax.grad(lambda m: Sky(m, freqs, ...).compute_alm())`
+does — follows the same rule. No kernel can be built there, so an automatic
+choice of `"kernel"` degrades and the `engine_reason` says so, while an
+explicit `engine="kernel"` still raises. An automatic choice of `"dense"`
+does build rather than refuse: its operator depends only on static
+geometry, so it is materialised as a compile-time constant. This holds for
+`Beam`, `Sky`, `PolarizedSky` and `PairStokesBeam` alike.
+
+### Engines for polarized fields
+
+`PolarizedSky` and `PairStokesBeam` take the same `engine=` argument, but a
+polarized field is not one transform — it is three, and they do not share a
+footprint. So an engine is resolved per *block*: the spin-0 block carrying
+I and V, and the two spin-∓2 blocks carrying the Q/U duals. A real sky's
+spin-0 kernel packs to `m >= 0` and is roughly half the size of a
+spin-weighted one, and the blocks are batched over different numbers of
+maps, so one verdict for the whole object would be wrong for some of it.
+`engine` and `engine_reason` are therefore mappings rather than strings:
+
+```python
+sky = PolarizedSky(data, freqs, sampling="healpix")
+print(sky.engine)  # {"IV": "kernel", "P_MINUS": "kernel", "P_PLUS": None}
+```
+
+`P_PLUS` reports `None` on HEALPix, DH and GL, where a real sky's P+ dual
+follows from P- by conjugation and is never transformed at all. An explicit
+`engine=` pins every block.
+
+One behaviour differs from `Beam` and `Sky`: `compute_alm(lmax=...)` below
+the HEALPix floor stays on the dense engine whatever the block resolved to,
+because no kernel exists at that band-limit.
 
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:

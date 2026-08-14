@@ -61,7 +61,7 @@ def _compute_alm_s2fft(
     scalar defaults are identical to the original Croissant API.
     """
     data = jnp.asarray(data)
-    spatial_ndim = 1 if sampling == "healpix" else 2
+    spatial_ndim = utils.spatial_ndim(sampling)
     spatial_shape = data.shape[-spatial_ndim:]
     batch_shape = data.shape[:-spatial_ndim]
     flat_data = data.reshape((-1,) + spatial_shape)
@@ -313,6 +313,85 @@ def precompute_dense_matrix(
     return matrix
 
 
+def dense_matrix_for(
+    spatial_shape,
+    lmax,
+    sampling,
+    nside=None,
+    niter=0,
+    *,
+    tracing,
+    explicit,
+):
+    """
+    Fetch the packed-real dense operator for one field configuration.
+
+    Outside a trace this is an ordinary cached build. Inside one, an
+    AUTOMATIC choice still builds: the matrix depends only on static
+    geometry, so ``jax.ensure_compile_time_eval`` yields a concrete
+    array rather than a tracer, exactly as
+    :class:`croissant.dense.DenseSphericalTransform` already builds its
+    own operator mid-trace. Refusing here would leave an automatic dense
+    choice with nowhere to go, because dense is selected precisely when
+    the band-limit is below the HEALPix floor and the matrix-free engine
+    cannot serve it at all.
+
+    An EXPLICIT ``engine="dense"`` keeps the documented contract: warm
+    the cache with :func:`precompute_dense_matrix` outside ``jax.jit``,
+    or get a ``RuntimeError``. A caller who pinned the engine is never
+    silently charged for a build inside their own jit.
+
+    Parameters
+    ----------
+    spatial_shape : tuple of int
+        Shape of one input map, excluding all batch axes.
+    lmax : int
+        Maximum spherical harmonic degree.
+    sampling : str
+        Spherical sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix nside, required for HEALPix sampling.
+    niter : int
+        Number of s2fft iterative-refinement steps folded into the matrix.
+    tracing : bool
+        Whether a jax trace is active.
+    explicit : bool
+        Whether the caller named ``"dense"`` rather than ``"auto"``.
+
+    Returns
+    -------
+    matrix : jax.Array
+        Cached dense analysis matrix.
+
+    Raises
+    ------
+    RuntimeError
+        If an explicit dense request is made inside a trace and no
+        matching matrix has been precomputed.
+
+    """
+    spatial_shape = tuple(spatial_shape)
+    if not tracing:
+        return precompute_dense_matrix(
+            spatial_shape, lmax, sampling, nside=nside, niter=niter
+        )
+    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
+    with _DENSE_MATRIX_CACHE_LOCK:
+        matrix = _DENSE_MATRIX_CACHE.get(key)
+    if matrix is not None:
+        return matrix
+    if explicit:
+        raise RuntimeError(
+            "The dense SHT matrix must be precomputed before an explicit "
+            "dense transform runs inside jax.jit. Call "
+            "precompute_dense_matrix(...) once outside jax.jit."
+        )
+    with jax.ensure_compile_time_eval():
+        return precompute_dense_matrix(
+            spatial_shape, lmax, sampling, nside=nside, niter=niter
+        )
+
+
 def clear_dense_matrix_cache():
     """Remove all in-process dense SHT matrices from Croissant's cache."""
     with _DENSE_MATRIX_CACHE_LOCK:
@@ -352,9 +431,11 @@ def compute_alm(
     niter=0,
     spin=0,
     reality=True,
-    engine="s2fft",
+    engine="auto",
     *,
     dense_matrix=None,
+    kernel=None,
+    inverse_kernel=None,
 ):
     """
     Compute the spherical harmonic coefficients of a scalar or spin field
@@ -393,14 +474,31 @@ def compute_alm(
     reality : bool
         Whether to use the real-valued scalar transform optimization.
         Set to False for complex inputs and all nonzero-spin transforms.
-    engine : {"s2fft", "dense"}
-        Spherical harmonic transform engine. ``"s2fft"`` is the existing
-        matrix-free implementation. ``"dense"`` caches the exact transform
-        matrix and is intended for low band-limits.
+    engine : {"auto", "s2fft", "kernel", "dense"}
+        Spherical harmonic transform engine. Default is ``"auto"``, which
+        resolves to one of the others via
+        :func:`croissant.engine_select.resolve_engine`. ``"s2fft"`` is the
+        matrix-free implementation, recomputing the recursion every call.
+        ``"kernel"`` caches the Wigner-d kernel and contracts it per call.
+        ``"dense"`` caches the exact transform matrix and is the only
+        engine able to serve a band-limit below the HEALPix floor. All
+        three compute the same map to ~1e-13, so the choice is about
+        memory and reuse rather than results.
     dense_matrix : jax.Array or None
         Precomputed packed dense matrix. This is primarily used internally
         by :class:`SphBase` so its jitted methods never build a matrix while
         being traced.
+    kernel : jax.Array or None
+        Precomputed forward Wigner-d kernel for ``engine="kernel"``, as
+        returned by :func:`croissant.kernel.precompute_kernel` with
+        ``forward=True``. Same jit-safety role as ``dense_matrix``, and
+        passed straight through to
+        :func:`croissant.kernel.kernel_compute_alm`.
+    inverse_kernel : jax.Array or None
+        Precomputed synthesis Wigner-d kernel for ``engine="kernel"``
+        with ``niter > 0``, as returned by
+        :func:`croissant.kernel.precompute_kernel` with
+        ``forward=False``.
 
     Returns
     -------
@@ -410,7 +508,7 @@ def compute_alm(
 
     """
     data = jnp.asarray(data)
-    spatial_ndim = 1 if sampling == "healpix" else 2
+    spatial_ndim = utils.spatial_ndim(sampling)
     if data.ndim < spatial_ndim:
         raise ValueError(
             f"Data for {sampling!r} sampling must have at least "
@@ -418,6 +516,33 @@ def compute_alm(
         )
     if spin != 0 and reality:
         raise ValueError("Nonzero-spin transforms require reality=False.")
+
+    explicit_engine = engine != "auto"
+    tracing = isinstance(data, jax.core.Tracer)
+    if engine == "auto":
+        from .engine_select import degrade_for_trace, resolve_engine
+        from .footprints import transform_lmax
+
+        batch_size = int(np.prod(data.shape[:-spatial_ndim], dtype=int))
+        engine, _ = resolve_engine(
+            lmax,
+            sampling,
+            nside=nside,
+            spin=spin,
+            niter=niter,
+            reality=reality,
+            batch_size=batch_size,
+        )
+        if tracing:
+            engine = degrade_for_trace(
+                engine,
+                has_kernel=kernel is not None,
+                has_inverse_kernel=inverse_kernel is not None,
+                niter=niter,
+                sub_floor=(
+                    transform_lmax(lmax, sampling, nside=nside) != int(lmax)
+                ),
+            )
 
     if engine == "s2fft":
         return _compute_alm_s2fft(
@@ -429,10 +554,24 @@ def compute_alm(
             spin=spin,
             reality=reality,
         )
+    if engine == "kernel":
+        from . import kernel as _kernel
+
+        return _kernel.kernel_compute_alm(
+            data,
+            lmax,
+            sampling,
+            nside=nside,
+            niter=niter,
+            spin=spin,
+            reality=reality,
+            kernel=kernel,
+            inverse_kernel=inverse_kernel,
+        )
     if engine != "dense":
         raise ValueError(
             f"Unsupported SHT engine {engine!r}. Supported engines are "
-            "{'s2fft', 'dense'}."
+            "{'s2fft', 'kernel', 'dense'}."
         )
 
     if spin != 0 or not reality:
@@ -450,25 +589,15 @@ def compute_alm(
         )
 
     if dense_matrix is None:
-        spatial_shape = tuple(data.shape[-spatial_ndim:])
-        key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
-        if isinstance(data, jax.core.Tracer):
-            with _DENSE_MATRIX_CACHE_LOCK:
-                dense_matrix = _DENSE_MATRIX_CACHE.get(key)
-            if dense_matrix is None:
-                raise RuntimeError(
-                    "The dense SHT matrix must be precomputed before "
-                    "compute_alm is called inside jax.jit. Call "
-                    "precompute_dense_matrix(...) once outside jax.jit."
-                )
-        else:
-            dense_matrix = precompute_dense_matrix(
-                spatial_shape,
-                lmax,
-                sampling,
-                nside=nside,
-                niter=niter,
-            )
+        dense_matrix = dense_matrix_for(
+            data.shape[-spatial_ndim:],
+            lmax,
+            sampling,
+            nside=nside,
+            niter=niter,
+            tracing=tracing,
+            explicit=explicit_engine,
+        )
     return _apply_dense_matrix(data, dense_matrix, lmax, spatial_ndim)
 
 
@@ -480,15 +609,26 @@ class SphBase(eqx.Module):
     _L: int = eqx.field(static=True)  # L = lmax + 1 for s2fft
     _niter: int = eqx.field(static=True)  # niter for sht
     _engine: str = eqx.field(static=True)  # spherical harmonic engine
+    _engine_reason: str = eqx.field(static=True)
     _dense_matrix: jax.Array | None
+    _kernel: jax.Array | None
+    _inverse_kernel: jax.Array | None
     nside: int | None = eqx.field(static=True)
     theta: jax.Array  # in radians
     phi: jax.Array  # in radians
 
     @property
     def engine(self):
-        """Name of the configured spherical harmonic transform engine."""
+        """Name of the resolved spherical harmonic transform engine.
+
+        Reports the concrete engine that was chosen, never ``"auto"``.
+        """
         return self._engine
+
+    @property
+    def engine_reason(self):
+        """Why the configured engine was chosen (see engine_select)."""
+        return self._engine_reason
 
     def __init__(
         self,
@@ -496,7 +636,7 @@ class SphBase(eqx.Module):
         freqs,
         sampling,
         niter=0,
-        engine="s2fft",
+        engine="auto",
         lmax=None,
     ):
         """
@@ -525,11 +665,16 @@ class SphBase(eqx.Module):
             time. Default is 0 for all sampling schemes. For healpix
             sampling, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
-        engine : {"s2fft", "dense"}
-            Spherical harmonic transform engine. The default ``"s2fft"``
-            preserves the existing matrix-free behavior. ``"dense"`` builds
-            and caches an exact transform matrix for fast repeated low-lmax
-            transforms.
+        engine : {"auto", "s2fft", "kernel", "dense"}
+            Spherical harmonic transform engine. The default ``"auto"``
+            chooses from the band-limit, sampling, niter and batch size;
+            the resolved choice is reported by the ``engine`` and
+            ``engine_reason`` properties. ``"s2fft"`` is the matrix-free
+            implementation, recomputing the recursion every call.
+            ``"kernel"`` caches the Wigner-d kernel and contracts it per
+            call. ``"dense"`` builds and caches an exact transform matrix,
+            and is the only engine able to serve a band-limit below the
+            HEALPix floor. Pin one explicitly to freeze behaviour.
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             set below the default ``2 * nside`` to reduce transform work and
@@ -540,15 +685,19 @@ class SphBase(eqx.Module):
         Raises
         ------
         ValueError
-            If `sampling` is "healpix" and the number of pixels in
-            `data` is not valid for healpix sampling.
+            If `engine` is not a recognized engine name (checked before
+            any data or frequency processing), or if `sampling` is
+            "healpix" and the number of pixels in `data` is not valid
+            for healpix sampling.
 
         """
-        if engine not in {"s2fft", "dense"}:
-            raise ValueError(
-                f"Unsupported SHT engine {engine!r}. Supported engines are "
-                "{'s2fft', 'dense'}."
-            )
+        from .engine_select import validate_engine
+
+        validate_engine(engine)
+        # Captured before resolve_engine overwrites `engine` below: only
+        # an automatic choice may be degraded when a precompute turns out
+        # to be impossible, and by then the caller's own request is gone.
+        explicit_engine = engine != "auto"
 
         self.data = jnp.asarray(data)
         self.freqs = jnp.atleast_1d(freqs)
@@ -562,7 +711,6 @@ class SphBase(eqx.Module):
                 )
 
         self._niter = niter
-        self._engine = engine
 
         self.sampling = sampling
         inferred_lmax = utils.lmax_from_ntheta(
@@ -587,34 +735,97 @@ class SphBase(eqx.Module):
         else:
             self.nside = None
 
-        if self._engine == "dense":
-            if isinstance(self.data, jax.core.Tracer):
-                key = _dense_matrix_key(
-                    self.data.shape[1:],
-                    self.lmax,
-                    self.sampling,
-                    self.nside,
-                    self._niter,
+        from .engine_select import resolve_engine
+
+        engine, engine_reason = resolve_engine(
+            self.lmax,
+            self.sampling,
+            nside=self.nside,
+            niter=self._niter,
+            batch_size=int(self.data.shape[0]),
+            requested=engine,
+        )
+        self._engine = engine
+        self._engine_reason = engine_reason
+
+        tracing = isinstance(self.data, jax.core.Tracer)
+        if self._engine == "kernel" and tracing:
+            # A kernel cannot be built while a trace is active: converting
+            # the numpy-built kernel to a jax.Array would yield a tracer
+            # bound to this trace, which the module-level cache must never
+            # retain (see kernel.precompute_kernel's docstring).
+            if explicit_engine:
+                raise RuntimeError(
+                    "The kernel must be precomputed before a kernel "
+                    "SphBase object is constructed inside jax.jit. Call "
+                    "precompute_kernel(...) once outside jax.jit."
                 )
-                with _DENSE_MATRIX_CACHE_LOCK:
-                    self._dense_matrix = _DENSE_MATRIX_CACHE.get(key)
-                if self._dense_matrix is None:
-                    raise RuntimeError(
-                        "The dense SHT matrix must be precomputed before a "
-                        "dense SphBase object is constructed inside jax.jit. "
-                        "Call precompute_dense_matrix(...) once outside "
-                        "jax.jit."
-                    )
-            else:
-                self._dense_matrix = precompute_dense_matrix(
-                    self.data.shape[1:],
+            # Constructing a field inside a trace is how a caller
+            # differentiates through the construction itself, so raising
+            # here would cost them that for a choice they never made.
+            # Only cost changes: the engines agree to ~1e-13.
+            from .engine_select import degrade_for_trace
+            from .footprints import transform_lmax
+
+            self._engine = degrade_for_trace(
+                self._engine,
+                niter=self._niter,
+                sub_floor=(
+                    transform_lmax(self.lmax, self.sampling, nside=self.nside)
+                    != self.lmax
+                ),
+            )
+            self._engine_reason = (
+                "kernels cannot be built inside a jax trace; degraded "
+                "from the automatic choice"
+            )
+
+        if self._engine == "dense":
+            self._dense_matrix = dense_matrix_for(
+                self.data.shape[1:],
+                self.lmax,
+                self.sampling,
+                nside=self.nside,
+                niter=self._niter,
+                tracing=tracing,
+                explicit=explicit_engine,
+            )
+            self._kernel = None
+            self._inverse_kernel = None
+        elif self._engine == "kernel":
+            self._dense_matrix = None
+            # Reached only outside a trace: the degrade-or-raise check
+            # above has already dealt with the traced case, so the built
+            # kernel is always a concrete array, never a leaked tracer
+            # (see kernel.precompute_kernel's docstring). Unlike dense,
+            # there is no per-key cache fallback for a traced build --
+            # an explicit engine="kernel" must precompute first, exactly
+            # as kernel_compute_alm requires when called inside a trace.
+            from . import kernel as _kernel
+
+            self._kernel = _kernel.precompute_kernel(
+                self.lmax,
+                self.sampling,
+                nside=self.nside,
+                spin=0,
+                reality=True,
+                forward=True,
+            )
+            if self._niter > 0:
+                self._inverse_kernel = _kernel.precompute_kernel(
                     self.lmax,
                     self.sampling,
                     nside=self.nside,
-                    niter=self._niter,
+                    spin=0,
+                    reality=True,
+                    forward=False,
                 )
+            else:
+                self._inverse_kernel = None
         else:
             self._dense_matrix = None
+            self._kernel = None
+            self._inverse_kernel = None
 
         self.phi = utils.generate_phi(
             lmax=self.lmax, sampling=self.sampling, nside=self.nside

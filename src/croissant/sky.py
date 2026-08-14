@@ -14,7 +14,7 @@ class Sky(sphere.SphBase):
         sampling="healpix",
         coord="galactic",
         niter=0,
-        engine="s2fft",
+        engine="auto",
         lmax=None,
     ):
         """
@@ -44,10 +44,11 @@ class Sky(sphere.SphBase):
             transform. Default is 0 for all sampling schemes. For
             healpix, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
-        engine : {"s2fft", "dense"}
-            Spherical harmonic transform engine. Default is ``"s2fft"``.
-            The ``"dense"`` engine caches an exact transform matrix and is
-            optimized for repeated low-band-limit transforms.
+        engine : {"auto", "s2fft", "kernel", "dense"}
+            Spherical harmonic transform engine. Default is ``"auto"``.
+            ``"auto"`` lets croissant choose from the band-limit,
+            sampling, niter and batch size; the choice is reported by the
+            ``engine`` and ``engine_reason`` attributes.
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             lower than the default ``2 * nside``. Default is None.
@@ -83,6 +84,8 @@ class Sky(sphere.SphBase):
             niter=self._niter,
             engine=self._engine,
             dense_matrix=self._dense_matrix,
+            kernel=self._kernel,
+            inverse_kernel=self._inverse_kernel,
         )
 
     def compute_alm_eq(self, world="moon", et=None):
