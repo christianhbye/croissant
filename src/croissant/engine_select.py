@@ -21,7 +21,13 @@ import math
 
 from .footprints import dense_nbytes, kernel_nbytes, transform_lmax
 
-__all__ = ["DEFAULT_MEMORY_CAP_BYTES", "ENGINES", "resolve_engine"]
+__all__ = [
+    "DEFAULT_MEMORY_CAP_BYTES",
+    "ENGINES",
+    "degrade_for_trace",
+    "resolve_engine",
+    "validate_engine",
+]
 
 DEFAULT_MEMORY_CAP_BYTES = 512 * 1024**2
 
@@ -74,6 +80,103 @@ def _amortisation_threshold(kernel_bytes):
     """
     mib = kernel_bytes / 1024**2
     return max(1, math.ceil(mib / _MIB_PER_BATCHED_TRANSFORM))
+
+
+def degrade_for_trace(
+    engine,
+    *,
+    has_kernel=False,
+    has_inverse_kernel=False,
+    niter=0,
+    sub_floor=False,
+):
+    """
+    Adjust an automatically chosen engine for what a live trace allows.
+
+    Auto must never hand back an engine that then refuses to run. Only
+    the kernel engine is actually blocked by an active trace: converting
+    its numpy-built kernel to a ``jax.Array`` mid-trace would yield a
+    tracer the module-level cache must never retain (see
+    :func:`croissant.kernel.precompute_kernel`), so a kernel that was not
+    precomputed and threaded in cannot be obtained. The dense operators
+    are built from static geometry under
+    ``jax.ensure_compile_time_eval`` and are unaffected.
+
+    This is the ONE place that rule lives. It used to be written out at
+    three call sites, each of which had forgotten a different half of it:
+    one ignored ``inverse_kernel``, one degraded dense to an engine that
+    cannot serve a sub-floor band-limit, and two let the dense path raise
+    for a choice the caller never made.
+
+    Call only for an automatic choice, and only while tracing. An
+    explicit request is never softened: a caller who named an engine is
+    told to precompute instead, so the cost decision they made
+    deliberately is never silently swapped out from under them.
+
+    Parameters
+    ----------
+    engine : str
+        The engine ``resolve_engine`` chose.
+    has_kernel : bool
+        Whether a forward kernel was threaded in.
+    has_inverse_kernel : bool
+        Whether a synthesis kernel was threaded in. Only consulted when
+        ``niter > 0``, which is when the refinement iteration needs one.
+    niter : int
+        Number of iterative refinement steps.
+    sub_floor : bool
+        Whether the band-limit is below the HEALPix ``L >= 2 * nside``
+        floor. There the matrix-free engine is not a legal fallback --
+        it cannot perform the transform at all -- so dense, the only
+        engine that can low-pass in one step, is the degrade target.
+
+    Returns
+    -------
+    str
+        The engine to actually run.
+
+    """
+    if engine != "kernel":
+        return engine
+    if has_kernel and (niter == 0 or has_inverse_kernel):
+        return engine
+    return "dense" if sub_floor else "s2fft"
+
+
+def validate_engine(engine):
+    """
+    Reject an engine name that is not a supported public choice.
+
+    Shared by :class:`croissant.sphere.SphBase` and the polarized fields
+    so the two entry points cannot drift on what counts as valid.
+    :func:`resolve_engine` accepts ``None`` as a synonym for ``"auto"``
+    for the convenience of its internal callers; that is not a licence
+    for a public constructor to accept it, and a caller threading an
+    optional engine through a config object should get the same answer
+    whichever class receives it.
+
+    Parameters
+    ----------
+    engine : str
+        Engine name from the caller, or ``"auto"``.
+
+    Returns
+    -------
+    str
+        The engine name, unchanged.
+
+    Raises
+    ------
+    ValueError
+        If ``engine`` is not ``"auto"`` or one of :data:`ENGINES`.
+
+    """
+    if engine != "auto" and engine not in ENGINES:
+        raise ValueError(
+            f"Unsupported SHT engine {engine!r}. Supported engines are "
+            f"{set(ENGINES) | {'auto'}}."
+        )
+    return engine
 
 
 def resolve_engine(
@@ -156,19 +259,22 @@ def resolve_engine(
         lmax
     )
     if needs_row_selection:
-        if dense_fits:
-            return (
-                "dense",
-                f"lmax={lmax} is below the HEALPix floor for "
-                f"nside={nside}; only the dense engine can low-pass in "
-                "one step",
-            )
-        return (
-            "s2fft",
-            f"lmax={lmax} is below the HEALPix floor for nside={nside} "
-            "and the dense operator needs "
-            f"{_mib(dense_bytes)}",
+        reason = (
+            f"lmax={lmax} is below the HEALPix floor for "
+            f"nside={nside}; only the dense engine can low-pass in "
+            "one step"
         )
+        if not dense_fits:
+            # Correctness outranks the cap here, and this is the one
+            # place the two can conflict. Neither s2fft nor the kernel
+            # engine can perform a HEALPix transform below the floor
+            # under any memory budget, so there is no cheaper engine to
+            # fall back TO: naming one would trade a large allocation
+            # for a hard failure at the caller's first transform. Report
+            # the footprint instead and let the caller choose a higher
+            # lmax or a coarser map.
+            reason += f"; its {_mib(dense_bytes)} exceeds the {_mib(cap)} cap"
+        return "dense", reason
 
     threshold = _amortisation_threshold(kernel_bytes)
     if batch_size < threshold:

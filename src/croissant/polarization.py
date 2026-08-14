@@ -49,7 +49,7 @@ def _spatial_metadata(data, freqs, sampling, niter):
     if freqs_np.size > 1 and not np.all(np.diff(freqs_np) > 0):
         raise ValueError("freqs must be strictly increasing.")
 
-    spatial_ndim = 1 if sampling == "healpix" else 2
+    spatial_ndim = utils.spatial_ndim(sampling)
     if data.ndim < spatial_ndim + 2:
         raise ValueError(
             "Polarized data must include frequency, Stokes, and spatial axes."
@@ -241,8 +241,9 @@ def _prepare_engines(
     spin0_reality : bool
         Whether the spin-0 block is a real field: True for a sky, False
         for a complex pair response.
-    requested : str or None
-        Engine name from the caller, or ``"auto"``.
+    requested : str
+        Engine name from the caller, or ``"auto"``. Validated here with
+        the same rule :class:`croissant.sphere.SphBase` applies.
 
     Returns
     -------
@@ -252,16 +253,24 @@ def _prepare_engines(
 
     Raises
     ------
+    ValueError
+        If ``requested`` is not a recognized engine name.
     RuntimeError
         If an explicitly requested precomputing engine cannot build
         because a trace is active.
 
     """
     from . import kernel as _kernel
-    from .engine_select import resolve_engine
+    from .engine_select import (
+        degrade_for_trace,
+        resolve_engine,
+        validate_engine,
+    )
+    from .footprints import transform_lmax
 
+    validate_engine(requested)
     tracing = isinstance(data, jax.core.Tracer)
-    explicit = requested is not None and requested != "auto"
+    explicit = requested != "auto"
     engines, reasons = [], []
     kernels, inverse_kernels, dense_matrices = [], [], []
 
@@ -293,12 +302,17 @@ def _prepare_engines(
                     "polarized field is constructed inside jax.jit. Call "
                     "precompute_kernel(...) once outside jax.jit."
                 )
-            # Auto must never hand back an engine that then refuses to
-            # run. Constructing a polarized field inside a trace worked
-            # before these fields became engine-selectable, so degrade
-            # rather than break it; only cost changes, since the engines
-            # agree to ~1e-13. An explicit request is never softened.
-            engine = "s2fft"
+            # Constructing a polarized field inside a trace worked before
+            # these fields became engine-selectable, so degrade rather
+            # than break it; only cost changes, since the engines agree
+            # to ~1e-13. An explicit request is never softened.
+            engine = degrade_for_trace(
+                engine,
+                niter=niter,
+                sub_floor=(
+                    transform_lmax(lmax, sampling, nside=nside) != int(lmax)
+                ),
+            )
             reason = (
                 "kernels cannot be built inside a jax trace; "
                 "degraded from the automatic choice"
@@ -329,8 +343,14 @@ def _prepare_engines(
             # block is complex or spin-weighted, so sphere.compute_alm
             # routes it to croissant.dense, which builds under
             # jax.ensure_compile_time_eval and needs nothing from here.
-            dense_matrix = _prepare_dense_matrix(
-                spatial_shape, lmax, sampling, nside, niter, tracing
+            dense_matrix = sphere.dense_matrix_for(
+                spatial_shape,
+                lmax,
+                sampling,
+                nside=nside,
+                niter=niter,
+                tracing=tracing,
+                explicit=explicit,
             )
 
         engines.append(engine)
@@ -346,26 +366,6 @@ def _prepare_engines(
         tuple(inverse_kernels),
         tuple(dense_matrices),
     )
-
-
-def _prepare_dense_matrix(
-    spatial_shape, lmax, sampling, nside, niter, tracing
-):
-    """Fetch the packed-real dense operator, mirroring ``SphBase``."""
-    if not tracing:
-        return sphere.precompute_dense_matrix(
-            spatial_shape, lmax, sampling, nside=nside, niter=niter
-        )
-    key = sphere._dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
-    with sphere._DENSE_MATRIX_CACHE_LOCK:
-        matrix = sphere._DENSE_MATRIX_CACHE.get(key)
-    if matrix is None:
-        raise RuntimeError(
-            "The dense SHT matrix must be precomputed before a dense "
-            "polarized field is constructed inside jax.jit. Call "
-            "precompute_dense_matrix(...) once outside jax.jit."
-        )
-    return matrix
 
 
 def _block_kwargs(engines, kernels, inverse_kernels, dense_matrices):

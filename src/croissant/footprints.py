@@ -20,8 +20,10 @@ def transform_lmax(lmax, sampling, nside=None):
     Band-limit a transform must actually be performed at.
 
     s2fft's HEALPix FFT requires ``L >= 2 * nside`` even when only lower
-    modes are wanted, the same floor ``croissant.dense`` handles at
-    ``dense.py:52``.
+    modes are wanted. This is the single definition of that floor;
+    ``croissant.dense`` and the engine policy both import it, so an s2fft
+    version that relaxes the constraint is a one-line change here rather
+    than a hunt through every module that builds a transform.
 
     Parameters
     ----------
@@ -118,16 +120,42 @@ def _kernel_ntheta(lmax, sampling, nside=None):
     return s2fft.sampling.s2_samples.ntheta(L=L, sampling=sampling)
 
 
-def _npix(lmax, sampling, nside=None):
-    """Number of spatial samples for a sampling scheme."""
+def spatial_shape(lmax, sampling, nside=None):
+    """
+    Shape of one map's spatial axes for a sampling scheme.
+
+    HEALPix stores a single flat pixel axis; the equiangular schemes
+    store a (theta, phi) grid.
+
+    Parameters
+    ----------
+    lmax : int
+        Maximum spherical harmonic degree.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+
+    Returns
+    -------
+    tuple of int
+        ``(npix,)`` for ``"healpix"``, ``(ntheta, nphi)`` otherwise.
+
+    """
     if sampling == "healpix":
         if nside is None:
             raise ValueError("nside is required for HEALPix transforms.")
-        return 12 * int(nside) ** 2
+        return (12 * int(nside) ** 2,)
     L = lmax + 1
-    return s2fft.sampling.s2_samples.ntheta(
-        L=L, sampling=sampling
-    ) * s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling)
+    return (
+        s2fft.sampling.s2_samples.ntheta(L=L, sampling=sampling),
+        s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling),
+    )
+
+
+def _npix(lmax, sampling, nside=None):
+    """Total number of spatial samples for a sampling scheme."""
+    return int(np.prod(spatial_shape(lmax, sampling, nside=nside)))
 
 
 def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=True):

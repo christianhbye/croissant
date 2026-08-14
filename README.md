@@ -178,23 +178,24 @@ kernel (and the inverse kernel, if `niter > 0`) during initialization. Use
 `croissant.clear_kernel_cache()` to release Croissant's in-process kernel
 references.
 
-This is a real trap for `engine="auto"`: pick it and call
-`croissant.sphere.compute_alm` directly from inside your own `jax.jit`
-without precomputing anything, and a configuration that resolves to
-`"kernel"` will raise `RuntimeError` where the same call with the explicit
-default `engine="s2fft"` worked fine — `"auto"` can trade a working
-matrix-free call for a precompute step your code never asked for.
-`Beam` and `Sky` are unaffected, since they resolve `"auto"` and
-precompute eagerly at construction, outside any trace; the trap is
-specific to calling `compute_alm` (or `croissant.kernel.kernel_compute_alm`)
-directly inside a caller-owned `jax.jit`.
+`engine="auto"` never turns a working call into a `RuntimeError` this way.
+Call `croissant.sphere.compute_alm` from inside your own `jax.jit` with
+nothing precomputed and an automatic choice of `"kernel"` degrades to an
+engine that can actually run: `"s2fft"` normally, or `"dense"` for a
+band-limit below the HEALPix floor, where the matrix-free engine cannot
+serve the transform at all. Only an *explicit* `engine="kernel"` raises,
+because a named engine is a cost decision croissant will not silently swap
+out. `croissant.kernel.kernel_compute_alm`, which has no `"auto"` to fall
+back on, raises exactly as before.
 
 Constructing a field *inside* a trace — differentiating through the
 construction itself, as `jax.grad(lambda m: Sky(m, freqs, ...).compute_alm())`
 does — follows the same rule. No kernel can be built there, so an automatic
-choice of `"kernel"` degrades to `"s2fft"` and the `engine_reason` says so,
-while an explicit `engine="kernel"` still raises. This holds for `Beam`,
-`Sky`, `PolarizedSky` and `PairStokesBeam` alike.
+choice of `"kernel"` degrades and the `engine_reason` says so, while an
+explicit `engine="kernel"` still raises. An automatic choice of `"dense"`
+does build rather than refuse: its operator depends only on static
+geometry, so it is materialised as a compile-time constant. This holds for
+`Beam`, `Sky`, `PolarizedSky` and `PairStokesBeam` alike.
 
 ### Engines for polarized fields
 

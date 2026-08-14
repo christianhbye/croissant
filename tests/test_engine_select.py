@@ -83,14 +83,40 @@ def test_low_bandlimit_on_a_high_resolution_map_selects_dense():
     assert "floor" in reason
 
 
-def test_low_bandlimit_falls_back_when_dense_will_not_fit():
-    engine, _ = engine_select.resolve_engine(
+def test_low_bandlimit_never_selects_an_engine_that_cannot_run():
+    """Below the floor, dense is the only engine that works at all.
+
+    An oversized dense operator is a reason to say so in the reason
+    string, not a reason to hand back the matrix-free engine: s2fft
+    cannot perform a HEALPix transform below ``L >= 2 * nside`` under any
+    memory budget, so falling back to it turns a large allocation into a
+    hard failure at the first ``compute_alm``. The memory cap is a
+    policy; running at all is a correctness requirement, and the policy
+    does not get to override it.
+    """
+    engine, reason = engine_select.resolve_engine(
         lmax=15,
         sampling="healpix",
         nside=512,
         batch_size=64,
     )
-    assert engine == "s2fft"
+    assert engine == "dense"
+    assert "floor" in reason
+
+
+def test_the_matrix_free_engine_cannot_serve_a_sub_floor_band_limit():
+    """The premise the rule above rests on, pinned directly."""
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import sphere
+
+    nside = 8
+    data = jnp.asarray(
+        np.random.default_rng(1).normal(size=(2, 12 * nside**2))
+    )
+    with pytest.raises(ValueError):
+        sphere.compute_alm(data, 10, "healpix", nside=nside, engine="s2fft")
 
 
 def test_nothing_exceeds_the_memory_cap():
@@ -568,6 +594,123 @@ def test_scalar_field_auto_degrades_inside_jit():
     gradient = jax.grad(loss)(data)
     assert gradient.shape == data.shape
     assert bool(jnp.all(jnp.isfinite(gradient)))
+
+
+def test_auto_degrades_when_only_the_forward_kernel_is_available():
+    """``niter > 0`` needs two kernels, so one is not enough to proceed.
+
+    The degrade check tested only the forward kernel, so an automatic
+    kernel choice with a forward kernel threaded in still raised inside
+    the caller's jit when the synthesis kernel was missing -- the same
+    RuntimeError the degrade exists to prevent, one argument over.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel, sphere
+
+    nside, lmax = 8, 15
+    data = jnp.asarray(
+        np.random.default_rng(6).normal(size=(4, 12 * nside**2))
+    )
+    kernel.clear_kernel_cache()
+    forward_only = kernel.precompute_kernel(
+        lmax, "healpix", nside=nside, spin=0, reality=True, forward=True
+    )
+
+    @jax.jit
+    def analyse(m):
+        return sphere.compute_alm(
+            m, lmax, "healpix", nside=nside, niter=3, kernel=forward_only
+        )
+
+    got = np.asarray(analyse(data))
+    assert got.shape == (4, lmax + 1, 2 * lmax + 1)
+    assert bool(np.all(np.isfinite(got)))
+
+
+def test_auto_spin_below_the_floor_works_inside_jit():
+    """The one configuration auto reaches for dense must survive a trace.
+
+    ``croissant.dense`` builds under ``jax.ensure_compile_time_eval`` and
+    so is perfectly buildable inside a trace; degrading it to s2fft --
+    which cannot serve a sub-floor band-limit at all -- converted a
+    working call into a shape error from inside s2fft.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import sphere
+
+    nside, lmax = 8, 10
+    rng = np.random.default_rng(7)
+    npix = 12 * nside**2
+    data = jnp.asarray(
+        rng.normal(size=(4, npix)) + 1j * rng.normal(size=(4, npix))
+    )
+
+    @jax.jit
+    def analyse(m):
+        return sphere.compute_alm(
+            m, lmax, "healpix", nside=nside, spin=2, reality=False
+        )
+
+    got = np.asarray(analyse(data))
+    assert got.shape == (4, lmax + 1, 2 * lmax + 1)
+    assert bool(np.all(np.isfinite(got)))
+
+
+def test_scalar_field_auto_dense_degrades_inside_jit():
+    """The dense twin of ``test_scalar_field_auto_degrades_inside_jit``.
+
+    A sub-floor band-limit is the one case auto reaches for dense, so a
+    ``Sky`` built inside ``jax.grad`` with a low explicit lmax resolved
+    to dense and then raised about a precompute the caller never asked
+    for. The kernel branch had already been fixed; the dense branch one
+    screen down had not.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel
+    from croissant.sky import Sky
+
+    nside = 8
+    freqs = jnp.asarray([10.0, 20.0])
+    data = jnp.asarray(
+        np.random.default_rng(8).normal(size=(2, 12 * nside**2))
+    )
+
+    def loss(maps):
+        alm = Sky(maps, freqs, sampling="healpix", lmax=10).compute_alm()
+        return jnp.sum(jnp.abs(alm) ** 2)
+
+    kernel.clear_kernel_cache()
+    gradient = jax.grad(loss)(data)
+    assert gradient.shape == data.shape
+    assert bool(jnp.all(jnp.isfinite(gradient)))
+
+
+def test_polarized_fields_reject_engine_none_like_scalar_fields():
+    """Both entry points must agree on what a valid engine argument is.
+
+    ``resolve_engine`` treats ``None`` as "auto" for its own internal
+    callers, but a field constructor is a public API: ``Sky`` rejects
+    ``engine=None`` and the polarized classes silently auto-selected, so
+    threading an optional engine through a config object behaved
+    differently depending on which class received it.
+    """
+    import numpy as np
+
+    from croissant.polarization import PolarizedSky
+
+    nside = 8
+    data = np.random.default_rng(9).normal(size=(1, 4, 12 * nside**2))
+    with pytest.raises(ValueError, match="engine"):
+        PolarizedSky(data, [10.0], sampling="healpix", engine=None)
 
 
 def test_scalar_field_explicit_kernel_inside_jit_raises():

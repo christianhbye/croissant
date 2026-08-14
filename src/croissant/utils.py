@@ -435,6 +435,28 @@ def shape_from_lmax(lmax):
     return (lmax + 1, 2 * lmax + 1)
 
 
+def spatial_ndim(sampling):
+    """
+    Number of trailing axes that hold a field's spatial samples.
+
+    HEALPix stores one flat pixel axis; every equiangular scheme stores a
+    (theta, phi) grid. Every axis before these is a batch axis.
+
+    Parameters
+    ----------
+    sampling : str
+        The sampling scheme. Supported schemes are from s2fft and include
+        {"mw", "mwss", "dh", "gl", "healpix"}.
+
+    Returns
+    -------
+    int
+        1 for "healpix", 2 otherwise.
+
+    """
+    return 1 if sampling == "healpix" else 2
+
+
 def lmax_from_ntheta(ntheta, sampling):
     """
     Get the lmax corresponding to a given number of theta samples and

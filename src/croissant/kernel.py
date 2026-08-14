@@ -33,6 +33,7 @@ import numpy as np
 import s2fft
 import s2fft.precompute_transforms
 
+from . import utils
 from .footprints import kernel_nbytes, transform_lmax
 
 __all__ = [
@@ -165,11 +166,6 @@ def clear_kernel_cache():
         _KERNEL_CACHE.clear()
 
 
-def _spatial_ndim(sampling):
-    """Number of trailing axes that hold the field's spatial samples."""
-    return 1 if sampling == "healpix" else 2
-
-
 def kernel_compute_alm(
     data,
     lmax,
@@ -251,7 +247,7 @@ def kernel_compute_alm(
         data = data.astype(jnp.result_type(real_dtype, 1j))
     else:
         data = data.astype(real_dtype)
-    spatial_ndim = _spatial_ndim(sampling)
+    spatial_ndim = utils.spatial_ndim(sampling)
     spatial_shape = data.shape[-spatial_ndim:]
     batch_shape = data.shape[:-spatial_ndim]
     flat = data.reshape((-1,) + spatial_shape)
