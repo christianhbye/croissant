@@ -77,16 +77,19 @@ Measured on CPU with x64 enabled (reproduce with
 | memory, dense/kernel (scalar) | 13.3x | 25.3x | 49.1x |
 | memory, dense/kernel (spin) | 12.8x | 24.6x | not tested |
 | setup, dense/kernel (scalar) | 1.15x | 0.82x | 5.9x |
-| setup, dense/kernel (spin) | 22x–25x | 22x–25x | not tested |
+| setup, dense/kernel (spin) | 14.7x–24.9x | 22.5x–24.8x | not tested |
 
 Memory ratios grow with `nside` as the `O(nside**4)` vs `O(nside**3)`
 footprints predict. Setup ratios behave differently and are reported
 separately for scalar and spin fields because they differ sharply: for
 scalar fields the dense build is roughly break-even with the kernel build
 at nside=8–16 and only pulls ahead at nside=32, while for spin fields it is
-already 22x–25x more expensive at every tested resolution — the dense
-engine's NumPy spin Wigner-d builder is disproportionately expensive
-relative to the kernel builder.
+already 14.7x–24.9x more expensive at every tested resolution (as low as
+14.7x at nside=8/niter=3; see
+[`benchmarks/results/engines-2026-08-13.md`](benchmarks/results/engines-2026-08-13.md)
+for the per-configuration figures) — the dense engine's NumPy spin
+Wigner-d builder is disproportionately expensive relative to the kernel
+builder.
 
 The footprints differ by a full power of `nside` — `~32*nside**3` for the kernel
 against `~48*nside**4` for the dense operator, a ratio of `~1.5*nside`. These
@@ -137,7 +140,9 @@ The resolved choice and the reason for it are reported on the object:
 ```python
 beam = Beam(data, freqs, sampling="healpix", engine="auto")
 print(beam.engine)  # e.g. "kernel"
-print(beam.engine_reason)  # e.g. "16 MiB kernel amortises over 64 transforms"
+print(
+    beam.engine_reason
+)  # e.g. "16.0 MiB kernel amortises over 64 transforms"
 ```
 
 `"auto"` is a policy, not a promise: it may change between versions. Pin
@@ -158,6 +163,31 @@ function.) `Beam` and `Sky` handle this automatically: they precompute the
 matrix during initialization and thread it through their jitted methods as
 a dynamic argument. Use `croissant.clear_dense_matrix_cache()` to release
 Croissant's in-process matrix references.
+
+`engine="kernel"` needs the same care, with its own functions:
+`croissant.precompute_kernel(..., forward=True)` for the analysis kernel,
+plus `forward=False` for the synthesis kernel if `niter > 0`, passed to the
+jitted call as `kernel=...` and `inverse_kernel=...`. Called from inside
+`jax.jit` without a precomputed kernel, `compute_alm(..., engine="kernel")`
+raises `RuntimeError` rather than silently building — and unlike dense,
+there is no pre-warmed-cache escape hatch here: the kernel engine's check
+raises as soon as the input is a tracer and no kernel was passed
+explicitly, even if `precompute_kernel` already warmed the cache earlier.
+`Beam` and `Sky` handle this automatically too, precomputing the forward
+kernel (and the inverse kernel, if `niter > 0`) during initialization. Use
+`croissant.clear_kernel_cache()` to release Croissant's in-process kernel
+references.
+
+This is a real trap for `engine="auto"`: pick it and call
+`croissant.sphere.compute_alm` directly from inside your own `jax.jit`
+without precomputing anything, and a configuration that resolves to
+`"kernel"` will raise `RuntimeError` where the same call with the explicit
+default `engine="s2fft"` worked fine — `"auto"` can trade a working
+matrix-free call for a precompute step your code never asked for.
+`Beam` and `Sky` are unaffected, since they resolve `"auto"` and
+precompute eagerly at construction, outside any trace; the trap is
+specific to calling `compute_alm` (or `croissant.kernel.kernel_compute_alm`)
+directly inside a caller-owned `jax.jit`.
 
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:

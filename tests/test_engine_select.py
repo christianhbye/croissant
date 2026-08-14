@@ -126,9 +126,14 @@ def test_nothing_exceeds_the_memory_cap():
                 # reality=True to match resolve_engine's own default,
                 # which is what it actually used to decide "kernel";
                 # kernel_nbytes itself defaults to reality=False and
-                # would over-predict for spin=0.
+                # would over-predict for spin=0. niter=3 above means
+                # kernel_compute_alm builds a forward AND an inverse
+                # kernel of matching size for the refinement iteration
+                # (see engine_select.resolve_engine), so the resident
+                # total is double a single kernel_nbytes call.
                 assert (
-                    kernel.kernel_nbytes(
+                    2
+                    * kernel.kernel_nbytes(
                         lmax,
                         "healpix",
                         nside=nside,

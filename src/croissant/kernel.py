@@ -29,6 +29,7 @@ from threading import Lock
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 import s2fft
 import s2fft.precompute_transforms
 
@@ -42,9 +43,39 @@ __all__ = [
     "transform_lmax",
 ]
 
+#: Cache size is a kernel COUNT, not a byte budget: eight cached kernels
+#: at, say, nside=128 would retain roughly 8 * 511 MiB while
+#: engine_select.py's "auto" policy advertises a single 512 MiB cap for
+#: one choice. That cap governs only which engine a single call to
+#: resolve_engine picks, not how much this module retains across many
+#: calls, so the two numbers are not in tension by design -- but they
+#: can add up. Deliberately not made byte-based: doing so would need to
+#: rank cached kernels by reuse likelihood, not merely size, to decide
+#: what to evict. If total retention becomes a problem, call
+#: clear_kernel_cache() to release everything; that is the release
+#: valve this module offers instead of an eviction policy.
 _KERNEL_CACHE_MAXSIZE = 8
 _KERNEL_CACHE = OrderedDict()
 _KERNEL_CACHE_LOCK = Lock()
+
+
+def _kernel_dtype(sampling):
+    """
+    dtype ``jnp.asarray(built)`` will actually produce for a kernel.
+
+    s2fft's numpy kernel builder always returns float64 (equiangular
+    samplings) or complex128 (``"healpix"``, which carries per-ring
+    phase shifts); ``jnp.asarray`` then silently downcasts to
+    float32/complex64 whenever ``jax_enable_x64`` is off, like any
+    other JAX array. Included in the cache key for the same reason
+    ``sphere._dense_matrix_key`` includes ``complex_dtype``: a kernel
+    built before ``jax.config.update("jax_enable_x64", True)`` must not
+    be silently reused afterwards at the earlier, reduced precision.
+    """
+    is_complex = sampling == "healpix"
+    if jax.config.x64_enabled:
+        return jnp.complex128 if is_complex else jnp.float64
+    return jnp.complex64 if is_complex else jnp.float32
 
 
 def precompute_kernel(
@@ -101,6 +132,8 @@ def precompute_kernel(
         int(spin),
         bool(reality),
         bool(forward),
+        np.dtype(_kernel_dtype(sampling)).str,
+        jax.default_backend(),
     )
     with _KERNEL_CACHE_LOCK:
         if key in _KERNEL_CACHE:

@@ -24,21 +24,43 @@ LMAX = 2 * NSIDE - 1
 
 
 @pytest.mark.parametrize("reality", [False, True])
-def test_kernel_shape_and_size_prediction(reality):
-    """kernel_nbytes predicts the footprint without building it.
+@pytest.mark.parametrize(
+    "sampling,expected_ntheta,expected_dtype",
+    [
+        ("healpix", 4 * NSIDE - 1, np.complex128),
+        ("mwss", 2 * (LMAX + 1) + 1, np.float64),
+        ("mw", 2 * (LMAX + 1) + 1, np.float64),
+        ("dh", 2 * (LMAX + 1), np.float64),
+        ("gl", LMAX + 1, np.float64),
+    ],
+)
+def test_kernel_shape_and_size_prediction(
+    sampling, expected_ntheta, expected_dtype, reality
+):
+    """kernel_nbytes predicts the footprint without building it, for
+    every sampling scheme s2fft supports.
 
-    The last axis depends on ``reality``: a real-field kernel stores only
-    m >= 0, so it is L wide rather than 2L-1.
+    Both the leading (theta) axis and the dtype are sampling-dependent
+    (see ``footprints._kernel_ntheta`` and ``_kernel_itemsize``): only
+    the HEALPix kernel is complex128, and ``mw``/``mwss`` build a
+    larger leading axis (``2L + 1``) than their ordinary ``ntheta``
+    would suggest. The last axis depends on ``reality``: a real-field
+    kernel stores only m >= 0, so it is L wide rather than 2L-1. This
+    is the test that compares against an actually-built kernel rather
+    than re-deriving the prediction, so a wrong per-sampling formula
+    cannot pass unnoticed.
     """
+    nside = NSIDE if sampling == "healpix" else None
     predicted = kernel.kernel_nbytes(
-        LMAX, "healpix", nside=NSIDE, reality=reality
+        LMAX, sampling, nside=nside, reality=reality
     )
     k = kernel.precompute_kernel(
-        LMAX, "healpix", nside=NSIDE, spin=0, reality=reality
+        LMAX, sampling, nside=nside, spin=0, reality=reality
     )
-    ntheta = 4 * NSIDE - 1
-    nm = (LMAX + 1) if reality else (2 * LMAX + 1)
-    assert k.shape == (ntheta, LMAX + 1, nm)
+    L = LMAX + 1
+    nm = L if reality else (2 * L - 1)
+    assert k.shape == (expected_ntheta, L, nm)
+    assert k.dtype == expected_dtype
     assert predicted == k.nbytes
 
 
@@ -74,6 +96,36 @@ def test_kernel_cache_returns_identical_object():
     kernel.clear_kernel_cache()
     third = kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, spin=2)
     assert third is not first
+
+
+def test_kernel_cache_key_tracks_the_x64_flag():
+    """A kernel cached under one x64 setting must not be reused after
+    the flag changes.
+
+    jnp.asarray(built) bakes in the current x64 flag: a kernel built
+    while it is off is complex64/float32, and reusing that array after
+    jax.config.update("jax_enable_x64", True) would silently hand back
+    an array with less precision than an x64 runtime callers expect.
+    The cache key must include the resulting dtype (mirroring
+    sphere._dense_matrix_key, which includes dtype for exactly this
+    reason) so toggling the flag misses the cache instead of reusing
+    the old array.
+    """
+    import jax
+
+    kernel.clear_kernel_cache()
+    try:
+        jax.config.update("jax_enable_x64", False)
+        low = kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, spin=0)
+        assert low.dtype == np.complex64
+
+        jax.config.update("jax_enable_x64", True)
+        high = kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, spin=0)
+        assert high.dtype == np.complex128
+        assert high is not low
+    finally:
+        jax.config.update("jax_enable_x64", True)
+        kernel.clear_kernel_cache()
 
 
 @pytest.mark.parametrize("spin", [0, 2, -2])
@@ -282,7 +334,10 @@ def test_inverse_kernel_is_not_built_when_niter_is_zero():
     kernel.kernel_compute_alm(
         data, lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0
     )
-    forwards = [key[-1] for key in kernel._KERNEL_CACHE]
+    # Index 5, not -1: the key's trailing entries are dtype and backend
+    # (added so a kernel built under one x64/device setting is never
+    # silently reused under another), so `forward` is no longer last.
+    forwards = [key[5] for key in kernel._KERNEL_CACHE]
     assert forwards == [True]
 
 

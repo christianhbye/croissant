@@ -116,10 +116,19 @@ def resolve_engine(
     kernel_bytes = kernel_nbytes(
         lmax, sampling, nside=nside, spin=spin, reality=reality
     )
+    # niter > 0 makes kernel_compute_alm build a synthesis (inverse)
+    # kernel alongside the forward one, to run the refinement iteration
+    # itself (see kernel.kernel_compute_alm's module docstring). Both
+    # are resident in memory at once, so the actual footprint can be up
+    # to double what kernel_nbytes reports for the forward kernel alone.
+    # Measured equal for healpix/dh/gl and smaller for mw/mwss, so the
+    # forward kernel is always the larger of the two and doubling it is
+    # a safe upper bound, never an under-prediction.
+    needed_kernel_bytes = kernel_bytes * (2 if niter > 0 else 1)
     dense_bytes = dense_nbytes(
         lmax, sampling, nside=nside, spin=spin, reality=reality
     )
-    kernel_fits = kernel_bytes <= cap
+    kernel_fits = needed_kernel_bytes <= cap
     dense_fits = dense_bytes <= cap
 
     # The kernel engine cannot serve a band-limit below the HEALPix
@@ -177,8 +186,8 @@ def resolve_engine(
     if kernel_fits:
         return (
             "kernel",
-            f"{kernel_bytes / 1024**2:.1f} MiB kernel amortises over "
-            f"{batch_size} transforms"
+            f"{needed_kernel_bytes / 1024**2:.1f} MiB kernel amortises "
+            f"over {batch_size} transforms"
             + (
                 f"; dense would need {dense_bytes / 1024**2:.1f} MiB"
                 if not dense_fits
@@ -189,6 +198,6 @@ def resolve_engine(
     return (
         "s2fft",
         f"no precomputed engine fits under {cap / 1024**2:.1f} MiB "
-        f"(kernel {kernel_bytes / 1024**2:.1f} MiB, dense "
+        f"(kernel {needed_kernel_bytes / 1024**2:.1f} MiB, dense "
         f"{dense_bytes / 1024**2:.1f} MiB)",
     )
