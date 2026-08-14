@@ -338,26 +338,130 @@ def test_kernel_and_dense_size_predictors_share_a_reality_default():
     assert footprints.kernel_nbytes(15, "healpix", nside=8) == built.nbytes
 
 
-def test_polarized_analysis_pins_the_matrix_free_engine():
-    """The polarized path must not inherit the ``"auto"`` default.
+def test_polarized_fields_reach_the_kernel_engine():
+    """The kernel engine must be reachable from a polarized field.
 
-    `polarization._analysis_alm` runs inside jitted code and never routes
-    through `SphBase.__init__`, which is what eagerly builds and threads
-    the kernel engine's kernels -- and the kernel engine raises inside a
-    trace when they are absent. Flipping the global default to `"auto"`
-    broke three polarized tests exactly this way, so pin the dependency
-    rather than rediscovering it next time a default moves.
+    Polarized HEALPix is part of what the kernel engine was built for,
+    and it was unreachable for as long as `polarization._analysis_alm`
+    pinned the matrix-free engine: the polarized classes now resolve and
+    thread kernels themselves, so `auto` can pick it. This asserts both
+    halves -- the resolved name and a kernel actually built -- because
+    resolving to "kernel" while threading None would silently degrade
+    inside `sphere.compute_alm`.
     """
-    import inspect
+    import numpy as np
 
-    from croissant import polarization
+    from croissant.polarization import PolarizedSky
 
-    src = inspect.getsource(polarization._analysis_alm)
-    assert 'engine="s2fft"' in src, (
-        "polarization._analysis_alm must pass an explicit engine; "
-        "inheriting the auto default routes it into the kernel engine, "
-        "which cannot build inside a jax trace"
+    nside = 8
+    data = np.random.default_rng(0).normal(size=(4, 4, 12 * nside**2))
+    sky = PolarizedSky(data, [10.0, 20.0, 30.0, 40.0], sampling="healpix")
+
+    assert sky.engine["IV"] == "kernel"
+    assert sky.engine["P_MINUS"] == "kernel"
+    assert sky._kernels[0] is not None
+    assert sky._kernels[1] is not None
+
+
+def test_polarized_blocks_resolve_independently():
+    """One object must be able to report two different engines.
+
+    A real sky's spin-0 kernel packs to ``m >= 0`` and so is about half
+    the size of a spin-weighted one, and the I/V block is batched over
+    twice as many maps as each Q/U block. At nside=16 with a single
+    frequency those two facts land on opposite sides of the
+    amortisation threshold, so a field that resolved once for the whole
+    object could not produce this split whichever way it decided.
+    """
+    import numpy as np
+
+    from croissant import footprints
+    from croissant.polarization import PolarizedSky
+
+    nside = 16
+    lmax = 2 * nside
+    assert footprints.kernel_nbytes(
+        lmax, "healpix", nside=nside, spin=0, reality=True
+    ) < footprints.kernel_nbytes(
+        lmax, "healpix", nside=nside, spin=-2, reality=False
+    ), "test needs the spin-0 block to be the cheaper one"
+
+    data = np.random.default_rng(1).normal(size=(1, 4, 12 * nside**2))
+    sky = PolarizedSky(data, [10.0], sampling="healpix")
+
+    assert sky.engine["IV"] == "kernel"
+    assert sky.engine["P_MINUS"] == "s2fft"
+    assert sky._kernels[0] is not None
+    assert sky._kernels[1] is None
+
+
+def test_polarized_auto_degrades_inside_jit():
+    """Auto must not break a polarized field constructed inside a trace.
+
+    Kernels cannot be built while a trace is active, and constructing
+    these objects inside `jax.jit` worked before they became
+    engine-selectable, so the automatic choice degrades to the
+    matrix-free engine instead of raising.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel
+    from croissant.polarization import PolarizedSky
+
+    nside = 8
+    freqs = [10.0, 20.0, 30.0, 40.0]
+    data = jnp.asarray(
+        np.random.default_rng(2).normal(size=(4, 4, 12 * nside**2))
     )
+
+    @jax.jit
+    def analyse(maps):
+        return PolarizedSky(maps, freqs, sampling="healpix").compute_alm()
+
+    kernel.clear_kernel_cache()
+    got = np.asarray(analyse(data))
+    expected = np.asarray(
+        PolarizedSky(
+            data, freqs, sampling="healpix", engine="s2fft"
+        ).compute_alm()
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_polarized_explicit_kernel_inside_jit_raises():
+    """An explicit polarized engine choice is honoured strictly.
+
+    The mirror of `test_explicit_kernel_inside_jit_still_raises` for the
+    polarized classes: only the automatic path degrades.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel
+    from croissant.polarization import PolarizedSky
+
+    nside = 8
+    data = jnp.asarray(
+        np.random.default_rng(3).normal(size=(4, 4, 12 * nside**2))
+    )
+
+    @jax.jit
+    def analyse(maps):
+        return PolarizedSky(
+            maps,
+            [10.0, 20.0, 30.0, 40.0],
+            sampling="healpix",
+            engine="kernel",
+        ).compute_alm()
+
+    kernel.clear_kernel_cache()
+    with pytest.raises(RuntimeError, match="precompute_kernel"):
+        analyse(data)
 
 
 def test_auto_degrades_gracefully_inside_jit():

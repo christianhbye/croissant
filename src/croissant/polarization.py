@@ -119,6 +119,26 @@ def cosmo_to_iau(data, stokes_axis=-1):
     )
 
 
+#: The three distinct transform configurations a polarized field runs.
+#: The spin-0 block carries I and V together; the two spin-weighted
+#: blocks carry the Q/U duals. Resolved engines and the objects they
+#: precompute are stored as tuples in this order.
+_BLOCK_NAMES = ("IV", "P_MINUS", "P_PLUS")
+_BLOCK_SPINS = (0, *POLARIZATION_SPINS[2:])
+_IV, _P_MINUS, _P_PLUS = range(3)
+
+
+def _block_reality(spin, spin0_reality):
+    """Whether one block's transform is of a real field.
+
+    Only the spin-0 block can be real, and only for a sky: a pair
+    response is complex in every Stokes component. ``kernel_compute_alm``
+    applies the same rule, and a kernel must be built with the same
+    ``reality`` it is applied with, so the two must not drift apart.
+    """
+    return bool(spin0_reality) if spin == 0 else False
+
+
 def _analysis_alm(
     data,
     target_lmax,
@@ -129,8 +149,25 @@ def _analysis_alm(
     *,
     spin,
     reality,
+    engine,
+    kernel=None,
+    inverse_kernel=None,
+    dense_matrix=None,
 ):
+    """Analyse one polarized block with its own resolved engine.
+
+    The precomputed objects are built once per field by
+    :func:`_prepare_engines` and threaded in, because this function runs
+    inside the jitted ``compute_alm`` methods and the kernel and dense
+    engines both refuse to build while a trace is active.
+    """
     if sampling == "healpix" and target_lmax < native_lmax:
+        # Below the HEALPix L >= 2*nside - 1 floor no kernel can be
+        # built, so this branch stays on croissant.dense regardless of
+        # the engine resolved for the block: dense is the only engine
+        # that can serve a band-limit under the floor, by building at
+        # the floor and keeping the low-ell rows. Nothing threaded in
+        # applies here; croissant.dense caches its own operator.
         return dense.dense_compute_alm(
             data,
             target_lmax,
@@ -139,15 +176,6 @@ def _analysis_alm(
             spin=spin,
             niter=niter,
         )
-    # Pinned to the matrix-free engine rather than inheriting the
-    # ``"auto"`` default. The polarized path calls this from inside jitted
-    # code and never routes through SphBase.__init__, which is what
-    # eagerly builds and threads the kernel engine's Wigner-d kernels; the
-    # kernel engine deliberately raises inside a trace when they are
-    # absent. Auto would also be choosing on a per-transform basis here,
-    # with no object to hang a cached kernel on. Supporting selectable
-    # engines for polarized fields means threading precomputed kernels
-    # through PolarizedBeam/PolarizedSky, which is out of scope.
     result = sphere.compute_alm(
         data,
         native_lmax,
@@ -156,9 +184,203 @@ def _analysis_alm(
         niter=niter,
         spin=spin,
         reality=reality,
-        engine="s2fft",
+        engine=engine,
+        dense_matrix=dense_matrix,
+        kernel=kernel,
+        inverse_kernel=inverse_kernel,
     )
     return utils.reduce_lmax(result, target_lmax)
+
+
+def _prepare_engines(
+    data,
+    lmax,
+    sampling,
+    nside,
+    niter,
+    *,
+    spatial_shape,
+    batch_sizes,
+    spin0_reality,
+    requested,
+):
+    """
+    Resolve one engine per transform block and precompute what it needs.
+
+    A polarized field is not one transform but three, and they do not
+    share a footprint: the spin-0 kernel of a real sky is packed to
+    ``m >= 0`` and so is roughly half the size of a spin-weighted one,
+    and the blocks are batched over different numbers of maps. Resolving
+    once for the whole field would have to nominate one block as
+    representative and would then be wrong for the others, so each block
+    is resolved on its own terms. An explicit ``requested`` engine
+    passes through :func:`~croissant.engine_select.resolve_engine`
+    unchanged and therefore pins every block.
+
+    Parameters
+    ----------
+    data : array_like
+        The field data, consulted only to detect an active trace.
+    lmax : int
+        Native band-limit of the field; kernels are always built here,
+        since :func:`_analysis_alm` transforms at the native band-limit
+        and truncates afterwards.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+    niter : int
+        Number of iterative refinement steps; ``> 0`` additionally needs
+        a synthesis kernel per kernel-engine block.
+    spatial_shape : tuple of int
+        Shape of one map, excluding all batch axes.
+    batch_sizes : tuple
+        Number of maps each block transforms, in ``_BLOCK_NAMES`` order.
+        ``None`` marks a block the field never transforms, which is the
+        P+ block on the samplings where conjugation supplies it.
+    spin0_reality : bool
+        Whether the spin-0 block is a real field: True for a sky, False
+        for a complex pair response.
+    requested : str or None
+        Engine name from the caller, or ``"auto"``.
+
+    Returns
+    -------
+    tuple of tuple
+        ``(engines, reasons, kernels, inverse_kernels, dense_matrices)``,
+        each with one entry per block.
+
+    Raises
+    ------
+    RuntimeError
+        If an explicitly requested precomputing engine cannot build
+        because a trace is active.
+
+    """
+    from . import kernel as _kernel
+    from .engine_select import resolve_engine
+
+    tracing = isinstance(data, jax.core.Tracer)
+    explicit = requested is not None and requested != "auto"
+    engines, reasons = [], []
+    kernels, inverse_kernels, dense_matrices = [], [], []
+
+    for spin, batch in zip(_BLOCK_SPINS, batch_sizes):
+        if batch is None:
+            engines.append(None)
+            reasons.append("not transformed on this sampling")
+            kernels.append(None)
+            inverse_kernels.append(None)
+            dense_matrices.append(None)
+            continue
+
+        reality = _block_reality(spin, spin0_reality)
+        engine, reason = resolve_engine(
+            lmax,
+            sampling,
+            nside=nside,
+            spin=spin,
+            niter=niter,
+            reality=reality,
+            batch_size=batch,
+            requested=requested,
+        )
+
+        if engine == "kernel" and tracing:
+            if explicit:
+                raise RuntimeError(
+                    "The kernel must be precomputed before a kernel "
+                    "polarized field is constructed inside jax.jit. Call "
+                    "precompute_kernel(...) once outside jax.jit."
+                )
+            # Auto must never hand back an engine that then refuses to
+            # run. Constructing a polarized field inside a trace worked
+            # before these fields became engine-selectable, so degrade
+            # rather than break it; only cost changes, since the engines
+            # agree to ~1e-13. An explicit request is never softened.
+            engine = "s2fft"
+            reason = (
+                "kernels cannot be built inside a jax trace; "
+                "degraded from the automatic choice"
+            )
+
+        kernel = inverse_kernel = dense_matrix = None
+        if engine == "kernel":
+            kernel = _kernel.precompute_kernel(
+                lmax,
+                sampling,
+                nside=nside,
+                spin=spin,
+                reality=reality,
+                forward=True,
+            )
+            if niter > 0:
+                inverse_kernel = _kernel.precompute_kernel(
+                    lmax,
+                    sampling,
+                    nside=nside,
+                    spin=spin,
+                    reality=reality,
+                    forward=False,
+                )
+        elif engine == "dense" and spin == 0 and reality:
+            # The one block that takes sphere.py's packed-real dense
+            # route, which needs its matrix threaded in. Every other
+            # block is complex or spin-weighted, so sphere.compute_alm
+            # routes it to croissant.dense, which builds under
+            # jax.ensure_compile_time_eval and needs nothing from here.
+            dense_matrix = _prepare_dense_matrix(
+                spatial_shape, lmax, sampling, nside, niter, tracing
+            )
+
+        engines.append(engine)
+        reasons.append(reason)
+        kernels.append(kernel)
+        inverse_kernels.append(inverse_kernel)
+        dense_matrices.append(dense_matrix)
+
+    return (
+        tuple(engines),
+        tuple(reasons),
+        tuple(kernels),
+        tuple(inverse_kernels),
+        tuple(dense_matrices),
+    )
+
+
+def _prepare_dense_matrix(
+    spatial_shape, lmax, sampling, nside, niter, tracing
+):
+    """Fetch the packed-real dense operator, mirroring ``SphBase``."""
+    if not tracing:
+        return sphere.precompute_dense_matrix(
+            spatial_shape, lmax, sampling, nside=nside, niter=niter
+        )
+    key = sphere._dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
+    with sphere._DENSE_MATRIX_CACHE_LOCK:
+        matrix = sphere._DENSE_MATRIX_CACHE.get(key)
+    if matrix is None:
+        raise RuntimeError(
+            "The dense SHT matrix must be precomputed before a dense "
+            "polarized field is constructed inside jax.jit. Call "
+            "precompute_dense_matrix(...) once outside jax.jit."
+        )
+    return matrix
+
+
+def _block_kwargs(engines, kernels, inverse_kernels, dense_matrices):
+    """Per-block keyword arguments for :func:`_analysis_alm`."""
+    return tuple(
+        {
+            "engine": engine,
+            "kernel": kernel,
+            "inverse_kernel": inverse_kernel,
+            "dense_matrix": dense_matrix,
+        }
+        for engine, kernel, inverse_kernel, dense_matrix in zip(
+            engines, kernels, inverse_kernels, dense_matrices
+        )
+    )
 
 
 # Samplings whose forward transform is a plain quadrature (real weights
@@ -211,6 +433,7 @@ def _compute_sky_dual_alm(
     sampling,
     nside,
     niter,
+    blocks,
 ):
     """Transform IQUV sky maps to the harmonic contraction dual."""
     stokes_i = data[:, 0]
@@ -226,6 +449,7 @@ def _compute_sky_dual_alm(
         niter,
         spin=0,
         reality=True,
+        **blocks[_IV],
     )
     # The P_MINUS and P_PLUS slots, in POLARIZATION_COMPONENTS order.
     p_minus_spin, p_plus_spin = POLARIZATION_SPINS[2:]
@@ -238,6 +462,7 @@ def _compute_sky_dual_alm(
         niter,
         spin=p_minus_spin,
         reality=False,
+        **blocks[_P_MINUS],
     )
     if sampling in _CONJUGATE_EXACT_SAMPLINGS:
         # Real sky pixels make the P_PLUS input the exact conjugate of
@@ -256,6 +481,7 @@ def _compute_sky_dual_alm(
             niter,
             spin=p_plus_spin,
             reality=False,
+            **blocks[_P_PLUS],
         )
     return jnp.stack((spin0[:, 0], spin0[:, 1], p_minus, p_plus), axis=1)
 
@@ -267,6 +493,7 @@ def _compute_response_dual_alm(
     sampling,
     nside,
     niter,
+    blocks,
 ):
     """Transform complex pair-IQUV maps to their harmonic response dual."""
     response_i = data[:, :, 0]
@@ -282,6 +509,7 @@ def _compute_response_dual_alm(
         niter,
         spin=0,
         reality=False,
+        **blocks[_IV],
     )
     # Each polarized slot carries half the response combination at its
     # spin, which the conjugated einsum contracts with the same-spin
@@ -296,8 +524,11 @@ def _compute_response_dual_alm(
             niter,
             spin=spin,
             reality=False,
+            **block,
         )
-        for spin in POLARIZATION_SPINS[2:]
+        for spin, block in zip(
+            POLARIZATION_SPINS[2:], blocks[_P_MINUS : _P_PLUS + 1]
+        )
     ]
     return jnp.stack(
         (spin0[:, :, 0], spin0[:, :, 1], *polarized),
@@ -320,9 +551,29 @@ class PolarizedSky(eqx.Module):
     lmax: int = eqx.field(static=True)
     _L: int = eqx.field(static=True)
     _niter: int = eqx.field(static=True)
+    _engines: tuple = eqx.field(static=True)
+    _engine_reasons: tuple = eqx.field(static=True)
+    _kernels: tuple
+    _inverse_kernels: tuple
+    _dense_matrices: tuple
     nside: int | None = eqx.field(static=True)
     theta: jax.Array
     phi: jax.Array
+
+    @property
+    def engine(self):
+        """Resolved transform engine for each block, by block name.
+
+        A polarized field resolves an engine per transform block rather
+        than one for the whole object, so this is a mapping where the
+        scalar fields' ``engine`` is a single string.
+        """
+        return dict(zip(_BLOCK_NAMES, self._engines))
+
+    @property
+    def engine_reason(self):
+        """Why each block's engine was chosen (see engine_select)."""
+        return dict(zip(_BLOCK_NAMES, self._engine_reasons))
 
     def __init__(
         self,
@@ -336,6 +587,7 @@ class PolarizedSky(eqx.Module):
         frame=None,
         tangent_basis="theta-phi",
         niter=0,
+        engine="auto",
     ):
         convention = _normalize_convention(convention)
         self.stokes = _validate_stokes(stokes)
@@ -369,6 +621,30 @@ class PolarizedSky(eqx.Module):
         self.frame = str(frame if frame is not None else coord)
         self.tangent_basis = str(tangent_basis)
         self._L = self.lmax + 1
+        nfreq = int(self.data.shape[0])
+        (
+            self._engines,
+            self._engine_reasons,
+            self._kernels,
+            self._inverse_kernels,
+            self._dense_matrices,
+        ) = _prepare_engines(
+            self.data,
+            self.lmax,
+            self.sampling,
+            self.nside,
+            self._niter,
+            spatial_shape=tuple(self.data.shape[2:]),
+            batch_sizes=(
+                2 * nfreq,  # I and V transform together
+                nfreq,
+                # Conjugation supplies P+ from P- on these samplings, so
+                # no transform and no kernel for that block.
+                None if sampling in _CONJUGATE_EXACT_SAMPLINGS else nfreq,
+            ),
+            spin0_reality=True,
+            requested=engine,
+        )
 
     @partial(jax.jit, static_argnames=("lmax",))
     def compute_alm(self, lmax=None):
@@ -385,6 +661,12 @@ class PolarizedSky(eqx.Module):
             self.sampling,
             self.nside,
             self._niter,
+            _block_kwargs(
+                self._engines,
+                self._kernels,
+                self._inverse_kernels,
+                self._dense_matrices,
+            ),
         )
 
     def compute_alm_eq(self, world="moon", et=None):
@@ -439,9 +721,24 @@ class PairStokesBeam(eqx.Module):
     lmax: int = eqx.field(static=True)
     _L: int = eqx.field(static=True)
     _niter: int = eqx.field(static=True)
+    _engines: tuple = eqx.field(static=True)
+    _engine_reasons: tuple = eqx.field(static=True)
+    _kernels: tuple
+    _inverse_kernels: tuple
+    _dense_matrices: tuple
     nside: int | None = eqx.field(static=True)
     theta: jax.Array
     phi: jax.Array
+
+    @property
+    def engine(self):
+        """Resolved transform engine for each block, by block name."""
+        return dict(zip(_BLOCK_NAMES, self._engines))
+
+    @property
+    def engine_reason(self):
+        """Why each block's engine was chosen (see engine_select)."""
+        return dict(zip(_BLOCK_NAMES, self._engine_reasons))
 
     def __init__(
         self,
@@ -459,6 +756,7 @@ class PairStokesBeam(eqx.Module):
         horizon=None,
         beam_rot=0.0,
         niter=0,
+        engine="auto",
     ):
         convention = _normalize_convention(convention)
         self.stokes = _validate_stokes(stokes)
@@ -500,6 +798,27 @@ class PairStokesBeam(eqx.Module):
             if sampling != "healpix":
                 horizon = horizon[:, None]
         self.horizon = jnp.asarray(horizon)
+        nmap = int(self.data.shape[0]) * int(self.data.shape[1])
+        (
+            self._engines,
+            self._engine_reasons,
+            self._kernels,
+            self._inverse_kernels,
+            self._dense_matrices,
+        ) = _prepare_engines(
+            self.data,
+            self.lmax,
+            self.sampling,
+            self.nside,
+            self._niter,
+            spatial_shape=tuple(self.data.shape[3:]),
+            # A complex response has no real-pixel conjugation identity
+            # to exploit, so both spin-weighted blocks are transformed
+            # on every sampling.
+            batch_sizes=(2 * nmap, nmap, nmap),
+            spin0_reality=False,
+            requested=engine,
+        )
 
     @partial(jax.jit, static_argnames=("lmax",))
     def compute_alm(self, lmax=None):
@@ -517,6 +836,12 @@ class PairStokesBeam(eqx.Module):
             self.sampling,
             self.nside,
             self._niter,
+            _block_kwargs(
+                self._engines,
+                self._kernels,
+                self._inverse_kernels,
+                self._dense_matrices,
+            ),
         )
         emms = jnp.arange(-target_lmax, target_lmax + 1)
         phase = jnp.exp(1j * emms * jnp.radians(self.beam_rot))

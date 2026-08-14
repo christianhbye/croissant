@@ -196,6 +196,30 @@ choice of `"kernel"` degrades to `"s2fft"` and the `engine_reason` says so,
 while an explicit `engine="kernel"` still raises. This holds for `Beam`,
 `Sky`, `PolarizedSky` and `PairStokesBeam` alike.
 
+### Engines for polarized fields
+
+`PolarizedSky` and `PairStokesBeam` take the same `engine=` argument, but a
+polarized field is not one transform — it is three, and they do not share a
+footprint. So an engine is resolved per *block*: the spin-0 block carrying
+I and V, and the two spin-∓2 blocks carrying the Q/U duals. A real sky's
+spin-0 kernel packs to `m >= 0` and is roughly half the size of a
+spin-weighted one, and the blocks are batched over different numbers of
+maps, so one verdict for the whole object would be wrong for some of it.
+`engine` and `engine_reason` are therefore mappings rather than strings:
+
+```python
+sky = PolarizedSky(data, freqs, sampling="healpix")
+print(sky.engine)  # {"IV": "kernel", "P_MINUS": "kernel", "P_PLUS": None}
+```
+
+`P_PLUS` reports `None` on HEALPix, DH and GL, where a real sky's P+ dual
+follows from P- by conjugation and is never transformed at all. An explicit
+`engine=` pins every block.
+
+One behaviour differs from `Beam` and `Sky`: `compute_alm(lmax=...)` below
+the HEALPix floor stays on the dense engine whatever the block resolved to,
+because no kernel exists at that band-limit.
+
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:
 

@@ -457,3 +457,128 @@ def test_polarized_convolution_gradients_cover_sky_and_complex_beam():
     for gradient in gradients:
         assert gradient.shape in {sky_data.shape, beam_real.shape}
         assert jnp.all(jnp.isfinite(gradient))
+
+
+def test_low_band_limit_healpix_bypasses_the_block_engine():
+    """A band-limit under the HEALPix floor stays on croissant.dense.
+
+    No kernel exists below ``L >= 2 * nside - 1``, so this branch cannot
+    honour a block's resolved engine and must not try. Requesting
+    "kernel" explicitly is the sharp case: the block resolves to kernel,
+    and the low-lmax call has to route around it rather than raise.
+    """
+    nside = 8
+    npix = 12 * nside**2
+    rng = np.random.default_rng(77)
+    data = rng.standard_normal((2, 4, npix))
+
+    kernel_sky = PolarizedSky(
+        data, [10.0, 20.0], sampling="healpix", engine="kernel"
+    )
+    assert kernel_sky.engine["P_MINUS"] == "kernel"
+
+    reference = PolarizedSky(
+        data, [10.0, 20.0], sampling="healpix", engine="s2fft"
+    ).compute_alm(lmax=2)
+    got = kernel_sky.compute_alm(lmax=2)
+
+    assert got.shape == (2, 4, 3, 5)
+    scale = np.abs(np.asarray(reference)).max()
+    np.testing.assert_allclose(
+        np.asarray(got), np.asarray(reference), rtol=0, atol=1e-10 * scale
+    )
+
+
+def test_conjugation_samplings_build_no_plus_kernel():
+    """The block conjugation supplies must not precompute anything.
+
+    On HEALPix the P+ dual comes from P- by conjugation, so building a
+    spin +2 kernel for it would be pure waste -- the largest single
+    kernel a polarized sky would hold.
+    """
+    nside = 8
+    rng = np.random.default_rng(78)
+    data = rng.standard_normal((4, 4, 12 * nside**2))
+    healpix_sky = PolarizedSky(
+        data, [10.0, 20.0, 30.0, 40.0], sampling="healpix"
+    )
+    assert healpix_sky.engine["P_PLUS"] is None
+    assert healpix_sky._kernels[2] is None
+
+    lmax = 8
+    shape = _mwss_shape(lmax)
+    mwss_sky = PolarizedSky(
+        rng.standard_normal((4, 4) + shape),
+        [10.0, 20.0, 30.0, 40.0],
+        sampling="mwss",
+    )
+    assert mwss_sky.engine["P_PLUS"] == "kernel"
+    assert mwss_sky._kernels[2] is not None
+
+
+def test_pair_response_spin0_block_is_complex():
+    """The response's spin-0 block must not reuse the sky's kernel.
+
+    Both are spin 0 at the same band-limit, but a sky's I/V block is
+    real and packs to ``m >= 0`` while a response's is complex. Applying
+    a packed kernel to complex data raises inside s2fft's einsum, so the
+    two must resolve and build separately.
+    """
+    nside = 8
+    npix = 12 * nside**2
+    rng = np.random.default_rng(79)
+    freqs = [10.0, 20.0, 30.0, 40.0]
+    beam = PairStokesBeam(
+        rng.standard_normal((1, 4, 4, npix))
+        + 1j * rng.standard_normal((1, 4, 4, npix)),
+        freqs,
+        [(0, 0)],
+        sampling="healpix",
+    )
+    sky = PolarizedSky(
+        rng.standard_normal((4, 4, npix)), freqs, sampling="healpix"
+    )
+    assert beam.engine["IV"] == sky.engine["IV"] == "kernel"
+    assert beam._kernels[0].shape != sky._kernels[0].shape
+
+
+def test_dense_polarized_inside_jit_needs_a_warmed_cache():
+    """The packed-real block cannot build its operator inside a trace.
+
+    Only the sky's real spin-0 block takes sphere.py's packed-real dense
+    route and so needs its matrix threaded in; the spin-weighted blocks
+    reach croissant.dense, which builds under
+    ``jax.ensure_compile_time_eval`` and is unaffected. So an explicit
+    "dense" field constructed inside jax.jit must raise unless that one
+    matrix was precomputed first, exactly as SphBase requires.
+    """
+    from croissant import sphere
+
+    nside = 8
+    npix = 12 * nside**2
+    rng = np.random.default_rng(80)
+    freqs = [10.0, 20.0]
+    data = jnp.asarray(rng.standard_normal((2, 4, npix)))
+
+    @jax.jit
+    def analyse(maps):
+        return PolarizedSky(
+            maps, freqs, sampling="healpix", engine="dense"
+        ).compute_alm()
+
+    sphere.clear_dense_matrix_cache()
+    with pytest.raises(RuntimeError, match="precompute_dense_matrix"):
+        analyse(data)
+
+    lmax = PolarizedSky(data, freqs, sampling="healpix").lmax
+    sphere.precompute_dense_matrix(
+        (npix,), lmax, "healpix", nside=nside, niter=0
+    )
+    got = analyse(data)
+    expected = PolarizedSky(
+        data, freqs, sampling="healpix", engine="dense"
+    ).compute_alm()
+    scale = np.abs(np.asarray(expected)).max()
+    np.testing.assert_allclose(
+        np.asarray(got), np.asarray(expected), rtol=0, atol=1e-10 * scale
+    )
