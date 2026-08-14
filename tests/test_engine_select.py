@@ -293,3 +293,46 @@ def test_auto_is_the_default_engine():
     np.testing.assert_allclose(
         np.asarray(auto), np.asarray(explicit), rtol=0, atol=0
     )
+
+
+def test_reason_strings_are_readable_for_tiny_and_singular_cases():
+    """A reason must never read as "0.0 MiB" or "1 transforms".
+
+    Sub-0.05 MiB kernels round to zero under plain MiB formatting, which
+    reads as though the precompute were free, and a batch of one produced
+    a plural. Both are user-facing strings shown by `engine_reason`.
+    """
+    _, reason = engine_select.resolve_engine(
+        lmax=3, sampling="healpix", nside=2, batch_size=1
+    )
+    assert "0.0 MiB" not in reason, reason
+    assert "1 transforms" not in reason, reason
+    assert "1 transform" in reason, reason
+
+
+def test_kernel_and_dense_size_predictors_share_a_reality_default():
+    """The two footprint predictors must agree on their default.
+
+    `reality=True` is the common case (real scalar fields), and
+    `kernel_nbytes` applies the engine's own `reality and spin == 0` rule
+    internally, so a True default is correct for scalar AND for spin,
+    where it is forced back to False. A False default silently
+    over-predicts the scalar kernel by 2x, which is how three separate
+    call sites came to compare a packed dense operator against a
+    full-size kernel.
+    """
+    import inspect
+
+    from croissant import footprints
+
+    k = inspect.signature(footprints.kernel_nbytes).parameters["reality"]
+    d = inspect.signature(footprints.dense_nbytes).parameters["reality"]
+    assert k.default == d.default is True
+
+    # And the defaulted call must match what the scalar engine builds.
+    from croissant import kernel
+
+    built = kernel.precompute_kernel(
+        15, "healpix", nside=8, spin=0, reality=True
+    )
+    assert footprints.kernel_nbytes(15, "healpix", nside=8) == built.nbytes

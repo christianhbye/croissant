@@ -40,6 +40,23 @@ _MIB_PER_BATCHED_TRANSFORM = 1.0
 ENGINES = ("s2fft", "kernel", "dense")
 
 
+def _mib(nbytes):
+    """Format a byte count for a human-readable reason string.
+
+    Plain ``.1f`` MiB rounds anything under 0.05 MiB to "0.0 MiB", which
+    reads as though the precompute were free. Fall back to KiB below that.
+    """
+    mib = nbytes / 1024**2
+    if mib < 0.05:
+        return f"{nbytes / 1024:.0f} KiB"
+    return f"{mib:.1f} MiB"
+
+
+def _transforms(count):
+    """Pluralise a transform count for a reason string."""
+    return f"{count} transform" + ("" if count == 1 else "s")
+
+
 def _amortisation_threshold(kernel_bytes):
     """
     Smallest batch size that can pay for a kernel of this size.
@@ -150,7 +167,7 @@ def resolve_engine(
             "s2fft",
             f"lmax={lmax} is below the HEALPix floor for nside={nside} "
             "and the dense operator needs "
-            f"{dense_bytes / 1024**2:.1f} MiB",
+            f"{_mib(dense_bytes)}",
         )
 
     threshold = _amortisation_threshold(kernel_bytes)
@@ -158,7 +175,7 @@ def resolve_engine(
         return (
             "s2fft",
             f"batch of {batch_size} cannot amortise a "
-            f"{kernel_bytes / 1024**2:.1f} MiB kernel "
+            f"{_mib(kernel_bytes)} kernel "
             f"(needs {threshold})",
         )
 
@@ -186,10 +203,10 @@ def resolve_engine(
     if kernel_fits:
         return (
             "kernel",
-            f"{needed_kernel_bytes / 1024**2:.1f} MiB kernel amortises "
-            f"over {batch_size} transforms"
+            f"{_mib(needed_kernel_bytes)} kernel amortises "
+            f"over {_transforms(batch_size)}"
             + (
-                f"; dense would need {dense_bytes / 1024**2:.1f} MiB"
+                f"; dense would need {_mib(dense_bytes)}"
                 if not dense_fits
                 else ""
             ),
@@ -197,7 +214,7 @@ def resolve_engine(
 
     return (
         "s2fft",
-        f"no precomputed engine fits under {cap / 1024**2:.1f} MiB "
-        f"(kernel {needed_kernel_bytes / 1024**2:.1f} MiB, dense "
-        f"{dense_bytes / 1024**2:.1f} MiB)",
+        f"no precomputed engine fits under {_mib(cap)} "
+        f"(kernel {_mib(needed_kernel_bytes)}, dense "
+        f"{_mib(dense_bytes)})",
     )

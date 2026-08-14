@@ -130,7 +130,7 @@ def _npix(lmax, sampling, nside=None):
     ) * s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling=sampling)
 
 
-def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=False):
+def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
     """
     Predict a Wigner-d kernel's memory footprint.
 
@@ -165,7 +165,11 @@ def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=False):
         Spin weight of the field.
     reality : bool
         Whether the kernel is built for a real field. Real kernels store
-        only ``m >= 0``, halving the last axis. Ignored (treated as
+        only ``m >= 0``, halving the last axis. Defaults to True to match
+        :func:`dense_nbytes` and the common scalar case; it is forced
+        False internally for nonzero spin, mirroring what
+        :func:`croissant.kernel.kernel_compute_alm` does, so the default
+        is correct for scalar and spin fields alike. Ignored (treated as
         ``False``) whenever ``spin != 0``; see above.
 
     Returns
