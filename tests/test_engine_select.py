@@ -8,6 +8,8 @@ memory cap, and degrades to the matrix-free engine when precomputing
 cannot pay for itself.
 """
 
+import math
+
 import pytest
 
 from croissant import engine_select, footprints
@@ -117,6 +119,28 @@ def test_the_matrix_free_engine_cannot_serve_a_sub_floor_band_limit():
     )
     with pytest.raises(ValueError):
         sphere.compute_alm(data, 10, "healpix", nside=nside, engine="s2fft")
+
+
+def test_amortisation_threshold_counts_the_inverse_kernel():
+    """At niter > 0 both kernels are resident, so both must be paid for.
+
+    ``kernel_fits`` already tests the doubled footprint. The threshold
+    read the undoubled one a line later, so a batch large enough to
+    amortise a single kernel was accepted for a configuration that
+    builds two.
+    """
+    nside, lmax = 32, 63
+    single = footprints.kernel_nbytes(lmax, "healpix", nside=nside)
+    # Big enough to pay for one kernel, too small to pay for both.
+    batch = math.ceil(single / 1024**2) + 1
+    engine, reason = engine_select.resolve_engine(
+        lmax=lmax,
+        sampling="healpix",
+        nside=nside,
+        niter=3,
+        batch_size=batch,
+    )
+    assert engine == "s2fft", reason
 
 
 def test_nothing_exceeds_the_memory_cap():

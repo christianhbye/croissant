@@ -78,7 +78,11 @@ def main():
 
             kernel_mib = (
                 kernel.kernel_nbytes(
-                    lmax, "healpix", nside=nside, reality=reality
+                    lmax,
+                    "healpix",
+                    nside=nside,
+                    spin=spin,
+                    reality=reality,
                 )
                 / 2**20
             )

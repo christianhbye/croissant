@@ -139,6 +139,40 @@ def _block_reality(spin, spin0_reality):
     return bool(spin0_reality) if spin == 0 else False
 
 
+def _low_pass_in_one_step(target_lmax, nside, *, spin):
+    """
+    Whether a block should low-pass with the dense operator instead.
+
+    Analysing at the native band-limit and truncating afterwards is
+    always valid, so this is an optimisation, not a requirement: dense
+    is worth it only when the target sits below the HEALPix floor, where
+    it can build at the floor and keep just the requested low-ell rows.
+
+    Two conditions the earlier form of this check got wrong, both of
+    which sent large configurations down the dense path:
+
+    1. The comparison is against the FLOOR (``2 * nside - 1``), not the
+       native band-limit (``2 * nside``). A target sitting exactly on the
+       floor is served perfectly well by the kernel engine, and routing
+       it to dense built an ``O(nside**4)`` operator instead -- roughly
+       12.9 GiB per spin block at nside=64, from a call that had resolved
+       to a 127 MiB kernel.
+    2. Even below the floor the dense operator can be far too large,
+       since its row count grows with the target. The memory cap that
+       governs every other engine choice applies here too; over it, fall
+       back to the native transform, which always works.
+    """
+    from .engine_select import DEFAULT_MEMORY_CAP_BYTES
+    from .footprints import dense_nbytes, transform_lmax
+
+    if transform_lmax(target_lmax, "healpix", nside=nside) == int(target_lmax):
+        return False
+    footprint = dense_nbytes(
+        target_lmax, "healpix", nside=nside, spin=spin, reality=False
+    )
+    return footprint <= DEFAULT_MEMORY_CAP_BYTES
+
+
 def _analysis_alm(
     data,
     target_lmax,
@@ -161,12 +195,12 @@ def _analysis_alm(
     inside the jitted ``compute_alm`` methods and the kernel and dense
     engines both refuse to build while a trace is active.
     """
-    if sampling == "healpix" and target_lmax < native_lmax:
-        # Below the HEALPix L >= 2*nside - 1 floor no kernel can be
-        # built, so this branch stays on croissant.dense regardless of
-        # the engine resolved for the block: dense is the only engine
-        # that can serve a band-limit under the floor, by building at
-        # the floor and keeping the low-ell rows. Nothing threaded in
+    if sampling == "healpix" and _low_pass_in_one_step(
+        target_lmax, nside, spin=spin
+    ):
+        # Dense builds at the HEALPix floor and keeps only the requested
+        # low-ell rows, which is cheaper than a full native transform
+        # when the target is far below the floor. Nothing threaded in
         # applies here; croissant.dense caches its own operator.
         return dense.dense_compute_alm(
             data,

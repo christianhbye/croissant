@@ -41,6 +41,22 @@ DEFAULT_MEMORY_CAP_BYTES = 512 * 1024**2
 #: 1 to serve nside=16 and 8 to serve nside=32. Only three resolutions
 #: were fitted, so treat the 1:1 coefficient as order-of-magnitude, and
 #: re-measure with benchmarks/benchmark_engines.py before changing it.
+#:
+#: KNOWN MISCALIBRATED AT niter > 0, and this coefficient is why. All
+#: three crossovers above were measured at niter=0. The threshold below
+#: correctly counts both resident kernels at niter > 0, so the batch it
+#: asks for doubles -- but the kernel engine gets CHEAPER per transform
+#: there, not dearer: s2fft pays 2*niter+1 full Wigner-d recursions where
+#: the kernel pays cheap contractions. The true crossover falls while the
+#: predicted one rises. Measured counterexample at nside=32/lmax=63/
+#: niter=3: the kernel wins at a batch of 4 (7.25s vs 9.74s
+#: setup-plus-first) while this policy asks for 16, and batches of 8-15
+#: select s2fft where the undoubled threshold selected kernel. Correct
+#: but sometimes slower, never wrong -- the engines agree to ~1e-13. The
+#: same under-fitting shows at nside >= 64, where a 64.7 MiB kernel asks
+#: for 65 transforms and is effectively unreachable. Fixing it needs a
+#: batch sweep at niter > 0 and at nside >= 64; do not hand-tune the
+#: constant without one.
 _MIB_PER_BATCHED_TRANSFORM = 1.0
 
 ENGINES = ("s2fft", "kernel", "dense")
@@ -63,14 +79,15 @@ def _transforms(count):
     return f"{count} transform" + ("" if count == 1 else "s")
 
 
-def _amortisation_threshold(kernel_bytes):
+def _amortisation_threshold(resident_bytes):
     """
-    Smallest batch size that can pay for a kernel of this size.
+    Smallest batch size that can pay for a kernel footprint this size.
 
     Parameters
     ----------
-    kernel_bytes : int
-        Predicted size of the kernel that would be built.
+    resident_bytes : int
+        Total predicted size of the kernels that would be held at once,
+        which is both of them when ``niter > 0``.
 
     Returns
     -------
@@ -78,7 +95,7 @@ def _amortisation_threshold(kernel_bytes):
         Minimum batch size, never below 1.
 
     """
-    mib = kernel_bytes / 1024**2
+    mib = resident_bytes / 1024**2
     return max(1, math.ceil(mib / _MIB_PER_BATCHED_TRANSFORM))
 
 
@@ -276,12 +293,16 @@ def resolve_engine(
             reason += f"; its {_mib(dense_bytes)} exceeds the {_mib(cap)} cap"
         return "dense", reason
 
-    threshold = _amortisation_threshold(kernel_bytes)
+    # Sized from the resident footprint, not the forward kernel alone:
+    # at niter > 0 both kernels are held at once, which is the same
+    # quantity `kernel_fits` tests two lines up. Reading it two different
+    # ways would size the batch for half the memory actually spent.
+    threshold = _amortisation_threshold(needed_kernel_bytes)
     if batch_size < threshold:
         return (
             "s2fft",
             f"batch of {batch_size} cannot amortise a "
-            f"{_mib(kernel_bytes)} kernel "
+            f"{_mib(needed_kernel_bytes)} kernel "
             f"(needs {threshold})",
         )
 

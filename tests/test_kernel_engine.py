@@ -114,6 +114,11 @@ def test_kernel_cache_key_tracks_the_x64_flag():
     import jax
 
     kernel.clear_kernel_cache()
+    # Captured, not assumed: restoring a hardcoded True would silently
+    # turn x64 ON for every later test whenever this file runs without
+    # conftest.py's global enable, changing the dtype of every matrix
+    # and kernel built for the rest of the session.
+    was_enabled = jax.config.x64_enabled
     try:
         jax.config.update("jax_enable_x64", False)
         low = kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, spin=0)
@@ -124,7 +129,7 @@ def test_kernel_cache_key_tracks_the_x64_flag():
         assert high.dtype == np.complex128
         assert high is not low
     finally:
-        jax.config.update("jax_enable_x64", True)
+        jax.config.update("jax_enable_x64", was_enabled)
         kernel.clear_kernel_cache()
 
 
@@ -167,8 +172,10 @@ def test_kernel_matches_on_the_fly_transform(spin):
             iter=0,
         )
     )
+    # Applied below with reality=False, so built with it too: the two
+    # must agree or s2fft's einsum sees the wrong m axis.
     k = kernel.precompute_kernel(
-        LMAX, "healpix", nside=NSIDE, spin=spin, forward=True
+        LMAX, "healpix", nside=NSIDE, spin=spin, reality=False, forward=True
     )
     got = np.asarray(
         s2fft.precompute_transforms.spherical.forward(
@@ -519,3 +526,118 @@ def test_compute_alm_inside_jit_without_precompute_raises():
 
     with pytest.raises(RuntimeError, match="precompute_kernel"):
         call(data)
+
+
+def test_precompute_kernel_default_matches_the_apply_default():
+    """The documented jit warm-up recipe must actually apply.
+
+    ``kernel_compute_alm``, ``sphere.compute_alm`` and
+    ``footprints.kernel_nbytes`` all default to ``reality=True``. A
+    builder defaulting to False returns a kernel whose last axis is
+    ``2L - 1`` where the apply path slices ``ftm`` to ``m >= 0`` and
+    expects ``L``, so the README's own recipe raised a shape error --
+    and the kernel engine has no pre-warmed-cache escape hatch, so this
+    is the only supported path.
+    """
+    import jax
+
+    from croissant import sphere
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(21)
+    data = rng.normal(size=(4, 12 * NSIDE**2))
+    built = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, forward=True
+    )
+
+    @jax.jit
+    def analyse(m):
+        return sphere.compute_alm(
+            m,
+            LMAX,
+            "healpix",
+            nside=NSIDE,
+            engine="kernel",
+            kernel=built,
+        )
+
+    got = np.asarray(analyse(data))
+    expected = np.asarray(
+        sphere.compute_alm(data, LMAX, "healpix", nside=NSIDE, engine="s2fft")
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_precompute_kernel_forces_reality_false_for_spin():
+    """The builder applies the same rule the predictor and apply do.
+
+    ``kernel_nbytes`` and ``kernel_compute_alm`` both force
+    ``reality = reality and spin == 0`` because s2fft's real precompute
+    path is only valid at spin 0. Leaving the builder out of that
+    agreement is what lets a caller key, build and then fail to apply.
+    """
+    kernel.clear_kernel_cache()
+    forced = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, spin=2, reality=True
+    )
+    explicit = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, spin=2, reality=False
+    )
+    assert forced is explicit
+    assert forced.shape[-1] == 2 * (LMAX + 1) - 1
+
+
+def test_sub_floor_band_limits_share_one_cached_kernel():
+    """Two sub-floor band-limits build one kernel, so they must key alike.
+
+    Both are built at ``transform_lmax(...) + 1``, so keying on the
+    requested lmax stores byte-identical duplicates in a cache whose
+    whole purpose is to hold a working set.
+    """
+    kernel.clear_kernel_cache()
+    low = kernel.precompute_kernel(10, "healpix", nside=NSIDE)
+    lower = kernel.precompute_kernel(14, "healpix", nside=NSIDE)
+    assert low is lower
+    assert len(kernel._KERNEL_CACHE) == 1
+
+
+def test_rebuilding_a_polarized_pair_reuses_every_cached_kernel(monkeypatch):
+    """One polarized simulation's working set must survive in the cache.
+
+    A ``PairStokesBeam`` and a ``PolarizedSky`` at ``niter > 0`` need
+    more kernels between them than the cache used to hold, so each
+    construction evicted the other's. Results stayed correct -- live
+    objects hold their own references -- but a parameter sweep or an MCMC
+    step that rebuilds fields paid the full build cost every iteration,
+    silently losing the reuse the cache exists to provide.
+    """
+    import s2fft.precompute_transforms.construct as construct
+
+    from croissant.polarization import PairStokesBeam, PolarizedSky
+
+    nside = 4
+    npix = 12 * nside**2
+    rng = np.random.default_rng(22)
+    freqs = [10.0, 20.0]
+    sky_data = rng.normal(size=(2, 4, npix))
+    beam_data = rng.normal(size=(1, 2, 4, npix))
+
+    def build_pair():
+        PairStokesBeam(beam_data, freqs, [(0, 0)], sampling="healpix", niter=3)
+        PolarizedSky(sky_data, freqs, sampling="healpix", niter=3)
+
+    kernel.clear_kernel_cache()
+    build_pair()
+
+    calls = []
+    real_builder = construct.spin_spherical_kernel
+
+    def counting_builder(**kwargs):
+        calls.append(kwargs)
+        return real_builder(**kwargs)
+
+    monkeypatch.setattr(construct, "spin_spherical_kernel", counting_builder)
+    build_pair()
+    assert calls == []

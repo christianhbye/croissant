@@ -44,18 +44,25 @@ __all__ = [
     "transform_lmax",
 ]
 
-#: Cache size is a kernel COUNT, not a byte budget: eight cached kernels
-#: at, say, nside=128 would retain roughly 8 * 511 MiB while
-#: engine_select.py's "auto" policy advertises a single 512 MiB cap for
-#: one choice. That cap governs only which engine a single call to
-#: resolve_engine picks, not how much this module retains across many
-#: calls, so the two numbers are not in tension by design -- but they
-#: can add up. Deliberately not made byte-based: doing so would need to
-#: rank cached kernels by reuse likelihood, not merely size, to decide
-#: what to evict. If total retention becomes a problem, call
-#: clear_kernel_cache() to release everything; that is the release
-#: valve this module offers instead of an eviction policy.
-_KERNEL_CACHE_MAXSIZE = 8
+#: Cache size is a kernel COUNT, not a byte budget: cached kernels at,
+#: say, nside=128 retain roughly 511 MiB each while engine_select.py's
+#: "auto" policy advertises a single 512 MiB cap for one choice. That cap
+#: governs only which engine a single call to resolve_engine picks, not
+#: how much this module retains across many calls, so the two numbers are
+#: not in tension by design -- but they can add up. Deliberately not made
+#: byte-based: doing so would need to rank cached kernels by reuse
+#: likelihood, not merely size, to decide what to evict. If total
+#: retention becomes a problem, call clear_kernel_cache() to release
+#: everything; that is the release valve this module offers instead of an
+#: eviction policy.
+#:
+#: The FLOOR on this number is one polarized simulation's working set. A
+#: PairStokesBeam and a PolarizedSky at niter > 0 need a forward and an
+#: inverse kernel per transformed block, and a cache smaller than their
+#: sum makes the two objects evict each other on every construction: a
+#: parameter sweep or an MCMC step that rebuilds fields then pays the
+#: full build cost every iteration while appearing to share a cache.
+_KERNEL_CACHE_MAXSIZE = 32
 _KERNEL_CACHE = OrderedDict()
 _KERNEL_CACHE_LOCK = Lock()
 
@@ -80,7 +87,7 @@ def _kernel_dtype(sampling):
 
 
 def precompute_kernel(
-    lmax, sampling, nside=None, spin=0, reality=False, forward=True
+    lmax, sampling, nside=None, spin=0, reality=True, forward=True
 ):
     """
     Build and cache the Wigner-d kernel for one transform configuration.
@@ -112,7 +119,14 @@ def precompute_kernel(
         Building with one value and applying with the other raises
         ``ValueError: Size of label 'm' ... does not match previous
         terms``, so it is part of the cache key and callers must pass the
-        same value here and at apply time.
+        same value here and at apply time. Defaults to True to match
+        :func:`kernel_compute_alm`, :func:`croissant.sphere.compute_alm`
+        and :func:`croissant.footprints.kernel_nbytes`: this function is
+        the documented way to warm a kernel for a jitted call, and a
+        default that disagreed with the apply path made the documented
+        recipe raise. Forced to False for nonzero spin, the same
+        ``reality and spin == 0`` rule the other three apply, because
+        s2fft's real precompute path is only valid at spin 0.
     forward : bool
         Build the analysis kernel if True, the synthesis kernel if
         False. The synthesis kernel is only needed for iterative
@@ -126,12 +140,20 @@ def precompute_kernel(
         ``transform_lmax(...) + 1``.
 
     """
+    # Forced here rather than left to callers, so the key, the built
+    # shape and the value the apply path passes cannot disagree.
+    reality = bool(reality) and spin == 0
+    # Keyed on the band-limit the kernel is BUILT at, not the one
+    # requested: every sub-floor lmax at one nside builds the identical
+    # kernel, so keying on the request would fill a cache whose whole
+    # purpose is to hold a working set with byte-identical duplicates.
+    build_lmax = transform_lmax(lmax, sampling, nside=nside)
     key = (
-        int(lmax),
+        int(build_lmax),
         str(sampling),
         None if nside is None else int(nside),
         int(spin),
-        bool(reality),
+        reality,
         bool(forward),
         np.dtype(_kernel_dtype(sampling)).str,
         jax.default_backend(),
@@ -143,9 +165,9 @@ def precompute_kernel(
 
     # NOTE: the numpy builder, deliberately. See the module docstring.
     built = s2fft.precompute_transforms.construct.spin_spherical_kernel(
-        L=transform_lmax(lmax, sampling, nside=nside) + 1,
+        L=build_lmax + 1,
         spin=int(spin),
-        reality=bool(reality),
+        reality=reality,
         sampling=sampling,
         nside=nside,
         forward=bool(forward),

@@ -167,7 +167,10 @@ Croissant's in-process matrix references.
 `engine="kernel"` needs the same care, with its own functions:
 `croissant.precompute_kernel(..., forward=True)` for the analysis kernel,
 plus `forward=False` for the synthesis kernel if `niter > 0`, passed to the
-jitted call as `kernel=...` and `inverse_kernel=...`. Called from inside
+jitted call as `kernel=...` and `inverse_kernel=...`. Its `reality`
+defaults to `True` to match the apply path, and is forced to `False` for
+spin-weighted fields, so the same call is correct for scalar and spin
+blocks alike. Called from inside
 `jax.jit` without a precomputed kernel, `compute_alm(..., engine="kernel")`
 raises `RuntimeError` rather than silently building — and unlike dense,
 there is no pre-warmed-cache escape hatch here: the kernel engine's check

@@ -582,3 +582,34 @@ def test_dense_polarized_inside_jit_needs_a_warmed_cache():
     np.testing.assert_allclose(
         np.asarray(got), np.asarray(expected), rtol=0, atol=1e-10 * scale
     )
+
+
+def test_a_band_limit_at_the_floor_does_not_take_the_dense_bypass(
+    monkeypatch,
+):
+    """At exactly the HEALPix floor the resolved engine still serves.
+
+    The bypass compared the target against the native band-limit
+    (``2 * nside``) rather than the floor (``2 * nside - 1``), so a
+    request sitting exactly on the floor -- which the kernel engine
+    serves fine -- silently built an ``O(nside**4)`` dense operator
+    instead. At nside=64 that is ~12.9 GiB per spin block from a call
+    that had resolved to a 127 MiB kernel.
+    """
+    from croissant import dense as _dense
+
+    nside = 16
+    npix = 12 * nside**2
+    rng = np.random.default_rng(313)
+    data = rng.standard_normal((1, 4, npix))
+    sky = PolarizedSky(data, [10.0], sampling="healpix")
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(
+            "the dense bypass was taken for a band-limit at the floor"
+        )
+
+    monkeypatch.setattr(_dense, "dense_compute_alm", refuse)
+    floor = 2 * nside - 1
+    alm = sky.compute_alm(lmax=floor)
+    assert alm.shape == (1, 4, floor + 1, 2 * floor + 1)
