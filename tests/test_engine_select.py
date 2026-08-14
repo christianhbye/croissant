@@ -252,3 +252,44 @@ def test_auto_agrees_with_every_explicit_engine():
         np.testing.assert_allclose(
             auto, got, rtol=0, atol=1e-10 * np.abs(got).max()
         )
+
+
+def test_auto_is_the_default_engine():
+    """Constructing without an explicit engine resolves automatically.
+
+    The default was `"s2fft"` while `"auto"` was being validated. Flipping
+    it changes performance for every existing caller and nothing else --
+    the engines agree numerically -- so this test pins that the default
+    now delegates the choice rather than hardcoding the matrix-free path.
+    """
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import Beam, Sky, sphere
+
+    nside = 8
+    npix = 12 * nside**2
+    freqs = jnp.linspace(50.0, 150.0, 16)
+    data = jnp.ones((len(freqs), npix))
+
+    beam = Beam(data, freqs, sampling="healpix")
+    sky = Sky(data, freqs, sampling="healpix", coord="galactic")
+    for obj in (beam, sky):
+        assert obj.engine in {"s2fft", "kernel", "dense"}
+        assert "explicit request" not in obj.engine_reason
+
+    # A batch this size at nside=8 amortises the kernel, so auto must
+    # pick it -- proving the default really delegates.
+    assert beam.engine == "kernel"
+
+    # compute_alm's own default must delegate identically.
+    resolved, _ = engine_select.resolve_engine(
+        lmax=15, sampling="healpix", nside=nside, batch_size=len(freqs)
+    )
+    auto = sphere.compute_alm(data, lmax=15, sampling="healpix", nside=nside)
+    explicit = sphere.compute_alm(
+        data, lmax=15, sampling="healpix", nside=nside, engine=resolved
+    )
+    np.testing.assert_allclose(
+        np.asarray(auto), np.asarray(explicit), rtol=0, atol=0
+    )

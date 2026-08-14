@@ -352,7 +352,7 @@ def compute_alm(
     niter=0,
     spin=0,
     reality=True,
-    engine="s2fft",
+    engine="auto",
     *,
     dense_matrix=None,
     kernel=None,
@@ -396,12 +396,15 @@ def compute_alm(
         Whether to use the real-valued scalar transform optimization.
         Set to False for complex inputs and all nonzero-spin transforms.
     engine : {"auto", "s2fft", "kernel", "dense"}
-        Spherical harmonic transform engine. ``"s2fft"`` is the existing
-        matrix-free implementation. ``"kernel"`` caches the Wigner-d
-        kernel and contracts it per call. ``"dense"`` caches the exact
-        transform matrix and is intended for low band-limits. ``"auto"``
-        resolves to one of the above via
-        :func:`croissant.engine_select.resolve_engine`.
+        Spherical harmonic transform engine. Default is ``"auto"``, which
+        resolves to one of the others via
+        :func:`croissant.engine_select.resolve_engine`. ``"s2fft"`` is the
+        matrix-free implementation, recomputing the recursion every call.
+        ``"kernel"`` caches the Wigner-d kernel and contracts it per call.
+        ``"dense"`` caches the exact transform matrix and is the only
+        engine able to serve a band-limit below the HEALPix floor. All
+        three compute the same map to ~1e-13, so the choice is about
+        memory and reuse rather than results.
     dense_matrix : jax.Array or None
         Precomputed packed dense matrix. This is primarily used internally
         by :class:`SphBase` so its jitted methods never build a matrix while
@@ -551,7 +554,7 @@ class SphBase(eqx.Module):
         freqs,
         sampling,
         niter=0,
-        engine="s2fft",
+        engine="auto",
         lmax=None,
     ):
         """
@@ -581,14 +584,15 @@ class SphBase(eqx.Module):
             sampling, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
         engine : {"auto", "s2fft", "kernel", "dense"}
-            Spherical harmonic transform engine. The default ``"s2fft"``
-            preserves the existing matrix-free behavior. ``"kernel"``
-            caches the Wigner-d kernel and contracts it per call.
-            ``"dense"`` builds and caches an exact transform matrix for
-            fast repeated low-lmax transforms. ``"auto"`` lets croissant
-            choose from the band-limit, sampling, niter and batch size;
+            Spherical harmonic transform engine. The default ``"auto"``
+            chooses from the band-limit, sampling, niter and batch size;
             the resolved choice is reported by the ``engine`` and
-            ``engine_reason`` properties.
+            ``engine_reason`` properties. ``"s2fft"`` is the matrix-free
+            implementation, recomputing the recursion every call.
+            ``"kernel"`` caches the Wigner-d kernel and contracts it per
+            call. ``"dense"`` builds and caches an exact transform matrix,
+            and is the only engine able to serve a band-limit below the
+            HEALPix floor. Pin one explicitly to freeze behaviour.
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             set below the default ``2 * nside`` to reduce transform work and

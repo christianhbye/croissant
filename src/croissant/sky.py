@@ -14,7 +14,7 @@ class Sky(sphere.SphBase):
         sampling="healpix",
         coord="galactic",
         niter=0,
-        engine="s2fft",
+        engine="auto",
         lmax=None,
     ):
         """
@@ -45,7 +45,7 @@ class Sky(sphere.SphBase):
             healpix, setting niter=3 improves accuracy but
             significantly increases JIT compile time.
         engine : {"auto", "s2fft", "kernel", "dense"}
-            Spherical harmonic transform engine. Default is ``"s2fft"``.
+            Spherical harmonic transform engine. Default is ``"auto"``.
             ``"auto"`` lets croissant choose from the band-limit,
             sampling, niter and batch size; the choice is reported by the
             ``engine`` and ``engine_reason`` attributes.
