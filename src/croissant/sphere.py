@@ -599,10 +599,20 @@ class SphBase(eqx.Module):
         Raises
         ------
         ValueError
-            If `sampling` is "healpix" and the number of pixels in
-            `data` is not valid for healpix sampling.
+            If `engine` is not a recognized engine name (checked before
+            any data or frequency processing), or if `sampling` is
+            "healpix" and the number of pixels in `data` is not valid
+            for healpix sampling.
 
         """
+        from .engine_select import ENGINES
+
+        if engine != "auto" and engine not in ENGINES:
+            raise ValueError(
+                f"Unsupported SHT engine {engine!r}. Supported engines are "
+                f"{set(ENGINES) | {'auto'}}."
+            )
+
         self.data = jnp.asarray(data)
         self.freqs = jnp.atleast_1d(freqs)
 

@@ -219,9 +219,7 @@ def _assert_engines_agree(a, b, atol_rel=1e-10):
 def test_scalar_healpix_engines_agree(niter):
     """Real scalar HEALPix analysis is engine-independent."""
     data = _healpix_data(np.random.default_rng(0))
-    kwargs = dict(
-        lmax=LMAX, sampling="healpix", nside=NSIDE, niter=niter
-    )
+    kwargs = dict(lmax=LMAX, sampling="healpix", nside=NSIDE, niter=niter)
     reference = sphere.compute_alm(data, engine="s2fft", **kwargs)
     for engine in ENGINES[1:]:
         got = sphere.compute_alm(data, engine=engine, **kwargs)
@@ -747,9 +745,7 @@ def test_kernel_compute_alm_matches_s2fft_engine_scalar():
     rng = np.random.default_rng(4)
     data = rng.normal(size=(3, 12 * NSIDE**2))
     kwargs = dict(lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0)
-    expected = np.asarray(
-        sphere.compute_alm(data, engine="s2fft", **kwargs)
-    )
+    expected = np.asarray(sphere.compute_alm(data, engine="s2fft", **kwargs))
     got = np.asarray(kernel.kernel_compute_alm(data, **kwargs))
     assert got.shape == expected.shape == (3, LMAX + 1, 2 * LMAX + 1)
     np.testing.assert_allclose(
@@ -771,9 +767,7 @@ def test_kernel_engine_follows_the_dtype_contract():
     rng = np.random.default_rng(13)
     for input_dtype in (np.float32, np.float64):
         data = rng.normal(size=(2, 12 * NSIDE**2)).astype(input_dtype)
-        kwargs = dict(
-            lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0
-        )
+        kwargs = dict(lmax=LMAX, sampling="healpix", nside=NSIDE, niter=0)
         expected = sphere.compute_alm(data, engine="s2fft", **kwargs)
         got = kernel.kernel_compute_alm(data, **kwargs)
         assert got.dtype == expected.dtype, (
@@ -798,9 +792,7 @@ def test_kernel_compute_alm_matches_s2fft_engine_spin(spin):
         spin=spin,
         reality=False,
     )
-    expected = np.asarray(
-        sphere.compute_alm(data, engine="s2fft", **kwargs)
-    )
+    expected = np.asarray(sphere.compute_alm(data, engine="s2fft", **kwargs))
     got = np.asarray(kernel.kernel_compute_alm(data, **kwargs))
     np.testing.assert_allclose(
         got, expected, rtol=0, atol=1e-12 * np.abs(expected).max()
@@ -899,8 +891,7 @@ def kernel_compute_alm(
     reality = bool(reality) and spin == 0
     L = lmax + 1
     forward_kernel = precompute_kernel(
-        lmax, sampling, nside=nside, spin=spin, reality=reality,
-        forward=True
+        lmax, sampling, nside=nside, spin=spin, reality=reality, forward=True
     )
     analyse = partial(
         s2fft.precompute_transforms.spherical.forward,
@@ -1017,9 +1008,7 @@ def test_refined_kernel_engine_matches_s2fft_engine(niter, spin):
         spin=spin,
         reality=reality,
     )
-    expected = np.asarray(
-        sphere.compute_alm(data, engine="s2fft", **kwargs)
-    )
+    expected = np.asarray(sphere.compute_alm(data, engine="s2fft", **kwargs))
     got = np.asarray(kernel.kernel_compute_alm(data, **kwargs))
     np.testing.assert_allclose(
         got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
@@ -1051,40 +1040,39 @@ In `src/croissant/kernel.py`, replace the last two statements of
 with:
 
 ```python
-    if niter == 0:
-        flat_alm = jax.vmap(analyse)(flat)
-        return flat_alm.reshape(
-            batch_shape + (lmax + 1, 2 * lmax + 1)
-        )
-
-    # Iterative refinement, run here rather than delegated to s2fft:
-    # its precompute refinement branch builds an inverse kernel with the
-    # broken jax builder and diverges for spin != 0. The iteration is
-    # flm <- flm + F(f - I(flm)), the same one sphere.py applies to the
-    # scalar dense matrix in gram form.
-    inverse_kernel = precompute_kernel(
-        lmax, sampling, nside=nside, spin=spin, reality=reality,
-        forward=False
-    )
-    synthesise = partial(
-        s2fft.precompute_transforms.spherical.inverse,
-        L=L,
-        spin=spin,
-        kernel=inverse_kernel,
-        sampling=sampling,
-        reality=reality,
-        method="jax",
-        nside=nside,
-    )
-
-    def refine(field):
-        alm = analyse(field)
-        for _ in range(niter):
-            alm = alm + analyse(field - synthesise(alm))
-        return alm
-
-    flat_alm = jax.vmap(refine)(flat)
+if niter == 0:
+    flat_alm = jax.vmap(analyse)(flat)
     return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
+
+# Iterative refinement, run here rather than delegated to s2fft:
+# its precompute refinement branch builds an inverse kernel with the
+# broken jax builder and diverges for spin != 0. The iteration is
+# flm <- flm + F(f - I(flm)), the same one sphere.py applies to the
+# scalar dense matrix in gram form.
+inverse_kernel = precompute_kernel(
+    lmax, sampling, nside=nside, spin=spin, reality=reality, forward=False
+)
+synthesise = partial(
+    s2fft.precompute_transforms.spherical.inverse,
+    L=L,
+    spin=spin,
+    kernel=inverse_kernel,
+    sampling=sampling,
+    reality=reality,
+    method="jax",
+    nside=nside,
+)
+
+
+def refine(field):
+    alm = analyse(field)
+    for _ in range(niter):
+        alm = alm + analyse(field - synthesise(alm))
+    return alm
+
+
+flat_alm = jax.vmap(refine)(flat)
+return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -1192,9 +1180,7 @@ def test_full_pipeline_visibilities_agree_across_engines():
             niter=0,
             engine=engine,
         )
-        sim = Simulator(
-            beam, sky, times_jd, freqs, 0.0, 0.0, world="earth"
-        )
+        sim = Simulator(beam, sky, times_jd, freqs, 0.0, 0.0, world="earth")
         visibilities[engine] = np.asarray(sim.sim())
 
     reference = visibilities["s2fft"]
@@ -1407,12 +1393,15 @@ def main():
                 data = data + 1j * rng.normal(size=(4, npix))
             data = jnp.asarray(data)
 
-            kernel_mib = kernel.kernel_nbytes(
-                lmax, "healpix", nside=nside
-            ) / 2**20
-            dense_mib = footprints.dense_nbytes(
-                lmax, "healpix", nside=nside, spin=spin, reality=reality
-            ) / 2**20
+            kernel_mib = (
+                kernel.kernel_nbytes(lmax, "healpix", nside=nside) / 2**20
+            )
+            dense_mib = (
+                footprints.dense_nbytes(
+                    lmax, "healpix", nside=nside, spin=spin, reality=reality
+                )
+                / 2**20
+            )
 
             for niter in NITERS:
                 reference = None
@@ -1462,13 +1451,23 @@ def main():
                         f"rel_vs_s2fft={agreement:.2e}"
                     )
                     rows.append(
-                        (spin, nside, niter, engine, setup_and_first,
-                         cached, mib, agreement)
+                        (
+                            spin,
+                            nside,
+                            niter,
+                            engine,
+                            setup_and_first,
+                            cached,
+                            mib,
+                            agreement,
+                        )
                     )
 
     print()
-    print("| spin | nside | niter | engine | setup+first (s) | "
-          "cached apply (s) | precompute (MiB) | rel vs s2fft |")
+    print(
+        "| spin | nside | niter | engine | setup+first (s) | "
+        "cached apply (s) | precompute (MiB) | rel vs s2fft |"
+    )
     print("|---:|---:|---:|:--|---:|---:|---:|---:|")
     for spin, nside, niter, engine, setup, cached, mib, agree in rows:
         print(
@@ -1769,6 +1768,7 @@ def _amortisation_threshold(kernel_bytes):
     mib = kernel_bytes / 1024**2
     return max(1, math.ceil(mib / _MIB_PER_BATCHED_TRANSFORM))
 
+
 ENGINES = ("s2fft", "kernel", "dense")
 
 
@@ -1825,9 +1825,7 @@ def resolve_engine(
             )
         return requested, f"explicit request for {requested!r}"
 
-    cap = (
-        DEFAULT_MEMORY_CAP_BYTES if memory_cap is None else int(memory_cap)
-    )
+    cap = DEFAULT_MEMORY_CAP_BYTES if memory_cap is None else int(memory_cap)
     kernel_bytes = kernel_nbytes(lmax, sampling, nside=nside, reality=reality)
     dense_bytes = dense_nbytes(
         lmax, sampling, nside=nside, spin=spin, reality=reality
@@ -1839,9 +1837,9 @@ def resolve_engine(
     # L >= 2*nside floor; the dense engine can, by building at the floor
     # and keeping only the requested low-ell rows. That row selection is
     # dense's clearest remaining advantage, so it is checked first.
-    needs_row_selection = transform_lmax(
-        lmax, sampling, nside=nside
-    ) != int(lmax)
+    needs_row_selection = transform_lmax(lmax, sampling, nside=nside) != int(
+        lmax
+    )
     if needs_row_selection:
         if dense_fits:
             return (
@@ -1974,9 +1972,7 @@ def test_auto_agrees_with_every_explicit_engine():
     kwargs = dict(lmax=lmax, sampling="healpix", nside=nside, niter=0)
     auto = np.asarray(sphere.compute_alm(data, engine="auto", **kwargs))
     for engine in ("s2fft", "kernel", "dense"):
-        got = np.asarray(
-            sphere.compute_alm(data, engine=engine, **kwargs)
-        )
+        got = np.asarray(sphere.compute_alm(data, engine=engine, **kwargs))
         np.testing.assert_allclose(
             auto, got, rtol=0, atol=1e-10 * np.abs(got).max()
         )
