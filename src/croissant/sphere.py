@@ -451,6 +451,22 @@ def compute_alm(
             reality=reality,
             batch_size=batch_size,
         )
+        # Auto must never hand back an engine that then refuses to run.
+        # The kernel and dense engines both raise inside a trace when
+        # their precomputed object is absent -- SphBase builds those
+        # eagerly in __init__ and threads them in, but a bare compute_alm
+        # call inside a caller's own jax.jit has nowhere to hang them.
+        # Before "auto" became the default this code path was the
+        # matrix-free engine and simply worked, so degrade to it rather
+        # than turning working user code into a RuntimeError. Safe
+        # because the engines agree to ~1e-13: only cost changes. An
+        # EXPLICIT engine request is never softened this way -- see the
+        # raises below, which tell the caller to precompute.
+        if isinstance(data, jax.core.Tracer):
+            if engine == "kernel" and kernel is None:
+                engine = "s2fft"
+            elif engine == "dense" and dense_matrix is None:
+                engine = "s2fft"
 
     if engine == "s2fft":
         return _compute_alm_s2fft(

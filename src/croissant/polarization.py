@@ -139,6 +139,15 @@ def _analysis_alm(
             spin=spin,
             niter=niter,
         )
+    # Pinned to the matrix-free engine rather than inheriting the
+    # ``"auto"`` default. The polarized path calls this from inside jitted
+    # code and never routes through SphBase.__init__, which is what
+    # eagerly builds and threads the kernel engine's Wigner-d kernels; the
+    # kernel engine deliberately raises inside a trace when they are
+    # absent. Auto would also be choosing on a per-transform basis here,
+    # with no object to hang a cached kernel on. Supporting selectable
+    # engines for polarized fields means threading precomputed kernels
+    # through PolarizedBeam/PolarizedSky, which is out of scope.
     result = sphere.compute_alm(
         data,
         native_lmax,
@@ -147,6 +156,7 @@ def _analysis_alm(
         niter=niter,
         spin=spin,
         reality=reality,
+        engine="s2fft",
     )
     return utils.reduce_lmax(result, target_lmax)
 

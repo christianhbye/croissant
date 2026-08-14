@@ -336,3 +336,98 @@ def test_kernel_and_dense_size_predictors_share_a_reality_default():
         15, "healpix", nside=8, spin=0, reality=True
     )
     assert footprints.kernel_nbytes(15, "healpix", nside=8) == built.nbytes
+
+
+def test_polarized_analysis_pins_the_matrix_free_engine():
+    """The polarized path must not inherit the ``"auto"`` default.
+
+    `polarization._analysis_alm` runs inside jitted code and never routes
+    through `SphBase.__init__`, which is what eagerly builds and threads
+    the kernel engine's kernels -- and the kernel engine raises inside a
+    trace when they are absent. Flipping the global default to `"auto"`
+    broke three polarized tests exactly this way, so pin the dependency
+    rather than rediscovering it next time a default moves.
+    """
+    import inspect
+
+    from croissant import polarization
+
+    src = inspect.getsource(polarization._analysis_alm)
+    assert 'engine="s2fft"' in src, (
+        "polarization._analysis_alm must pass an explicit engine; "
+        "inheriting the auto default routes it into the kernel engine, "
+        "which cannot build inside a jax trace"
+    )
+
+
+def test_auto_degrades_gracefully_inside_jit():
+    """Auto must never pick an engine that then refuses to run.
+
+    The kernel engine raises inside a trace when its kernels were not
+    precomputed, which `SphBase` does eagerly but a bare `compute_alm`
+    call cannot. Before `"auto"` became the default, jitting a function
+    around `compute_alm` worked because the default was the matrix-free
+    engine; auto must preserve that rather than turning ordinary user code
+    into a RuntimeError. Falling back is safe because the engines agree
+    numerically -- only cost differs.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel, sphere
+
+    nside, lmax = 32, 63
+    npix = 12 * nside**2
+    data = jnp.asarray(np.random.default_rng(0).normal(size=(64, npix)))
+    # This configuration is one auto resolves to "kernel".
+    assert (
+        engine_select.resolve_engine(
+            lmax=lmax, sampling="healpix", nside=nside, batch_size=64
+        )[0]
+        == "kernel"
+    )
+
+    @jax.jit
+    def analyse(m):
+        return sphere.compute_alm(m, lmax, "healpix", nside=nside)
+
+    kernel.clear_kernel_cache()
+    got = np.asarray(analyse(data))
+    expected = np.asarray(
+        sphere.compute_alm(data, lmax, "healpix", nside=nside, engine="s2fft")
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_explicit_kernel_inside_jit_still_raises():
+    """An explicit engine choice is honoured strictly, not softened.
+
+    Only the automatic path degrades. A caller who asked for "kernel" by
+    name gets the RuntimeError telling them to precompute, because
+    silently giving them a different engine would hide the cost decision
+    they made deliberately.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+    import pytest as _pytest
+
+    from croissant import kernel, sphere
+
+    nside, lmax = 8, 15
+    data = jnp.asarray(
+        np.random.default_rng(0).normal(size=(4, 12 * nside**2))
+    )
+
+    @jax.jit
+    def analyse(m):
+        return sphere.compute_alm(
+            m, lmax, "healpix", nside=nside, engine="kernel"
+        )
+
+    kernel.clear_kernel_cache()
+    with _pytest.raises(RuntimeError, match="precompute"):
+        analyse(data)
