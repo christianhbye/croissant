@@ -431,3 +431,62 @@ def test_explicit_kernel_inside_jit_still_raises():
     kernel.clear_kernel_cache()
     with _pytest.raises(RuntimeError, match="precompute"):
         analyse(data)
+
+
+def test_scalar_field_auto_degrades_inside_jit():
+    """`SphBase` must degrade like everything else `auto` touches.
+
+    `sphere.compute_alm` already degrades an automatic kernel choice
+    inside a trace, but `SphBase.__init__` used to raise instead. That
+    contradicted the same invariant one screen up in its own module, and
+    made a `Sky` built inside a `jax.grad` fail with a message about a
+    precompute the caller never asked for -- the scalar twin of the
+    polarized gradient path exercised in test_polarization.py.
+    """
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel
+    from croissant.sky import Sky
+
+    nside = 8
+    freqs = jnp.asarray([10.0, 20.0])
+    data = jnp.asarray(
+        np.random.default_rng(4).normal(size=(2, 12 * nside**2))
+    )
+
+    def loss(maps):
+        alm = Sky(maps, freqs, sampling="healpix").compute_alm()
+        return jnp.sum(jnp.abs(alm) ** 2)
+
+    kernel.clear_kernel_cache()
+    gradient = jax.grad(loss)(data)
+    assert gradient.shape == data.shape
+    assert bool(jnp.all(jnp.isfinite(gradient)))
+
+
+def test_scalar_field_explicit_kernel_inside_jit_raises():
+    """An explicit scalar engine choice is still never softened."""
+    import jax
+    import jax.numpy as jnp
+    import numpy as np
+
+    from croissant import kernel
+    from croissant.sky import Sky
+
+    nside = 8
+    freqs = jnp.asarray([10.0, 20.0])
+    data = jnp.asarray(
+        np.random.default_rng(5).normal(size=(2, 12 * nside**2))
+    )
+
+    @jax.jit
+    def analyse(maps):
+        return Sky(
+            maps, freqs, sampling="healpix", engine="kernel"
+        ).compute_alm()
+
+    kernel.clear_kernel_cache()
+    with pytest.raises(RuntimeError, match="precompute_kernel"):
+        analyse(data)

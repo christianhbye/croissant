@@ -632,6 +632,10 @@ class SphBase(eqx.Module):
                 f"Unsupported SHT engine {engine!r}. Supported engines are "
                 f"{set(ENGINES) | {'auto'}}."
             )
+        # Captured before resolve_engine overwrites `engine` below: only
+        # an automatic choice may be degraded when a precompute turns out
+        # to be impossible, and by then the caller's own request is gone.
+        explicit_engine = engine != "auto"
 
         self.data = jnp.asarray(data)
         self.freqs = jnp.atleast_1d(freqs)
@@ -682,6 +686,30 @@ class SphBase(eqx.Module):
         self._engine = engine
         self._engine_reason = engine_reason
 
+        if self._engine == "kernel" and isinstance(self.data, jax.core.Tracer):
+            # A kernel cannot be built while a trace is active: converting
+            # the numpy-built kernel to a jax.Array would yield a tracer
+            # bound to this trace, which the module-level cache must never
+            # retain (see kernel.precompute_kernel's docstring).
+            if explicit_engine:
+                raise RuntimeError(
+                    "The kernel must be precomputed before a kernel "
+                    "SphBase object is constructed inside jax.jit. Call "
+                    "precompute_kernel(...) once outside jax.jit."
+                )
+            # Auto must never hand back an engine that then refuses to
+            # run -- the same rule compute_alm applies when its kernel
+            # argument is missing. Constructing a field inside a trace is
+            # how a caller differentiates through the construction
+            # itself, so raising here would cost them that for a choice
+            # they never made. Only cost changes: the engines agree to
+            # ~1e-13. An EXPLICIT request is never softened.
+            self._engine = "s2fft"
+            self._engine_reason = (
+                "kernels cannot be built inside a jax trace; degraded "
+                "from the automatic choice"
+            )
+
         if self._engine == "dense":
             if isinstance(self.data, jax.core.Tracer):
                 key = _dense_matrix_key(
@@ -712,19 +740,13 @@ class SphBase(eqx.Module):
             self._inverse_kernel = None
         elif self._engine == "kernel":
             self._dense_matrix = None
-            # Mirrors the dense branch above: build outside any trace so
-            # the cached array is concrete, never a leaked tracer (see
-            # kernel.precompute_kernel's docstring). Unlike dense, the
-            # kernel engine has no manual per-key tracer fallback here:
-            # a SphBase built with engine="kernel" inside jax.jit must
-            # precompute explicitly first, same as kernel_compute_alm
-            # requires when called directly inside a trace.
-            if isinstance(self.data, jax.core.Tracer):
-                raise RuntimeError(
-                    "The kernel must be precomputed before a kernel "
-                    "SphBase object is constructed inside jax.jit. Call "
-                    "precompute_kernel(...) once outside jax.jit."
-                )
+            # Reached only outside a trace: the degrade-or-raise check
+            # above has already dealt with the traced case, so the built
+            # kernel is always a concrete array, never a leaked tracer
+            # (see kernel.precompute_kernel's docstring). Unlike dense,
+            # there is no per-key cache fallback for a traced build --
+            # an explicit engine="kernel" must precompute first, exactly
+            # as kernel_compute_alm requires when called inside a trace.
             from . import kernel as _kernel
 
             self._kernel = _kernel.precompute_kernel(

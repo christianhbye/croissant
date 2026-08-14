@@ -152,7 +152,7 @@ Jacobian), when you have a memory budget croissant cannot see, or when you know
 about reuse it cannot see — for example the same `Beam` driving many thousands of
 likelihood evaluations, where the batch size understates the amortisation.
 
-`engine="s2fft"` remains the default. Applications that call
+Applications that call
 `croissant.sphere.compute_alm` from inside an enclosing `jax.jit` should
 build the matrix once with `croissant.precompute_dense_matrix` and pass it
 to the jitted function as an argument via `dense_matrix=...`, so it enters
@@ -188,6 +188,13 @@ matrix-free call for a precompute step your code never asked for.
 precompute eagerly at construction, outside any trace; the trap is
 specific to calling `compute_alm` (or `croissant.kernel.kernel_compute_alm`)
 directly inside a caller-owned `jax.jit`.
+
+Constructing a field *inside* a trace — differentiating through the
+construction itself, as `jax.grad(lambda m: Sky(m, freqs, ...).compute_alm())`
+does — follows the same rule. No kernel can be built there, so an automatic
+choice of `"kernel"` degrades to `"s2fft"` and the `engine_reason` says so,
+while an explicit `engine="kernel"` still raises. This holds for `Beam`,
+`Sky`, `PolarizedSky` and `PairStokesBeam` alike.
 
 ## Installation
 To install the package for standard use, you can use your preferred Python package manager:
