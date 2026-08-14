@@ -53,7 +53,8 @@ particularly useful for high-resolution maps with low-band-limit science.
 A spherical harmonic transform has two stages: an FFT around each ring of
 constant latitude (phi to m), and a Wigner-d recursion with quadrature weights
 (theta to ell). The second is the expensive one. Croissant's three engines
-compute the same linear map — they agree to ~1e-15, verified in
+compute the same linear map — they agree to better than 1e-12 in every
+benchmarked configuration (worst case 1.4e-13) and are pinned to 1e-10 by
 `tests/test_engine_equivalence.py` — and differ only in how much of it they
 precompute.
 
@@ -88,9 +89,23 @@ engine's NumPy spin Wigner-d builder is disproportionately expensive
 relative to the kernel builder.
 
 The footprints differ by a full power of `nside` — `~32*nside**3` for the kernel
-against `~48*nside**4` for the dense operator, a ratio of `~1.5*nside` — so at
-nside=32 the dense operator needs ~768 MiB where the kernel needs ~16 MiB, and
-by nside=64 dense needs ~12 GiB against the kernel's ~130 MiB.
+against `~48*nside**4` for the dense operator, a ratio of `~1.5*nside`. These
+are computed footprints (from `croissant.footprints`, whose formula is
+verified in `tests/test_engine_select.py` against actually-built kernels),
+not timings; the nside=32 row matches the memory table above, and nside=64
+and nside=128 are not benchmarked, only computed the same way:
+
+| nside | kernel (scalar / spin) | dense (scalar / spin) |
+|---:|---:|---:|
+| 32 | 7.9 MiB / 15.8 MiB | 390.0 MiB / 767.2 MiB |
+| 64 | 63.8 MiB / 127.0 MiB | 6.0 GiB / 12.0 GiB |
+| 128 | 511.0 MiB / 1020.0 MiB | 96.4 GiB / 192.0 GiB |
+
+Dense already exceeds the default 512 MiB `engine="auto"` budget by
+nside=32 for spin fields (767.2 MiB) and by nside=64 for scalar fields
+(6.0 GiB), while the kernel is still under it at nside=128 for scalar
+fields (511.0 MiB) and only exceeds it there for spin fields (1020 MiB).
+That gap is why the kernel engine exists at all.
 
 ### Choosing an engine
 
@@ -108,11 +123,14 @@ results — so `engine="auto"` makes it for you:
 3. **Otherwise** `"kernel"`, provided it fits the 512 MiB precompute budget,
    falling back to `"s2fft"` if nothing fits.
 
-Note that `niter > 0` is deliberately *not* a reason to choose `"dense"`. Its
-folded refinement makes per-call cost independent of `niter`, while the kernel
-engine pays `2*niter+1` applications — but per-call cost is essentially one pass
-over the precomputed object, and dense's is `~1.5*nside` times larger, so the
-kernel still wins for any `nside > 4`.
+Note that `niter > 0` is deliberately *not* a reason for `auto` to choose
+`"dense"`. Dense does win on per-call cost there — its refinement folds into
+the cached matrix, while the kernel engine pays `2*niter+1` applications — but
+its build costs roughly 1.0x to 25x more, and the measured break-even ranges
+from 7 to 92338 calls depending on configuration. Croissant transforms once at
+construction, batched over frequencies, so that per-call saving is never
+repaid. If you re-apply the same transform thousands of times, pin
+`engine="dense"` explicitly — only you know that.
 
 The resolved choice and the reason for it are reported on the object:
 
