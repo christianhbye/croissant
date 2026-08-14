@@ -70,7 +70,12 @@ def _build_analysis_matrix(
         return full[ell_indices, selected_m]
 
     zero_map = jnp.zeros(spatial_shape, dtype=complex_dtype)
-    _, pullback = jax.vjp(selected_forward, zero_map)
+    coefficients, pullback = jax.vjp(selected_forward, zero_map)
+    # s2fft may transform at a wider precision than the map it was given,
+    # and a VJP only accepts cotangents in the dtype its primal output
+    # actually has. Seed the basis from that dtype rather than from the
+    # requested one, which is a statement about the stored matrix.
+    cotangent_dtype = coefficients.dtype
     matrix = jnp.empty(
         (ncoeff, int(np.prod(spatial_shape))),
         dtype=complex_dtype,
@@ -81,12 +86,12 @@ def _build_analysis_matrix(
         coefficient_basis = jax.nn.one_hot(
             jnp.arange(start, stop),
             ncoeff,
-            dtype=complex_dtype,
+            dtype=cotangent_dtype,
         )
         rows = jax.vmap(lambda cotangent: pullback(cotangent)[0])(
             coefficient_basis
         ).reshape(stop - start, -1)
-        matrix = matrix.at[start:stop].set(rows)
+        matrix = matrix.at[start:stop].set(rows.astype(complex_dtype))
     # JAX's holomorphic VJP uses the complex transpose convention, so each
     # pulled-back coefficient basis vector is already one analysis row.
     return matrix, ell_indices, m_indices, spatial_shape

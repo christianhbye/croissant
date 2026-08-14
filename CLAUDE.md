@@ -45,7 +45,7 @@ All core classes inherit from `eqx.Module` (Equinox/JAX) and are JIT-compilable.
 ### Core Data Flow
 
 1. **Input** — Beam/Sky data on a grid `(N_freqs, theta, phi)` or HEALPix pixels
-2. **Transform** — Compute alm via `s2fft.forward` (vmapped over frequencies, `reality=True` for Hermitian symmetry)
+2. **Transform** — Compute alm via `s2fft.forward` (vmapped over frequencies). `sphere.compute_alm` defaults to the general complex transform, as s2fft does; `Beam` and `Sky` pass `reality=True` because their own fields are real, which exploits Hermitian symmetry. `reality=True` is an assertion about the data and is rejected for complex or nonzero-spin input.
 3. **Rotation** — Apply phase factors `exp(-i*m*φ(t))` for sky rotation with sidereal time
 4. **Convolution** — Einsum `"flm,tm,flm->tf"` over beam and sky alm → visibility `(time, frequency)`
 5. **Normalization** — Divide by beam integral (monopole mode) to recover sky temperature

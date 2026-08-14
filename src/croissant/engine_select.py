@@ -202,7 +202,7 @@ def resolve_engine(
     nside=None,
     spin=0,
     niter=0,
-    reality=True,
+    reality=False,
     batch_size=1,
     memory_cap=None,
     requested=None,
@@ -223,7 +223,12 @@ def resolve_engine(
     niter : int
         Number of iterative refinement steps requested.
     reality : bool
-        Whether the field is real.
+        Whether the field is real. Defaults to False, matching
+        :func:`croissant.sphere.compute_alm`, so that the footprints
+        this weighs are the ones the defaulted transform would build.
+        Callers that know their own field is real must say so, or the
+        engine is chosen by sizing an operator twice as large as the one
+        they will actually build.
     batch_size : int
         Number of transforms the choice will be amortised over, i.e. the
         product of the leading batch axes.

@@ -53,12 +53,13 @@ def _positive_lm_indices(lmax):
 
 @eqx.filter_jit
 def _compute_alm_s2fft(
-    data, lmax, sampling, nside=None, niter=0, spin=0, reality=True
+    data, lmax, sampling, nside=None, niter=0, spin=0, reality=False
 ):
     """Compute alms with the standard matrix-free s2fft engine.
 
     Every axis before the spatial axes is treated as a batch axis. The
-    scalar defaults are identical to the original Croissant API.
+    defaults are identical to s2fft's: only a caller that knows its own
+    data is real may ask for the packed real transform.
     """
     data = jnp.asarray(data)
     spatial_ndim = utils.spatial_ndim(sampling)
@@ -220,6 +221,10 @@ def _build_dense_matrix_from_pixels(
             sampling,
             nside=nside,
             niter=niter,
+            # The one-hot basis maps are real, and the packing below
+            # keeps only m >= 0, so this matrix is the packed real
+            # operator by construction.
+            reality=True,
         )
         packed = dense[:, ell, lmax + emm].T
         # Bound peak memory by ensuring that s2fft's much larger dense-layout
@@ -430,7 +435,7 @@ def compute_alm(
     nside=None,
     niter=0,
     spin=0,
-    reality=True,
+    reality=False,
     engine="auto",
     *,
     dense_matrix=None,
@@ -439,14 +444,17 @@ def compute_alm(
 ):
     """
     Compute the spherical harmonic coefficients of a scalar or spin field
-    on the sphere. The default ``"s2fft"`` engine wraps ``s2fft.forward``.
-    The ``"dense"`` engine materializes that same linear transform once and
+    on the sphere. The ``"s2fft"`` engine wraps ``s2fft.forward``. The
+    ``"dense"`` engine materializes that same linear transform once and
     subsequently evaluates it as a native JAX matrix multiplication.
 
-    Every axis before the spatial axes is treated as a batch axis. For
-    nonzero spin (or complex scalar input) set ``reality=False``; the dense
-    engine then dispatches to :mod:`croissant.dense`, which builds the
-    spin-weighted operator in the full 2D harmonic layout.
+    Every axis before the spatial axes is treated as a batch axis. The
+    general complex transform is the default, as it is in s2fft; a
+    caller that knows its own field is real may set ``reality=True`` to
+    take the packed real optimization. For nonzero spin, or with
+    ``reality=False``, the dense engine dispatches to
+    :mod:`croissant.dense`, which builds the spin-weighted operator in
+    the full 2D harmonic layout.
 
     Parameters
     ----------
@@ -472,8 +480,11 @@ def compute_alm(
     spin : int
         Spin weight of the input field. Default is 0.
     reality : bool
-        Whether to use the real-valued scalar transform optimization.
-        Set to False for complex inputs and all nonzero-spin transforms.
+        Whether to use the real-valued scalar transform optimization,
+        which exploits the Hermitian symmetry of a real field's
+        coefficients and so costs no accuracy. This is an assertion
+        about `data`, not a hint: it is rejected for complex input and
+        for all nonzero-spin transforms. Default is False.
     engine : {"auto", "s2fft", "kernel", "dense"}
         Spherical harmonic transform engine. Default is ``"auto"``, which
         resolves to one of the others via
@@ -516,6 +527,8 @@ def compute_alm(
         )
     if spin != 0 and reality:
         raise ValueError("Nonzero-spin transforms require reality=False.")
+    if reality and jnp.iscomplexobj(data):
+        raise ValueError("Complex input requires reality=False.")
 
     explicit_engine = engine != "auto"
     tracing = isinstance(data, jax.core.Tracer)
@@ -742,6 +755,11 @@ class SphBase(eqx.Module):
             self.sampling,
             nside=self.nside,
             niter=self._niter,
+            # Beam and Sky are real fields and transform with
+            # reality=True, so the engine must be chosen by sizing the
+            # packed operator that will actually be built, not the full
+            # one compute_alm assumes when it is told nothing.
+            reality=True,
             batch_size=int(self.data.shape[0]),
             requested=engine,
         )

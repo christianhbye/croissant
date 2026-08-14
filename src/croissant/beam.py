@@ -188,6 +188,11 @@ class Beam(sphere.SphBase):
             self.sampling,
             nside=self.nside,
             niter=self._niter,
+            # A beam pattern is a real power response, so it can claim
+            # the packed real transform that compute_alm will not
+            # assume. The complex azimuthal phase is applied below, in
+            # harmonic space, and so does not affect this.
+            reality=True,
             engine=self._engine,
             dense_matrix=self._dense_matrix,
             kernel=self._kernel,

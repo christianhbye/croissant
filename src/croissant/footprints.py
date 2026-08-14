@@ -158,7 +158,7 @@ def _npix(lmax, sampling, nside=None):
     return int(np.prod(spatial_shape(lmax, sampling, nside=nside)))
 
 
-def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
+def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=False):
     """
     Predict a Wigner-d kernel's memory footprint.
 
@@ -193,12 +193,14 @@ def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
         Spin weight of the field.
     reality : bool
         Whether the kernel is built for a real field. Real kernels store
-        only ``m >= 0``, halving the last axis. Defaults to True to match
-        :func:`dense_nbytes` and the common scalar case; it is forced
-        False internally for nonzero spin, mirroring what
-        :func:`croissant.kernel.kernel_compute_alm` does, so the default
-        is correct for scalar and spin fields alike. Ignored (treated as
-        ``False``) whenever ``spin != 0``; see above.
+        only ``m >= 0``, halving the last axis. Defaults to False to
+        match :func:`dense_nbytes` and, more importantly, the transform
+        it predicts: :func:`croissant.sphere.compute_alm` assumes
+        nothing about the caller's data, so a predictor that assumed a
+        real field would under-predict the default transform by 2x.
+        Callers that know their own field is real pass ``reality=True``
+        here exactly as they do there. Ignored (treated as ``False``)
+        whenever ``spin != 0``; see above.
 
     Returns
     -------
@@ -215,7 +217,7 @@ def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
     return ntheta * L * nm * _kernel_itemsize(sampling)
 
 
-def dense_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
+def dense_nbytes(lmax, sampling, nside=None, spin=0, reality=False):
     """
     Predict the dense analysis operator's memory footprint.
 
@@ -231,7 +233,8 @@ def dense_nbytes(lmax, sampling, nside=None, spin=0, reality=True):
         Spin weight of the field.
     reality : bool
         Whether the field is real. Real scalar fields store only the
-        independent ``m >= 0`` coefficients.
+        independent ``m >= 0`` coefficients. Defaults to False, matching
+        :func:`kernel_nbytes` and the transform this predicts.
 
     Returns
     -------
