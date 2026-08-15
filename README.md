@@ -126,6 +126,28 @@ results — so `engine="auto"` makes it for you:
 3. **Otherwise** `"kernel"`, provided it fits the 512 MiB precompute budget,
    falling back to `"s2fft"` if nothing fits.
 
+The batch in rule 2 is compared against a measured crossover — the batch at
+which building a kernel starts costing less than recomputing the recursion
+per call. Two things set it. It grows with the kernel, because the build does;
+and it *falls* with `niter`, because refinement makes s2fft repeat its whole
+Wigner-d recursion `2*niter+1` times while the kernel engine re-contracts a
+table it already has. Measured on CPU with x64 (ladders in
+[`benchmarks/results/engines-2026-08-14-amortisation.md`](benchmarks/results/engines-2026-08-14-amortisation.md),
+reproduce with `--sections ladder`):
+
+| | nside=16 | nside=32 | nside=64 |
+|:--|---:|---:|---:|
+| crossover batch, `niter=0` | ≤1 | 8–12 | 64–96 |
+| crossover batch, `niter=3` | ≤1 | ≤1 | 12–16 |
+
+so at `nside=64` with refinement the kernel pays for itself from about 14
+frequencies, while without refinement it needs closer to 80. The threshold is
+sized from the *scalar* kernel footprint even for spin fields, because a
+spin-weighted kernel is twice the bytes but takes the same time to build
+(10.7 s against 10.2 s at `nside=64`) — it is build cost that has to be repaid,
+not bytes. Bytes still govern the 512 MiB budget in rule 3, and there both
+kernels count when `niter > 0`.
+
 Note that `niter > 0` is deliberately *not* a reason for `auto` to choose
 `"dense"`. Dense does win on per-call cost there — its refinement folds into
 the cached matrix, while the kernel engine pays `2*niter+1` applications — but
