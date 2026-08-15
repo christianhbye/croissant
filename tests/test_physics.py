@@ -15,6 +15,7 @@ import s2fft
 from astropy.time import Time as AstroTime
 from lunarsky import Time as LunarTime
 
+from croissant import rotations
 from croissant.beam import Beam
 from croissant.constants import Y00, sidereal_day
 from croissant.multipair import (
@@ -22,6 +23,12 @@ from croissant.multipair import (
     compute_visibilities,
     multi_convolve,
     pair_normalization,
+)
+from croissant.polarization import (
+    PairStokesBeam,
+    PolarizedSky,
+    iau_to_cosmo,
+    polarized_convolve,
 )
 from croissant.simulator import (
     Simulator,
@@ -1252,3 +1259,432 @@ class TestMultipair:
             vis_beam_0_shifted,
             rtol=1e-10,
         )
+
+
+# -----------------------------------------------------------------------
+# G. Polarization
+# -----------------------------------------------------------------------
+#
+# These tests operate at the ``polarized_convolve`` level on a full-sky
+# MWSS grid, mirroring how the scalar sections use ``convolve``. MWSS is
+# the sampling on which both spin +/-2 transforms actually run (other
+# samplings derive the P+ sky block by conjugation), so the invariants
+# below constrain the entire dual construction.
+
+_POL_LMAX = 7
+_POL_FREQS = np.array([50.0, 150.0])
+# Per-frequency scale factors applied to synthesized maps so the
+# frequency axis stays nontrivial without a second synthesis.
+_POL_FREQ_SCALE = np.array([1.0, 0.7])
+
+
+def _pol_shape():
+    """(ntheta, nphi) of the MWSS grid with band-limit ``_POL_LMAX``."""
+    L = _POL_LMAX + 1
+    return (
+        s2fft.sampling.s2_samples.ntheta(L=L, sampling="mwss"),
+        s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling="mwss"),
+    )
+
+
+def _pol_vis(beam_maps, sky_maps, phases):
+    """Polarized visibilities of one pair on the full-sky MWSS grid."""
+    horizon = np.ones(_pol_shape(), dtype=bool)
+    beam = PairStokesBeam(
+        beam_maps,
+        _POL_FREQS,
+        [(0, 0)],
+        sampling="mwss",
+        horizon=horizon,
+    )
+    sky = PolarizedSky(sky_maps, _POL_FREQS, sampling="mwss", coord="mepa")
+    return polarized_convolve(beam.compute_alm(), sky.compute_alm(), phases)
+
+
+def _pol_phases(n_times):
+    """Phases for ``n_times`` uniform steps over one sidereal day."""
+    return rot_alm_z(
+        _POL_LMAX,
+        N_times=n_times,
+        delta_t=sidereal_day["earth"] / n_times,
+        world="earth",
+    )
+
+
+def _random_stokes_sky(rng):
+    """White-noise IQUV sky maps, shape (nfreq, 4, ntheta, nphi)."""
+    return rng.normal(size=(len(_POL_FREQS), 4) + _pol_shape())
+
+
+def _random_pair_response(rng):
+    """White-noise complex pair response, shape (1, nfreq, 4, ...)."""
+    shape = (1, len(_POL_FREQS), 4) + _pol_shape()
+    return rng.normal(size=shape) + 1j * rng.normal(size=shape)
+
+
+def _band_limited_scalar(rng):
+    """A random real scalar map that is band-limited on the grid."""
+    L = _POL_LMAX + 1
+    flm = s2fft.utils.signal_generator.generate_flm(rng, L, reality=True)
+    return np.asarray(
+        s2fft.inverse(
+            jnp.asarray(flm),
+            L=L,
+            spin=0,
+            sampling="mwss",
+            method="jax",
+            reality=True,
+        )
+    )
+
+
+def _band_limited_qu_pair(rng):
+    """A random real (Q, U) pair band-limited as a spin-2 field.
+
+    Q + iU is synthesized from spin -2 coefficients, so both spin
+    combinations Q -/+ iU are exactly band-limited and the discrete
+    MWSS analysis of either one is exact.
+    """
+    L = _POL_LMAX + 1
+    flm = s2fft.utils.signal_generator.generate_flm(
+        rng, L, spin=2, reality=False
+    )
+    f_minus = np.asarray(
+        s2fft.inverse(
+            jnp.asarray(flm),
+            L=L,
+            spin=-2,
+            sampling="mwss",
+            method="jax",
+        )
+    )
+    return f_minus.real, f_minus.imag
+
+
+class TestPolarization:
+    def test_polarized_linearity_superposition(self):
+        """V(2*sky1 + sky2) = 2*V(sky1) + V(sky2), all Stokes at once."""
+        rng = np.random.default_rng(201)
+        sky1 = _random_stokes_sky(rng)
+        sky2 = _random_stokes_sky(rng)
+        beam = _random_pair_response(rng)
+        phases = _pol_phases(8)
+        vis1 = _pol_vis(beam, sky1, phases)
+        vis2 = _pol_vis(beam, sky2, phases)
+        vis_comb = _pol_vis(beam, 2.0 * sky1 + sky2, phases)
+        scale = np.abs(vis_comb).max()
+        np.testing.assert_allclose(
+            vis_comb,
+            2.0 * vis1 + vis2,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+    def test_unpolarized_sky_reduces_to_scalar_pipeline(self):
+        """An (I, 0, 0, 0) sky through an intensity-only pair response
+        reproduces the scalar pipeline over a sidereal day.
+
+        Band-limited maps, because the two pipelines may pick different
+        (equally valid) discrete representatives of an aliased map; the
+        physical statement is about resolved fields.
+        """
+        rng = np.random.default_rng(202)
+        shape = _pol_shape()
+        nfreq = len(_POL_FREQS)
+        intensity = (
+            _POL_FREQ_SCALE[:, None, None] * _band_limited_scalar(rng)[None]
+        )
+        response = (
+            _POL_FREQ_SCALE[::-1, None, None] * _band_limited_scalar(rng)[None]
+        )
+        horizon = np.ones(shape, dtype=bool)
+
+        sky_maps = np.zeros((nfreq, 4) + shape)
+        sky_maps[:, 0] = intensity
+        beam_maps = np.zeros((1, nfreq, 4) + shape, dtype=np.complex128)
+        beam_maps[0, :, 0] = response
+
+        phases = _pol_phases(12)
+        pol_vis = _pol_vis(beam_maps, sky_maps, phases)
+
+        scalar_sky = Sky(
+            jnp.asarray(intensity),
+            jnp.asarray(_POL_FREQS),
+            sampling="mwss",
+            coord="mepa",
+        )
+        scalar_beam = Beam(
+            jnp.asarray(response),
+            jnp.asarray(_POL_FREQS),
+            sampling="mwss",
+            horizon=jnp.asarray(horizon),
+        )
+        scalar_vis = convolve(
+            scalar_beam.compute_alm(),
+            scalar_sky.compute_alm(),
+            phases,
+        )
+        scale = np.abs(scalar_vis).max()
+        np.testing.assert_allclose(
+            pol_vis[:, 0, :],
+            scalar_vis,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+    def test_stokes_convention_invariance(self):
+        """Expressing sky and response in COSMO instead of IAU leaves
+        the visibilities unchanged; mislabeling one side does not."""
+        rng = np.random.default_rng(203)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        phases = _pol_phases(6)
+        vis_iau = _pol_vis(beam_maps, sky_maps, phases)
+
+        sky_cosmo = np.asarray(iau_to_cosmo(sky_maps, stokes_axis=1))
+        beam_cosmo = np.asarray(iau_to_cosmo(beam_maps, stokes_axis=2))
+        horizon = np.ones(_pol_shape(), dtype=bool)
+        beam = PairStokesBeam(
+            beam_cosmo,
+            _POL_FREQS,
+            [(0, 0)],
+            sampling="mwss",
+            convention="COSMO",
+            horizon=horizon,
+        )
+        sky = PolarizedSky(
+            sky_cosmo,
+            _POL_FREQS,
+            sampling="mwss",
+            coord="mepa",
+            convention="COSMO",
+        )
+        vis_cosmo = polarized_convolve(
+            beam.compute_alm(), sky.compute_alm(), phases
+        )
+        scale = np.abs(vis_iau).max()
+        np.testing.assert_allclose(
+            vis_cosmo,
+            vis_iau,
+            rtol=1e-12,
+            atol=1e-12 * scale,
+        )
+
+        # Non-vacuity: the U sign flip matters. COSMO-valued sky data
+        # mislabeled as IAU produces different visibilities.
+        vis_mislabeled = _pol_vis(beam_maps, sky_cosmo, phases)
+        assert np.abs(vis_mislabeled - vis_iau).max() > 1e-6 * scale
+
+    def test_polarized_sidereal_periodicity(self):
+        """Full-Stokes visibilities repeat after one sidereal day."""
+        rng = np.random.default_rng(204)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        n = 12
+        phases = rot_alm_z(
+            _POL_LMAX,
+            N_times=2 * n,
+            delta_t=sidereal_day["earth"] / n,
+            world="earth",
+        )
+        vis = _pol_vis(beam_maps, sky_maps, phases)
+        scale = np.abs(vis).max()
+        np.testing.assert_allclose(
+            vis[:n],
+            vis[n:],
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+        # Non-vacuity: the visibility actually varies over the day.
+        assert np.abs(vis[:n] - vis[0]).max() > 1e-3 * scale
+
+    def test_z_rotated_polarized_sky_matches_time_shift(self):
+        """Rigidly rotating the sky about the z axis equals advancing
+        sidereal time, for every Stokes component at once.
+
+        On the equiangular grid a rotation by a whole number of phi
+        steps is an exact roll of the pixel axis, with Q and U carried
+        unchanged since the theta-phi basis rotates with the sky. The
+        phase machinery must therefore map the rolled sky at the
+        reference time onto the unrolled sky at the matching time.
+        """
+        rng = np.random.default_rng(205)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        nphi = _pol_shape()[1]
+        phases = _pol_phases(nphi)
+        vis = _pol_vis(beam_maps, sky_maps, phases)
+        shift = 5
+        rolled = np.roll(sky_maps, -shift, axis=-1)
+        vis_rolled = _pol_vis(beam_maps, rolled, phases)
+        scale = np.abs(vis).max()
+        np.testing.assert_allclose(
+            vis_rolled[0],
+            vis[shift],
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+    def test_joint_rotation_leaves_visibility_invariant(self):
+        """Rotating sky and beam by the same rotation is unobservable.
+
+        The Q/U blocks must transport as spin-2 under the shared
+        Wigner-D action for the contraction to stay put.
+        """
+        rng = np.random.default_rng(206)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        horizon = np.ones(_pol_shape(), dtype=bool)
+        sky = PolarizedSky(
+            sky_maps,
+            _POL_FREQS,
+            sampling="mwss",
+            coord="mepa",
+        )
+        beam = PairStokesBeam(
+            beam_maps,
+            _POL_FREQS,
+            [(0, 0)],
+            sampling="mwss",
+            horizon=horizon,
+        )
+        sky_alm = sky.compute_alm()
+        # Identity phases: a single time at the reference epoch.
+        phases = rot_alm_z(_POL_LMAX, times=jnp.array([0.0]))
+        vis0 = polarized_convolve(beam.compute_alm(), sky_alm, phases)
+
+        rotation = (0.9, 0.6, -0.4)
+        dl_array = s2fft.generate_rotate_dls(_POL_LMAX + 1, rotation[1])
+        sky_alm_rot = rotations.rotate_alm(
+            sky_alm, rotation, dl_array=dl_array
+        )
+        beam_alm_rot = beam.compute_alm_in_frame(rotation, dl_array)
+        vis_rot = polarized_convolve(beam_alm_rot, sky_alm_rot, phases)
+        scale = np.abs(vis0).max()
+        np.testing.assert_allclose(
+            vis_rot,
+            vis0,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+        # Non-vacuity: rotating only the sky does change the answer.
+        vis_half = polarized_convolve(beam.compute_alm(), sky_alm_rot, phases)
+        assert np.abs(vis_half - vis0).max() > 1e-6 * scale
+
+    def test_stokes_selection_rules(self):
+        """Blind responses see nothing: an intensity-only response
+        rejects polarization, and I/V do not mix even though they share
+        the spin-0 transform."""
+        rng = np.random.default_rng(207)
+        nfreq = len(_POL_FREQS)
+        shape = _pol_shape()
+
+        def sky_with(*names):
+            maps = np.zeros((nfreq, 4) + shape)
+            for name in names:
+                maps[:, "IQUV".index(name)] = rng.normal(size=(nfreq,) + shape)
+            return maps
+
+        def beam_with(*names):
+            maps = np.zeros((1, nfreq, 4) + shape, dtype=np.complex128)
+            for name in names:
+                maps[:, :, "IQUV".index(name)] = rng.normal(
+                    size=(1, nfreq) + shape
+                ) + 1j * rng.normal(size=(1, nfreq) + shape)
+            return maps
+
+        i_sky = sky_with("I")
+        qu_sky = sky_with("Q", "U")
+        v_sky = sky_with("V")
+        i_beam = beam_with("I")
+        qu_beam = beam_with("Q", "U")
+        v_beam = beam_with("V")
+
+        phases = _pol_phases(6)
+        # Non-vacuity anchors: matched channels do produce signal.
+        scale = min(
+            np.abs(_pol_vis(i_beam, i_sky, phases)).max(),
+            np.abs(_pol_vis(qu_beam, qu_sky, phases)).max(),
+            np.abs(_pol_vis(v_beam, v_sky, phases)).max(),
+        )
+        assert scale > 0
+
+        blind_cases = [
+            (i_beam, qu_sky),
+            (i_beam, v_sky),
+            (v_beam, i_sky),
+            (qu_beam, i_sky),
+        ]
+        for beam_maps, sky_maps in blind_cases:
+            vis = _pol_vis(beam_maps, sky_maps, phases)
+            np.testing.assert_allclose(vis, 0.0, atol=1e-12 * scale)
+
+    def test_polarization_angle_rotation_by_45_degrees(self):
+        """A 45 degree polarization-angle rotation maps Q onto U.
+
+        Rotating the polarization frame of sky and response together is
+        unobservable; a response matched to the original sky is exactly
+        orthogonal to the rotated sky at the reference time, since
+        pointwise Q*Q' + U*U' = Q(-U) + UQ = 0.
+        """
+        rng = np.random.default_rng(208)
+        q_map, u_map = _band_limited_qu_pair(rng)
+        stokes = np.zeros((4,) + _pol_shape())
+        stokes[1] = q_map
+        stokes[2] = u_map
+        # Polarization angle rotated by 45 degrees: (Q, U) -> (-U, Q).
+        rotated = np.zeros_like(stokes)
+        rotated[1] = -u_map
+        rotated[2] = q_map
+
+        freq_scale = _POL_FREQ_SCALE[:, None, None, None]
+        sky1 = freq_scale * stokes[None]
+        sky2 = freq_scale * rotated[None]
+        beam1 = (freq_scale * stokes[None])[None]
+        beam2 = (freq_scale * rotated[None])[None]
+
+        phases = _pol_phases(8)
+        vis11 = _pol_vis(beam1, sky1, phases)
+        vis22 = _pol_vis(beam2, sky2, phases)
+        scale = np.abs(vis11).max()
+        assert scale > 0
+        np.testing.assert_allclose(
+            vis22,
+            vis11,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+        # Matched response at the reference time: full polarized power,
+        # real and positive.
+        vis_matched = np.asarray(vis11[0, 0])
+        np.testing.assert_allclose(vis_matched.imag, 0.0, atol=1e-10 * scale)
+        assert (vis_matched.real > 1e-6 * scale).all()
+        # Orthogonal at the reference time after the 45 degree turn.
+        vis_cross = _pol_vis(beam1, sky2, phases)
+        np.testing.assert_allclose(vis_cross[0], 0.0, atol=1e-10 * scale)
+
+    def test_real_responses_and_sky_give_real_visibilities(self):
+        """A real Stokes response observing a real Stokes sky measures
+        a real visibility at every time.
+
+        Time evolution is a rigid rotation of a real sky, so the full
+        Stokes integrand stays real; any imaginary residual would be a
+        broken Hermitian pairing between the spin +/-2 blocks.
+        """
+        rng = np.random.default_rng(209)
+
+        def real_stokes(rng):
+            i_map = _band_limited_scalar(rng)
+            v_map = 0.1 * _band_limited_scalar(rng)
+            q_map, u_map = _band_limited_qu_pair(rng)
+            stokes = np.stack((i_map, q_map, u_map, v_map))
+            return _POL_FREQ_SCALE[:, None, None, None] * stokes[None]
+
+        sky_maps = real_stokes(rng)
+        beam_maps = real_stokes(rng)[None]  # add the pair axis
+        phases = _pol_phases(16)
+        vis = np.asarray(_pol_vis(beam_maps, sky_maps, phases))
+        scale = np.abs(vis).max()
+        assert scale > 0
+        np.testing.assert_allclose(vis.imag, 0.0, atol=1e-10 * scale)
