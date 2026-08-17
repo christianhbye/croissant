@@ -30,6 +30,9 @@ flavours cannot collide. No numerical behaviour changes anywhere.
 - `tests/test_physics.py` is ground truth. It must end at **0 diff vs main**.
   If it fails, the change is wrong — fix the change, never the test.
 - Every task ends green and committed, so the branch stays bisectable.
+- **Never run the full test suite locally.** Run the targeted tests for what
+  you touched; CI runs the full suite on the pushed branch. See the Testing
+  policy section for the per-task commands.
 - Branch is `dense-engine-unification`, already created, spec committed at
   `82868c2`.
 
@@ -40,20 +43,30 @@ grain.
 
 ---
 
-## Baseline
+## Testing policy
 
-Before Task 1, record the starting point. Later tasks compare against it.
+**Do not run the full suite between tasks.** It takes 6-10 minutes, and the
+PR's CI runs it on every push. Each task runs only the tests covering what it
+touched, plus lint. The full suite runs once — in CI, on the pushed branch.
 
-- [ ] **Step 0: Record the baseline**
+Per-task targeted commands, used in place of any full-suite step:
+
+| Task | Command |
+| --- | --- |
+| 1 | `uv run pytest tests/test_utils.py tests/test_kernel_engine.py -q` |
+| 2 | `uv run pytest tests/test_dense.py tests/test_sphere.py tests/test_engine_equivalence.py -q` |
+| 3 | `uv run pytest tests/test_dense.py tests/test_sphere.py tests/test_polarization.py -q` |
+| 4 | `uv run pytest tests/test_dense.py -q` |
+| 5 | `uv run pytest tests/test_dense.py -q` |
+
+Every task also runs `uv run ruff check && uv run ruff format --check`.
+
+- [ ] **Step 0: Confirm the starting point**
 
 ```bash
-git status                      # expect: clean, on dense-engine-unification
-uv run pytest -q 2>&1 | tail -5 # record the "N passed" number
+git status   # expect: clean, on dense-engine-unification
 uv run ruff check && uv run ruff format --check
 ```
-
-Write the passing count into the PR notes. Every task must match or exceed it
-(tasks add tests, never remove them).
 
 ---
 
@@ -201,10 +214,12 @@ Task 2 handles it), and `:217` `sphere._dense_dtypes` becomes
 Run: `grep -rn "_dense_dtypes" src/ tests/ benchmarks/`
 Expected: no output.
 
-- [ ] **Step 7: Run the full suite and lint**
+- [ ] **Step 7: Run the targeted tests and lint**
 
-Run: `uv run pytest -q 2>&1 | tail -5 && uv run ruff check && uv run ruff format --check`
-Expected: baseline count + 1 passed, 0 failed, ruff clean.
+Run: `uv run pytest tests/test_utils.py tests/test_kernel_engine.py -q`
+Then: `uv run ruff check && uv run ruff format --check`
+Expected: 0 failed, ruff clean. These are the two files whose contents this
+task changed; the full suite runs in CI.
 
 - [ ] **Step 8: Confirm the physics tests are untouched**
 
@@ -475,14 +490,17 @@ grep -n "^from .sphere\|^from croissant.sphere\|import sphere" src/croissant/den
 ```
 Expected: no output from either.
 
-- [ ] **Step 9: Run the full suite and lint**
+- [ ] **Step 9: Run the targeted tests and lint**
 
-Run: `uv run pytest -q 2>&1 | tail -5 && uv run ruff check && uv run ruff format --check`
-Expected: baseline + 2 passed, 0 failed, ruff clean.
+Run: `uv run pytest tests/test_dense.py tests/test_sphere.py tests/test_engine_equivalence.py -q`
+Then: `uv run pytest tests/test_polarization.py -q -k "dense or engine or jit"`
+Then: `uv run ruff check && uv run ruff format --check`
+Expected: 0 failed, ruff clean.
 
 This is the step that matters most in this task. `tests/test_engine_equivalence.py`
 and `tests/test_polarization.py:575-580` (the warm-then-jit `RuntimeError`
-contract) are the real regression gates for a move this size.
+contract) are the real regression gates for a move this size, which is why
+both are named explicitly rather than left to CI.
 
 - [ ] **Step 10: Confirm the physics tests are untouched**
 
@@ -706,10 +724,11 @@ nside=32 operators and takes several minutes.
 Run: `uv run pytest tests/test_dense.py -v`
 Expected: PASS (3 tests)
 
-- [ ] **Step 8: Run the full suite and lint**
+- [ ] **Step 8: Run the targeted tests and lint**
 
-Run: `uv run pytest -q 2>&1 | tail -5 && uv run ruff check && uv run ruff format --check`
-Expected: baseline + 4 passed, 0 failed, ruff clean.
+Run: `uv run pytest tests/test_dense.py tests/test_sphere.py tests/test_polarization.py -q`
+Then: `uv run ruff check && uv run ruff format --check`
+Expected: 0 failed, ruff clean.
 
 Watch `tests/test_sphere.py::test_dense_general_operator_accepts_single_precision`
 specifically: it pins that the full operator's precision follows the **map**
@@ -850,10 +869,11 @@ about 904 MiB. Call `croissant.dense_cache_nbytes()` to see the current
 total and `croissant.clear_dense_matrix_cache()` to release all of it.
 ```
 
-- [ ] **Step 6: Run the full suite and lint**
+- [ ] **Step 6: Run the targeted tests and lint**
 
-Run: `uv run pytest -q 2>&1 | tail -5 && uv run ruff check && uv run ruff format --check`
-Expected: baseline + 5 passed, 0 failed, ruff clean.
+Run: `uv run pytest tests/test_dense.py -q`
+Then: `uv run ruff check && uv run ruff format --check`
+Expected: 0 failed, ruff clean.
 
 - [ ] **Step 7: Commit**
 
@@ -960,10 +980,11 @@ and above `apply_packed_matrix`:
 @partial(eqx.filter_jit, inline=True)
 ```
 
-- [ ] **Step 6: Run the full suite and lint**
+- [ ] **Step 6: Run the targeted tests and lint**
 
-Run: `uv run pytest -q 2>&1 | tail -5 && uv run ruff check && uv run ruff format --check`
-Expected: baseline + 6 passed, 0 failed, ruff clean.
+Run: `uv run pytest tests/test_dense.py -q`
+Then: `uv run ruff check && uv run ruff format --check`
+Expected: 0 failed, ruff clean.
 
 - [ ] **Step 7: Confirm the physics tests are untouched**
 
@@ -991,10 +1012,19 @@ plain jax.jit would trace the lmax it builds a shape from."
 
 ## Final verification
 
-- [ ] **Step 1: Full suite, timed**
+- [ ] **Step 1: The union of every touched test file**
 
-Run: `uv run pytest -q 2>&1 | tail -5`
-Expected: baseline + 6 passed, 0 failed.
+Run:
+
+```bash
+uv run pytest tests/test_dense.py tests/test_sphere.py tests/test_utils.py \
+              tests/test_kernel_engine.py tests/test_engine_equivalence.py \
+              tests/test_polarization.py -q
+```
+Expected: 0 failed.
+
+The full suite is **not** run locally. CI runs it on the pushed branch, and a
+6-10 minute local run repeated per task buys nothing CI does not already give.
 
 - [ ] **Step 2: Physics tests byte-identical to main**
 
@@ -1033,14 +1063,23 @@ print('public dense API intact')
 - [ ] **Step 6: Each commit is independently green**
 
 ```bash
-git rebase --exec 'uv run pytest -q 2>&1 | tail -2' main
+git rebase --exec 'uv run pytest tests/test_dense.py tests/test_sphere.py \
+  tests/test_utils.py tests/test_kernel_engine.py -q 2>&1 | tail -2' main
 ```
 Expected: every commit reports 0 failed. This is the bisectability gate the
-spec's risk table requires.
+spec's risk table requires. It runs the targeted files rather than the full
+suite — five commits times a 6-10 minute suite is nearly an hour to re-derive
+what CI checks on the final tree anyway, and a commit that breaks the dense
+engine breaks these files.
+
+Note the earlier commits legitimately lack `tests/test_dense.py`; `pytest`
+errors on a missing path, so drop it from the `--exec` command for the two
+doc commits at the base of the branch, or start the rebase from the first
+code commit.
 
 - [ ] **Step 7: Report to Christian**
 
-Summarise: passing count vs baseline, physics diff, ruff status, and the two
+Summarise: targeted-test results, physics diff, ruff status, and the two
 behaviour changes that need his eye before any push —
 `clear_dense_matrix_cache` now clears both halves, and the VJP operators no
 longer evict. Do not push; outward actions are approved individually.
