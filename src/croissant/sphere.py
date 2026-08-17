@@ -13,22 +13,9 @@ _DENSE_MATRIX_CACHE = {}
 _DENSE_MATRIX_CACHE_LOCK = RLock()
 
 
-def _dense_dtypes():
-    """Return the real and complex dtypes of a dense SHT matrix.
-
-    The dense engine reproduces ``s2fft.forward``, which always outputs
-    complex128 alms on an x64-enabled runtime (float32 maps included) and
-    complex64 otherwise. The matrix precision therefore follows JAX's x64
-    setting rather than the dtype of the input maps.
-    """
-    if jax.config.x64_enabled:
-        return jnp.float64, jnp.complex128
-    return jnp.float32, jnp.complex64
-
-
 def _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter):
     """Return a hashable key for a cached dense SHT analysis matrix."""
-    _, complex_dtype = _dense_dtypes()
+    _, complex_dtype = utils.engine_dtypes()
     return (
         tuple(spatial_shape),
         int(lmax),
@@ -99,7 +86,7 @@ def _build_dense_matrix_healpix(
 
     ell, emm = _positive_lm_indices(lmax)
     nalm = len(ell)
-    _, complex_dtype = _dense_dtypes()
+    _, complex_dtype = utils.engine_dtypes()
     if chunk_size is None:
         # Limit each host-side spherical-harmonic block to roughly 64 MiB.
         complex_itemsize = np.dtype(complex_dtype).itemsize
@@ -197,7 +184,7 @@ def _build_dense_matrix_from_pixels(
 ):
     """Materialize a general s2fft analysis operator from pixel bases."""
     npix = int(np.prod(spatial_shape))
-    real_dtype, _ = _dense_dtypes()
+    real_dtype, _ = utils.engine_dtypes()
     itemsize = np.dtype(real_dtype).itemsize
     if chunk_size is None:
         # Keep each identity-map chunk below 64 MiB. A ceiling of 256 gives

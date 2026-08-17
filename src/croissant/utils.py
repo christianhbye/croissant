@@ -1,6 +1,7 @@
 import functools
 import warnings
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import s2fft
@@ -497,6 +498,31 @@ def lmax_from_ntheta(ntheta, sampling):
             "from s2fft and include {'mw', 'mwss', 'dh', 'gl', 'healpix'}."
         )
     return lmax
+
+
+def engine_dtypes():
+    """
+    Return the real and complex dtypes croissant's SHT engines produce.
+
+    Every engine reproduces ``s2fft.forward``, which returns complex128
+    alms on an x64-enabled runtime (float32 maps included) and complex64
+    otherwise. Engine precision therefore follows JAX's x64 setting
+    rather than the dtype of the input maps, and a cached transform built
+    before ``jax.config.update("jax_enable_x64", True)`` must not be
+    reused afterwards at the earlier, reduced precision — which is why
+    both the dense and kernel caches stamp this into their keys.
+
+    Returns
+    -------
+    real_dtype : jnp.dtype
+        Real dtype matching the engines' precision.
+    complex_dtype : jnp.dtype
+        Complex dtype the engines' coefficients carry.
+
+    """
+    if jax.config.x64_enabled:
+        return jnp.float64, jnp.complex128
+    return jnp.float32, jnp.complex64
 
 
 def __getattr__(name):

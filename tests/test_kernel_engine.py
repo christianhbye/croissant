@@ -214,7 +214,7 @@ def test_kernel_compute_alm_matches_s2fft_engine_scalar():
 def test_kernel_engine_follows_the_dtype_contract():
     """The engines share a dtype policy, so the kernel engine must too.
 
-    Per ``sphere._dense_dtypes``, croissant's engines reproduce
+    Per ``utils.engine_dtypes``, croissant's engines reproduce
     ``s2fft.forward``: complex128 out on an x64 runtime even for float32
     maps. A kernel engine that instead inherited the input dtype would
     silently change precision downstream, which the alm-value
