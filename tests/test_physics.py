@@ -1276,6 +1276,13 @@ _POL_FREQS = np.array([50.0, 150.0])
 # Per-frequency scale factors applied to synthesized maps so the
 # frequency axis stays nontrivial without a second synthesis.
 _POL_FREQ_SCALE = np.array([1.0, 0.7])
+# ``PairStokesBeam`` defines a visibility as <v_a v_b*>, so the pair
+# label constrains the response. An autocorrelation is |v_a|^2: real,
+# with a non-negative intensity row. A cross pair is complex in general
+# and may have no intensity response at all, as an orthogonal feed pair
+# does. Tests label the pair to match the response they build.
+_AUTO_PAIR = (0, 0)
+_CROSS_PAIR = (0, 1)
 
 
 def _pol_shape():
@@ -1287,13 +1294,13 @@ def _pol_shape():
     )
 
 
-def _pol_vis(beam_maps, sky_maps, phases):
+def _pol_vis(beam_maps, sky_maps, phases, pair=_CROSS_PAIR):
     """Polarized visibilities of one pair on the full-sky MWSS grid."""
     horizon = np.ones(_pol_shape(), dtype=bool)
     beam = PairStokesBeam(
         beam_maps,
         _POL_FREQS,
-        [(0, 0)],
+        [pair],
         sampling="mwss",
         horizon=horizon,
     )
@@ -1311,13 +1318,59 @@ def _pol_phases(n_times):
     )
 
 
+def _assert_physical_stokes(maps, stokes_axis):
+    """Assert IQUV maps lie in the physical Stokes cone."""
+    maps = np.moveaxis(np.asarray(maps), stokes_axis, 0)
+    intensity = maps[0]
+    pol = np.sqrt((maps[1:] ** 2).sum(axis=0))
+    assert intensity.min() > 0.0
+    assert (pol <= intensity).all()
+
+
+def _physical_stokes(maps, stokes_axis, pol_frac=0.8):
+    """Project raw IQUV maps into the physical Stokes cone.
+
+    A brightness distribution must satisfy ``I > 0`` and a polarization
+    fraction ``sqrt(Q^2 + U^2 + V^2) / I <= 1`` at every pixel; white
+    noise, or a zero-mean band-limited field, satisfies neither. The
+    intensity is lifted by a constant offset and the polarized
+    components are scaled by a single global factor -- a monopole shift
+    and a uniform rescale, both of which leave a band-limited map
+    band-limited and leave the angular structure of every component
+    untouched.
+
+    This constraint is on the *sky* alone. A pair response is a row of a
+    Mueller matrix, not a Stokes vector: a differencing polarimeter
+    legitimately has zero intensity response, so responses in this
+    section are deliberately left unconstrained.
+    """
+    maps = np.moveaxis(np.asarray(maps, dtype=float), stokes_axis, 0)
+    intensity, pol = maps[0], maps[1:]
+    intensity = intensity - intensity.min() + np.ptp(intensity)
+    pol_amp = np.sqrt((pol**2).sum(axis=0)).max()
+    if pol_amp > 0.0:
+        pol = pol * (pol_frac * intensity.min() / pol_amp)
+    out = np.concatenate((intensity[None], pol), axis=0)
+    _assert_physical_stokes(out, 0)
+    return np.moveaxis(out, 0, stokes_axis)
+
+
 def _random_stokes_sky(rng):
-    """White-noise IQUV sky maps, shape (nfreq, 4, ntheta, nphi)."""
-    return rng.normal(size=(len(_POL_FREQS), 4) + _pol_shape())
+    """White-noise IQUV sky maps, shape (nfreq, 4, ntheta, nphi).
+
+    Physical: positive intensity everywhere, polarization fraction
+    below one everywhere.
+    """
+    maps = rng.normal(size=(len(_POL_FREQS), 4) + _pol_shape())
+    return _physical_stokes(maps, stokes_axis=1)
 
 
 def _random_pair_response(rng):
-    """White-noise complex pair response, shape (1, nfreq, 4, ...)."""
+    """White-noise complex pair response, shape (1, nfreq, 4, ...).
+
+    Complex, so it describes a cross pair rather than an
+    autocorrelation.
+    """
     shape = (1, len(_POL_FREQS), 4) + _pol_shape()
     return rng.normal(size=shape) + 1j * rng.normal(size=shape)
 
@@ -1336,6 +1389,15 @@ def _band_limited_scalar(rng):
             reality=True,
         )
     )
+
+
+def _band_limited_positive(rng):
+    """A band-limited scalar map that is positive everywhere.
+
+    The offset is a monopole, so the map stays band-limited.
+    """
+    scalar = _band_limited_scalar(rng)
+    return scalar - scalar.min() + np.ptp(scalar)
 
 
 def _band_limited_qu_pair(rng):
@@ -1363,10 +1425,15 @@ def _band_limited_qu_pair(rng):
 
 class TestPolarization:
     def test_polarized_linearity_superposition(self):
-        """V(2*sky1 + sky2) = 2*V(sky1) + V(sky2), all Stokes at once."""
+        """V(2*sky1 + sky2) = 2*V(sky1) + V(sky2), all Stokes at once.
+
+        The physical Stokes states form a convex cone, so the
+        superposed sky is itself a sky that could exist.
+        """
         rng = np.random.default_rng(201)
         sky1 = _random_stokes_sky(rng)
         sky2 = _random_stokes_sky(rng)
+        _assert_physical_stokes(2.0 * sky1 + sky2, stokes_axis=1)
         beam = _random_pair_response(rng)
         phases = _pol_phases(8)
         vis1 = _pol_vis(beam, sky1, phases)
@@ -1387,25 +1454,31 @@ class TestPolarization:
         Band-limited maps, because the two pipelines may pick different
         (equally valid) discrete representatives of an aliased map; the
         physical statement is about resolved fields.
+
+        The scalar ``Beam`` is an autocorrelation power pattern, so this
+        is the one test in the section on an auto pair, and its
+        intensity response is non-negative accordingly.
         """
         rng = np.random.default_rng(202)
         shape = _pol_shape()
         nfreq = len(_POL_FREQS)
         intensity = (
-            _POL_FREQ_SCALE[:, None, None] * _band_limited_scalar(rng)[None]
+            _POL_FREQ_SCALE[:, None, None] * _band_limited_positive(rng)[None]
         )
         response = (
-            _POL_FREQ_SCALE[::-1, None, None] * _band_limited_scalar(rng)[None]
+            _POL_FREQ_SCALE[::-1, None, None]
+            * _band_limited_positive(rng)[None]
         )
         horizon = np.ones(shape, dtype=bool)
 
         sky_maps = np.zeros((nfreq, 4) + shape)
         sky_maps[:, 0] = intensity
+        _assert_physical_stokes(sky_maps, stokes_axis=1)
         beam_maps = np.zeros((1, nfreq, 4) + shape, dtype=np.complex128)
         beam_maps[0, :, 0] = response
 
         phases = _pol_phases(12)
-        pol_vis = _pol_vis(beam_maps, sky_maps, phases)
+        pol_vis = _pol_vis(beam_maps, sky_maps, phases, pair=_AUTO_PAIR)
 
         scalar_sky = Sky(
             jnp.asarray(intensity),
@@ -1431,6 +1504,13 @@ class TestPolarization:
             rtol=1e-10,
             atol=1e-10 * scale,
         )
+        # An auto pair of positive maps measures a real, positive power.
+        scalar_vis = np.asarray(scalar_vis)
+        np.testing.assert_allclose(scalar_vis.imag, 0.0, atol=1e-10 * scale)
+        assert (scalar_vis.real > 0).all()
+        # Non-vacuity: the two pipelines are matched on a signal that
+        # actually turns with the sky, not just on a shared monopole.
+        assert np.abs(scalar_vis - scalar_vis[0]).max() > 1e-3 * scale
 
     def test_stokes_convention_invariance(self):
         """Expressing sky and response in COSMO instead of IAU leaves
@@ -1447,7 +1527,7 @@ class TestPolarization:
         beam = PairStokesBeam(
             beam_cosmo,
             _POL_FREQS,
-            [(0, 0)],
+            [_CROSS_PAIR],
             sampling="mwss",
             convention="COSMO",
             horizon=horizon,
@@ -1544,7 +1624,7 @@ class TestPolarization:
         beam = PairStokesBeam(
             beam_maps,
             _POL_FREQS,
-            [(0, 0)],
+            [_CROSS_PAIR],
             sampling="mwss",
             horizon=horizon,
         )
@@ -1574,16 +1654,17 @@ class TestPolarization:
     def test_stokes_selection_rules(self):
         """Blind responses see nothing: an intensity-only response
         rejects polarization, and I/V do not mix even though they share
-        the spin-0 transform."""
+        the spin-0 transform.
+
+        Phrased as differences between physical skies, because a sky
+        carrying Q/U or V but no intensity cannot exist. The
+        convolution is linear in the sky, so the difference between two
+        skies that agree except in one Stokes component is exactly that
+        component's contribution to the visibility.
+        """
         rng = np.random.default_rng(207)
         nfreq = len(_POL_FREQS)
         shape = _pol_shape()
-
-        def sky_with(*names):
-            maps = np.zeros((nfreq, 4) + shape)
-            for name in names:
-                maps[:, "IQUV".index(name)] = rng.normal(size=(nfreq,) + shape)
-            return maps
 
         def beam_with(*names):
             maps = np.zeros((1, nfreq, 4) + shape, dtype=np.complex128)
@@ -1593,31 +1674,53 @@ class TestPolarization:
                 ) + 1j * rng.normal(size=(1, nfreq) + shape)
             return maps
 
-        i_sky = sky_with("I")
-        qu_sky = sky_with("Q", "U")
-        v_sky = sky_with("V")
         i_beam = beam_with("I")
         qu_beam = beam_with("Q", "U")
         v_beam = beam_with("V")
 
+        # Physical skies differing in exactly one Stokes component.
+        # Zeroing polarization or raising the intensity both keep the
+        # sky inside the cone.
+        sky = _random_stokes_sky(rng)
+        no_linear = sky.copy()
+        no_linear[:, 1:3] = 0.0
+        no_circular = sky.copy()
+        no_circular[:, 3] = 0.0
+        brighter = sky.copy()
+        brighter[:, 0] *= 2.0
+        for variant in (no_linear, no_circular, brighter):
+            _assert_physical_stokes(variant, stokes_axis=1)
+
         phases = _pol_phases(6)
-        # Non-vacuity anchors: matched channels do produce signal.
-        scale = min(
-            np.abs(_pol_vis(i_beam, i_sky, phases)).max(),
-            np.abs(_pol_vis(qu_beam, qu_sky, phases)).max(),
-            np.abs(_pol_vis(v_beam, v_sky, phases)).max(),
-        )
+
+        def response_to_change(beam_maps, variant):
+            """What a response measures of the changed component."""
+            return np.asarray(
+                _pol_vis(beam_maps, sky, phases)
+                - _pol_vis(beam_maps, variant, phases)
+            )
+
+        # Non-vacuity anchors: each response does see its own component.
+        matched = [
+            (i_beam, brighter),  # intensity response sees intensity
+            (qu_beam, no_linear),  # linear-pol response sees Q, U
+            (v_beam, no_circular),  # circular response sees V
+        ]
+        scale = min(np.abs(response_to_change(b, v)).max() for b, v in matched)
         assert scale > 0
 
         blind_cases = [
-            (i_beam, qu_sky),
-            (i_beam, v_sky),
-            (v_beam, i_sky),
-            (qu_beam, i_sky),
+            (i_beam, no_linear),  # intensity response rejects Q, U
+            (i_beam, no_circular),  # intensity response rejects V
+            (qu_beam, brighter),  # linear-pol response rejects I
+            (v_beam, brighter),  # circular response rejects I
         ]
-        for beam_maps, sky_maps in blind_cases:
-            vis = _pol_vis(beam_maps, sky_maps, phases)
-            np.testing.assert_allclose(vis, 0.0, atol=1e-12 * scale)
+        for beam_maps, variant in blind_cases:
+            np.testing.assert_allclose(
+                response_to_change(beam_maps, variant),
+                0.0,
+                atol=1e-12 * scale,
+            )
 
     def test_polarization_angle_rotation_by_45_degrees(self):
         """A 45 degree polarization-angle rotation maps Q onto U.
@@ -1626,22 +1729,38 @@ class TestPolarization:
         unobservable; a response matched to the original sky is exactly
         orthogonal to the rotated sky at the reference time, since
         pointwise Q*Q' + U*U' = Q(-U) + UQ = 0.
+
+        The sky carries the intensity that its partial polarization
+        requires. The response is a pure polarization-differencing row
+        with no intensity response -- what an orthogonal feed pair has,
+        hence the cross-pair label -- which is what keeps that
+        intensity out of the visibility.
         """
         rng = np.random.default_rng(208)
-        q_map, u_map = _band_limited_qu_pair(rng)
-        stokes = np.zeros((4,) + _pol_shape())
-        stokes[1] = q_map
-        stokes[2] = u_map
+        q_raw, u_raw = _band_limited_qu_pair(rng)
+        stokes = np.stack(
+            (_band_limited_scalar(rng), q_raw, u_raw, np.zeros_like(q_raw))
+        )
+        stokes = _physical_stokes(stokes, stokes_axis=0)
+        q_map, u_map = stokes[1], stokes[2]
         # Polarization angle rotated by 45 degrees: (Q, U) -> (-U, Q).
-        rotated = np.zeros_like(stokes)
+        # Intensity is unchanged by a rotation of the polarization
+        # frame, so the rotated sky is physical too.
+        rotated = stokes.copy()
         rotated[1] = -u_map
         rotated[2] = q_map
+        _assert_physical_stokes(rotated, stokes_axis=0)
+        # Responses see only the linear polarization.
+        response = np.zeros_like(stokes)
+        response[1], response[2] = q_map, u_map
+        response_rot = np.zeros_like(stokes)
+        response_rot[1], response_rot[2] = -u_map, q_map
 
         freq_scale = _POL_FREQ_SCALE[:, None, None, None]
         sky1 = freq_scale * stokes[None]
         sky2 = freq_scale * rotated[None]
-        beam1 = (freq_scale * stokes[None])[None]
-        beam2 = (freq_scale * rotated[None])[None]
+        beam1 = (freq_scale * response[None])[None]
+        beam2 = (freq_scale * response_rot[None])[None]
 
         phases = _pol_phases(8)
         vis11 = _pol_vis(beam1, sky1, phases)
@@ -1675,14 +1794,19 @@ class TestPolarization:
         rng = np.random.default_rng(209)
 
         def real_stokes(rng):
+            """A real band-limited IQUV block, shape (4, ntheta, nphi)."""
             i_map = _band_limited_scalar(rng)
             v_map = 0.1 * _band_limited_scalar(rng)
             q_map, u_map = _band_limited_qu_pair(rng)
-            stokes = np.stack((i_map, q_map, u_map, v_map))
+            return np.stack((i_map, q_map, u_map, v_map))
+
+        def add_freq_axis(stokes):
             return _POL_FREQ_SCALE[:, None, None, None] * stokes[None]
 
-        sky_maps = real_stokes(rng)
-        beam_maps = real_stokes(rng)[None]  # add the pair axis
+        # The sky must be a physical brightness distribution; the
+        # response need only be real.
+        sky_maps = add_freq_axis(_physical_stokes(real_stokes(rng), 0))
+        beam_maps = add_freq_axis(real_stokes(rng))[None]  # add pair axis
         phases = _pol_phases(16)
         vis = np.asarray(_pol_vis(beam_maps, sky_maps, phases))
         scale = np.abs(vis).max()
