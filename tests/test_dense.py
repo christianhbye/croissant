@@ -162,12 +162,12 @@ def test_dense_cache_reuses_matrix_for_identical_geometry():
 
 
 def test_equiangular_builder_produces_the_packed_operator():
-    """The one-hot builder must keep s2fft's reality=True packing.
+    """The relocated builder still reproduces s2fft's coefficients.
 
-    The builder pushes one-hot pixel maps through a real forward
-    transform and keeps only m >= 0. Losing reality=True would still
-    produce a matrix of the right shape, so the guard has to compare
-    values against s2fft directly.
+    The builder exists only to materialize s2fft's own transform, so
+    s2fft.forward is the ground truth its packed output is pinned
+    against. Comparing values rather than only the matrix shape is what
+    makes this a regression test for the relocation.
     """
     lmax, sampling = 4, "dh"
     shape = spatial_shape(lmax, sampling, None)

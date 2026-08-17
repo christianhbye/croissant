@@ -163,10 +163,10 @@ def _forward_real_chunk(basis, lmax, sampling, nside, niter):
         nside=nside,
         sampling=sampling,
         method="jax",
-        # The one-hot basis maps are real and the caller keeps only
-        # m >= 0, so this is what makes the result the packed operator
-        # by construction. See test_equiangular_builder_produces_the_
-        # packed_operator.
+        # Valid because the one-hot basis maps are real: s2fft then
+        # computes only the m >= 0 half, which is the half the caller
+        # keeps. This saves work and allocation; it does not change the
+        # coefficients, which the general transform returns too.
         reality=True,
         precomps=None,
         spmd=False,
@@ -384,7 +384,36 @@ def clear_dense_matrix_cache():
 
 @partial(eqx.filter_jit, inline=True)
 def apply_packed_matrix(data, matrix, lmax, spatial_ndim=None):
-    """Apply a packed dense analysis matrix and restore s2fft's layout."""
+    """
+    Apply a packed dense analysis matrix and restore s2fft's layout.
+
+    The matrix carries only the independent ``m >= 0`` coefficients, so
+    the negative-m half is rebuilt from the Hermitian symmetry of a real
+    field's coefficients. The result therefore has the same full layout
+    ``s2fft.forward`` returns, and the route is only valid for the real
+    scalar fields the packed operator was built for.
+
+    Parameters
+    ----------
+    data : jax.Array
+        Field data with its spatial axes trailing. Every axis before
+        them is treated as a batch axis.
+    matrix : jax.Array
+        Packed analysis matrix from :func:`precompute_dense_matrix`,
+        built for this field's spatial shape, band-limit and sampling.
+    lmax : int
+        Maximum spherical harmonic degree, matching ``matrix``.
+    spatial_ndim : int or None
+        Number of trailing spatial axes. The default ``None`` assumes a
+        single leading batch axis, as ``(N_freqs, npix)`` HEALPix data
+        has.
+
+    Returns
+    -------
+    alm : jax.Array
+        Spherical harmonic coefficients in s2fft's layout. Shape is
+        ``batch_shape + (lmax + 1, 2 * lmax + 1)``.
+    """
     if spatial_ndim is None:
         batch_shape = data.shape[:1]
     else:
