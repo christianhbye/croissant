@@ -8,8 +8,6 @@ memory cap, and degrades to the matrix-free engine when precomputing
 cannot pay for itself.
 """
 
-import math
-
 import pytest
 
 from croissant import engine_select, footprints
@@ -58,10 +56,12 @@ def test_refinement_does_not_by_itself_select_dense(niter):
 def test_amortisation_threshold_scales_with_kernel_size():
     """The batch a kernel needs grows with the kernel, not a constant.
 
-    Measured crossovers: batch 1 at nside=8 and nside=16 (kernels of 0.12
-    and 0.98 MiB), batch 8 at nside=32 (7.94 MiB). A fixed threshold
-    cannot serve both, so a batch of 4 must be enough at nside=16 and not
-    enough at nside=32.
+    Measured crossovers at niter=0, by direct batch ladder: 1 at lmax=31
+    (0.98 MiB kernel), 10 at lmax=63 (7.94 MiB), 78 at lmax=127
+    (63.75 MiB) -- close to a constant number of batch elements per MiB,
+    which is what ``_MIB_PER_BATCHED_TRANSFORM`` encodes. A fixed
+    threshold cannot serve all three, so a batch of 4 must be enough at
+    nside=16 and not enough at nside=32.
     """
     small, _ = engine_select.resolve_engine(
         lmax=31, sampling="healpix", nside=16, batch_size=4
@@ -72,6 +72,84 @@ def test_amortisation_threshold_scales_with_kernel_size():
     assert small == "kernel"
     assert large == "s2fft"
     assert "amortise" in reason
+
+
+#: Crossover batch sizes measured by direct batch ladder, CPU, x64,
+#: scalar HEALPix, from benchmarks/results/. Each entry is
+#: (lmax, nside, niter, measured crossover). These are wall-clock
+#: measurements on one machine, so the tolerance below is deliberately
+#: loose -- the point is that the policy lands in the right region, not
+#: that it reproduces a timing.
+_MEASURED_CROSSOVERS = [
+    (31, 16, 0, 1),
+    (31, 16, 3, 1),
+    (63, 32, 0, 10),
+    (63, 32, 3, 1),
+    (127, 64, 0, 78),
+    (127, 64, 3, 14),
+]
+
+
+@pytest.mark.parametrize("lmax,nside,niter,measured", _MEASURED_CROSSOVERS)
+def test_threshold_tracks_the_measured_crossover(lmax, nside, niter, measured):
+    """The policy must select the engine that measurement says is faster.
+
+    Pins the calibration against the ladder it was fitted to. Regret is
+    proportional to the distance between the threshold and the true
+    crossover -- at the crossover itself the two engines cost the same --
+    so what matters is landing in the right region, not hitting the
+    number. The tolerance is a factor of 2 either way, which at the
+    measured slopes bounds the worst case at a few seconds; the bug this
+    replaces was wrong by a factor of 9 at the last row and cost ~131 s.
+    """
+    threshold = engine_select._amortisation_threshold(
+        footprints.kernel_nbytes(
+            lmax, "healpix", nside=nside, spin=0, reality=True
+        ),
+        niter,
+    )
+    assert threshold >= 1
+    assert measured / 2 <= threshold <= max(2, measured * 2)
+
+
+@pytest.mark.parametrize("nside,lmax", [(32, 63), (64, 127)])
+def test_refinement_lowers_the_amortisation_threshold(nside, lmax):
+    """niter > 0 must make a kernel EASIER to justify, not harder.
+
+    This is the regression this calibration exists to fix. Refinement
+    builds a second kernel, so an accounting that reasoned from resident
+    bytes alone doubled the batch it demanded -- but s2fft repeats its
+    full Wigner-d recursion on every one of the 2*niter+1 passes while
+    the kernel engine re-contracts a cached table, so the crossover
+    measurably FALLS: 78 -> 14 at lmax=127. The old policy asked for 128
+    there and ran the matrix-free engine at a cost of roughly 131 s.
+    """
+    build_bytes = footprints.kernel_nbytes(
+        lmax, "healpix", nside=nside, spin=0, reality=True
+    )
+    unrefined = engine_select._amortisation_threshold(build_bytes, 0)
+    refined = engine_select._amortisation_threshold(build_bytes, 3)
+    assert refined < unrefined
+
+
+def test_threshold_is_spin_independent():
+    """Build cost sets the threshold, and it does not depend on spin.
+
+    A spin kernel is twice the bytes of a scalar one at the same
+    geometry, but measured build times are within 5% of each other
+    (10.7 s scalar against 10.2 s at spin 2, lmax=127) because both run
+    the same recursion over the same rings. Sizing the batch from the
+    real footprint would therefore ask a polarized field for twice the
+    batch to repay the same work. The resident size still governs the
+    memory cap -- see test_memory_cap_counts_the_inverse_kernel.
+    """
+    scalar, _ = engine_select.resolve_engine(
+        lmax=63, sampling="healpix", nside=32, spin=0, batch_size=10
+    )
+    spin, _ = engine_select.resolve_engine(
+        lmax=63, sampling="healpix", nside=32, spin=2, batch_size=10
+    )
+    assert scalar == spin == "kernel"
 
 
 def test_low_bandlimit_on_a_high_resolution_map_selects_dense():
@@ -121,26 +199,44 @@ def test_the_matrix_free_engine_cannot_serve_a_sub_floor_band_limit():
         sphere.compute_alm(data, 10, "healpix", nside=nside, engine="s2fft")
 
 
-def test_amortisation_threshold_counts_the_inverse_kernel():
-    """At niter > 0 both kernels are resident, so both must be paid for.
+def test_memory_cap_counts_the_inverse_kernel():
+    """At niter > 0 both kernels are resident, so the cap must see both.
 
-    ``kernel_fits`` already tests the doubled footprint. The threshold
-    read the undoubled one a line later, so a batch large enough to
-    amortise a single kernel was accepted for a configuration that
-    builds two.
+    This pins the split between the policy's two halves. The
+    amortisation threshold deliberately does NOT double at niter > 0 --
+    refinement repays a build faster, not slower, because s2fft repeats
+    its whole recursion per pass while the kernel engine re-contracts a
+    cached table (see ``_amortisation_threshold``). Memory is the half
+    that must still count two kernels, since two really are held.
+
+    So a cap admitting one kernel but not two must reject the kernel
+    engine however large the batch, while the same cap at niter=0 must
+    accept it. Asserting both is what makes this a test of the doubling
+    rather than of the cap in general.
     """
     nside, lmax = 32, 63
     single = footprints.kernel_nbytes(lmax, "healpix", nside=nside)
-    # Big enough to pay for one kernel, too small to pay for both.
-    batch = math.ceil(single / 1024**2) + 1
-    engine, reason = engine_select.resolve_engine(
+    cap = int(single * 1.5)
+
+    refined, reason = engine_select.resolve_engine(
         lmax=lmax,
         sampling="healpix",
         nside=nside,
         niter=3,
-        batch_size=batch,
+        batch_size=4096,
+        memory_cap=cap,
     )
-    assert engine == "s2fft", reason
+    assert refined != "kernel", reason
+
+    unrefined, reason = engine_select.resolve_engine(
+        lmax=lmax,
+        sampling="healpix",
+        nside=nside,
+        niter=0,
+        batch_size=4096,
+        memory_cap=cap,
+    )
+    assert unrefined == "kernel", reason
 
 
 def test_nothing_exceeds_the_memory_cap():
@@ -423,28 +519,43 @@ def test_polarized_fields_reach_the_kernel_engine():
 def test_polarized_blocks_resolve_independently():
     """One object must be able to report two different engines.
 
-    A real sky's spin-0 kernel packs to ``m >= 0`` and so is about half
-    the size of a spin-weighted one, and the I/V block is batched over
-    twice as many maps as each Q/U block. At nside=16 with a single
-    frequency those two facts land on opposite sides of the
-    amortisation threshold, so a field that resolved once for the whole
-    object could not produce this split whichever way it decided.
+    The I/V block carries two Stokes maps per frequency, so it is
+    batched over twice as many maps as each Q/U block. Pick a resolution
+    and a frequency count that put those two batches on opposite sides
+    of the amortisation threshold and the object must report a split; a
+    field that resolved once for the whole object could not, whichever
+    way it decided.
+
+    Sizing this on the batch is deliberate, and is what the test used to
+    do differently. It used to rely on the spin-0 kernel being half the
+    size of the spin-weighted one, which separated the blocks only
+    because the threshold was read off the footprint. The threshold is
+    spin-independent now (see test_threshold_is_spin_independent), so
+    kernel size no longer splits the blocks and only the batch does.
     """
     import numpy as np
 
     from croissant import footprints
     from croissant.polarization import PolarizedSky
 
-    nside = 16
+    nside = 32
     lmax = 2 * nside
-    assert footprints.kernel_nbytes(
-        lmax, "healpix", nside=nside, spin=0, reality=True
-    ) < footprints.kernel_nbytes(
-        lmax, "healpix", nside=nside, spin=-2, reality=False
-    ), "test needs the spin-0 block to be the cheaper one"
+    nfreq = 5
+    threshold = engine_select._amortisation_threshold(
+        footprints.kernel_nbytes(
+            lmax, "healpix", nside=nside, spin=0, reality=True
+        ),
+        0,
+    )
+    assert nfreq < threshold <= 2 * nfreq, (
+        f"test needs the block batches ({nfreq} and {2 * nfreq}) to "
+        f"straddle the threshold, which is {threshold}"
+    )
 
-    data = np.random.default_rng(1).normal(size=(1, 4, 12 * nside**2))
-    sky = PolarizedSky(data, [10.0], sampling="healpix")
+    data = np.random.default_rng(1).normal(size=(nfreq, 4, 12 * nside**2))
+    sky = PolarizedSky(
+        data, np.linspace(10.0, 20.0, nfreq), sampling="healpix"
+    )
 
     assert sky.engine["IV"] == "kernel"
     assert sky.engine["P_MINUS"] == "s2fft"

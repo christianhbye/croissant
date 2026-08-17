@@ -17,8 +17,6 @@ later calls, so ``batch_size`` stands in for the amortisation factor --
 for ``Beam`` and ``Sky`` that is the number of frequencies.
 """
 
-import math
-
 from .footprints import dense_nbytes, kernel_nbytes, transform_lmax
 
 __all__ = [
@@ -31,33 +29,24 @@ __all__ = [
 
 DEFAULT_MEMORY_CAP_BYTES = 512 * 1024**2
 
-#: Kernel megabytes that one batched transform can amortise. MEASURED in
-#: Task 6, not reasoned: the batch size at which the kernel engine's
-#: setup-plus-first call overtakes the matrix-free engine tracks the
-#: kernel's own size almost 1:1 -- crossover 1 at nside=8 and nside=16,
-#: where the kernel is 0.12 and 0.98 MiB, and crossover 8 at nside=32,
-#: where it is 7.94 MiB. Both quantities grow as roughly nside**3.
-#: A single fixed batch threshold cannot express this: it would have to be
-#: 1 to serve nside=16 and 8 to serve nside=32. Only three resolutions
-#: were fitted, so treat the 1:1 coefficient as order-of-magnitude, and
-#: re-measure with benchmarks/benchmark_engines.py before changing it.
+#: Kernel megabytes that one batched transform can amortise. MEASURED by
+#: direct batch ladders, not reasoned: the crossover batch -- the
+#: smallest batch at which the kernel engine's cold setup-plus-first call
+#: beats the matrix-free engine's -- tracks the kernel's own size closely
+#: at niter=0. Measured on CPU with x64, scalar HEALPix: crossover 1 at
+#: lmax=31 (0.98 MiB), 10 at lmax=63 (7.94 MiB), 78 at lmax=127
+#: (63.75 MiB), i.e. 1.02, 1.26 and 1.22 batch elements per MiB. Both
+#: quantities grow as roughly nside**3, which is why a single fixed batch
+#: count cannot serve every resolution. This constant is the reciprocal
+#: of that measured ratio.
 #:
-#: KNOWN MISCALIBRATED AT niter > 0, and this coefficient is why. All
-#: three crossovers above were measured at niter=0. The threshold below
-#: correctly counts both resident kernels at niter > 0, so the batch it
-#: asks for doubles -- but the kernel engine gets CHEAPER per transform
-#: there, not dearer: s2fft pays 2*niter+1 full Wigner-d recursions where
-#: the kernel pays cheap contractions. The true crossover falls while the
-#: predicted one rises. Measured counterexample at nside=32/lmax=63/
-#: niter=3: the kernel wins at a batch of 4 (7.25s vs 9.74s
-#: setup-plus-first) while this policy asks for 16, and batches of 8-15
-#: select s2fft where the undoubled threshold selected kernel. Correct
-#: but sometimes slower, never wrong -- the engines agree to ~1e-13. The
-#: same under-fitting shows at nside >= 64, where a 64.7 MiB kernel asks
-#: for 65 transforms and is effectively unreachable. Fixing it needs a
-#: batch sweep at niter > 0 and at nside >= 64; do not hand-tune the
-#: constant without one.
-_MIB_PER_BATCHED_TRANSFORM = 1.0
+#: Re-measure with
+#: ``benchmarks/benchmark_engines.py --sections ladder`` before changing
+#: it, and prefer the ladder to the cheaper ``--sections fit``: the fit
+#: assumes a cold cost linear in batch, and at lmax=63 the cold curves
+#: are nearly flat beyond a batch of ~12 because compilation dominates,
+#: which made the fit overestimate that crossover by about 2x.
+_MIB_PER_BATCHED_TRANSFORM = 0.81
 
 ENGINES = ("s2fft", "kernel", "dense")
 
@@ -79,15 +68,43 @@ def _transforms(count):
     return f"{count} transform" + ("" if count == 1 else "s")
 
 
-def _amortisation_threshold(resident_bytes):
+def _amortisation_threshold(build_bytes, niter):
     """
-    Smallest batch size that can pay for a kernel footprint this size.
+    Smallest batch size that can pay for BUILDING a kernel.
+
+    What has to be repaid is build time, not resident bytes, and the two
+    are deliberately different quantities here.
+
+    ``build_bytes`` is a geometry proxy -- the size the kernel would have
+    at spin 0 with ``reality=True`` -- rather than the footprint actually
+    allocated. Measured build times are very nearly spin-independent
+    (10.7 s scalar against 10.2 s at spin 2, lmax=127) even though the
+    spin kernel is twice the bytes, because both builds run the same
+    Wigner-d recursion over the same geometry. Sizing the threshold by
+    the real footprint would therefore ask a spin field for twice the
+    batch a scalar field needs to repay the same work. The true resident
+    size still governs the memory cap in :func:`resolve_engine`; that is
+    a separate question from amortisation and keeps its own accounting.
+
+    Refinement divides the threshold by ``2 * niter + 1`` because it
+    makes the kernel engine relatively cheaper, not dearer: s2fft repeats
+    its full recursion on every refinement pass, while the kernel engine
+    contracts the same cached table again. Both effects are real and they
+    do not cancel -- ``niter > 0`` does build a second (synthesis) kernel,
+    roughly doubling build cost, but s2fft's per-map cost rises by the
+    larger factor. Measured at lmax=127: the crossover falls from 78 at
+    niter=0 to 14 at niter=3.
+
+    Rounds to nearest rather than up. The threshold estimates a measured
+    crossover, so it is not a bound in either direction, and rounding up
+    would bias every configuration toward the matrix-free engine.
 
     Parameters
     ----------
-    resident_bytes : int
-        Total predicted size of the kernels that would be held at once,
-        which is both of them when ``niter > 0``.
+    build_bytes : int
+        Geometry-proxy kernel size, in bytes.
+    niter : int
+        Number of iterative refinement steps requested.
 
     Returns
     -------
@@ -95,8 +112,9 @@ def _amortisation_threshold(resident_bytes):
         Minimum batch size, never below 1.
 
     """
-    mib = resident_bytes / 1024**2
-    return max(1, math.ceil(mib / _MIB_PER_BATCHED_TRANSFORM))
+    mib = build_bytes / 1024**2
+    per_transform = _MIB_PER_BATCHED_TRANSFORM * (2 * int(niter) + 1)
+    return max(1, round(mib / per_transform))
 
 
 def degrade_for_trace(
@@ -298,11 +316,15 @@ def resolve_engine(
             reason += f"; its {_mib(dense_bytes)} exceeds the {_mib(cap)} cap"
         return "dense", reason
 
-    # Sized from the resident footprint, not the forward kernel alone:
-    # at niter > 0 both kernels are held at once, which is the same
-    # quantity `kernel_fits` tests two lines up. Reading it two different
-    # ways would size the batch for half the memory actually spent.
-    threshold = _amortisation_threshold(needed_kernel_bytes)
+    # Sized from BUILD cost, which is a different quantity from the
+    # resident footprint `kernel_fits` tests above, and deliberately so:
+    # a spin kernel is twice the bytes of a scalar one at the same
+    # geometry but takes the same time to build, so the batch needed to
+    # repay it is the same. See _amortisation_threshold.
+    build_bytes = kernel_nbytes(
+        lmax, sampling, nside=nside, spin=0, reality=True
+    )
+    threshold = _amortisation_threshold(build_bytes, niter)
     if batch_size < threshold:
         return (
             "s2fft",
