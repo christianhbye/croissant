@@ -67,7 +67,7 @@ alm arrays have shape `(N_freqs, lmax+1, 2*lmax+1)` indexed as `(freq, ell, m)` 
 
 ## Physics Tests
 
-`tests/test_physics.py` contains physical invariant tests that validate fundamental properties of the simulator (linearity, sidereal periodicity, spectral scaling, beam symmetries, ground loss, multipair consistency). These tests should **always pass** and should **not be modified** unless there is a deliberate physics-level breaking change to the simulator. If a code change causes a physics test to fail, the code change is wrong — fix the code, not the test.
+`tests/test_physics.py` contains physical invariant tests that validate fundamental properties of the simulator (linearity, sidereal periodicity, spectral scaling, beam symmetries, ground loss, multipair consistency, full-Stokes polarization invariants). These tests should **always pass** and should **not be modified** unless there is a deliberate physics-level breaking change to the simulator. If a code change causes a physics test to fail, the code change is wrong — fix the code, not the test.
 
 ## Code Style
 

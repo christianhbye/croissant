@@ -15,6 +15,7 @@ import s2fft
 from astropy.time import Time as AstroTime
 from lunarsky import Time as LunarTime
 
+from croissant import rotations
 from croissant.beam import Beam
 from croissant.constants import Y00, sidereal_day
 from croissant.multipair import (
@@ -22,6 +23,12 @@ from croissant.multipair import (
     compute_visibilities,
     multi_convolve,
     pair_normalization,
+)
+from croissant.polarization import (
+    PairStokesBeam,
+    PolarizedSky,
+    iau_to_cosmo,
+    polarized_convolve,
 )
 from croissant.simulator import (
     Simulator,
@@ -1252,3 +1259,556 @@ class TestMultipair:
             vis_beam_0_shifted,
             rtol=1e-10,
         )
+
+
+# -----------------------------------------------------------------------
+# G. Polarization
+# -----------------------------------------------------------------------
+#
+# These tests operate at the ``polarized_convolve`` level on a full-sky
+# MWSS grid, mirroring how the scalar sections use ``convolve``. MWSS is
+# the sampling on which both spin +/-2 transforms actually run (other
+# samplings derive the P+ sky block by conjugation), so the invariants
+# below constrain the entire dual construction.
+
+_POL_LMAX = 7
+_POL_FREQS = np.array([50.0, 150.0])
+# Per-frequency scale factors applied to synthesized maps so the
+# frequency axis stays nontrivial without a second synthesis.
+_POL_FREQ_SCALE = np.array([1.0, 0.7])
+# ``PairStokesBeam`` defines a visibility as <v_a v_b*>, so the pair
+# label constrains the response. An autocorrelation is |v_a|^2: real,
+# with a non-negative intensity row. A cross pair is complex in general
+# and may have no intensity response at all, as an orthogonal feed pair
+# does. Tests label the pair to match the response they build.
+_AUTO_PAIR = (0, 0)
+_CROSS_PAIR = (0, 1)
+
+
+def _pol_shape():
+    """(ntheta, nphi) of the MWSS grid with band-limit ``_POL_LMAX``."""
+    L = _POL_LMAX + 1
+    return (
+        s2fft.sampling.s2_samples.ntheta(L=L, sampling="mwss"),
+        s2fft.sampling.s2_samples.nphi_equiang(L=L, sampling="mwss"),
+    )
+
+
+def _pol_vis(beam_maps, sky_maps, phases, pair=_CROSS_PAIR):
+    """Polarized visibilities of one pair on the full-sky MWSS grid."""
+    horizon = np.ones(_pol_shape(), dtype=bool)
+    beam = PairStokesBeam(
+        beam_maps,
+        _POL_FREQS,
+        [pair],
+        sampling="mwss",
+        horizon=horizon,
+    )
+    sky = PolarizedSky(sky_maps, _POL_FREQS, sampling="mwss", coord="mepa")
+    return polarized_convolve(beam.compute_alm(), sky.compute_alm(), phases)
+
+
+def _pol_phases(n_times):
+    """Phases for ``n_times`` uniform steps over one sidereal day."""
+    return rot_alm_z(
+        _POL_LMAX,
+        N_times=n_times,
+        delta_t=sidereal_day["earth"] / n_times,
+        world="earth",
+    )
+
+
+def _assert_physical_stokes(maps, stokes_axis):
+    """Assert IQUV maps lie in the physical Stokes cone."""
+    maps = np.moveaxis(np.asarray(maps), stokes_axis, 0)
+    intensity = maps[0]
+    pol = np.sqrt((maps[1:] ** 2).sum(axis=0))
+    assert intensity.min() > 0.0
+    assert (pol <= intensity).all()
+
+
+def _physical_stokes(maps, stokes_axis, pol_frac=0.8):
+    """Project raw IQUV maps into the physical Stokes cone.
+
+    A brightness distribution must satisfy ``I > 0`` and a polarization
+    fraction ``sqrt(Q^2 + U^2 + V^2) / I <= 1`` at every pixel; white
+    noise, or a zero-mean band-limited field, satisfies neither. The
+    intensity is lifted by a constant offset and the polarized
+    components are scaled by a single global factor -- a monopole shift
+    and a uniform rescale, both of which leave a band-limited map
+    band-limited and leave the angular structure of every component
+    untouched.
+
+    This constraint is on the *sky* alone. A pair response is a row of a
+    Mueller matrix, not a Stokes vector: a differencing polarimeter
+    legitimately has zero intensity response, so responses in this
+    section are deliberately left unconstrained.
+    """
+    maps = np.moveaxis(np.asarray(maps, dtype=float), stokes_axis, 0)
+    intensity, pol = maps[0], maps[1:]
+    intensity = intensity - intensity.min() + np.ptp(intensity)
+    pol_amp = np.sqrt((pol**2).sum(axis=0)).max()
+    if pol_amp > 0.0:
+        pol = pol * (pol_frac * intensity.min() / pol_amp)
+    out = np.concatenate((intensity[None], pol), axis=0)
+    _assert_physical_stokes(out, 0)
+    return np.moveaxis(out, 0, stokes_axis)
+
+
+def _random_stokes_sky(rng):
+    """White-noise IQUV sky maps, shape (nfreq, 4, ntheta, nphi).
+
+    Physical: positive intensity everywhere, polarization fraction
+    below one everywhere.
+    """
+    maps = rng.normal(size=(len(_POL_FREQS), 4) + _pol_shape())
+    return _physical_stokes(maps, stokes_axis=1)
+
+
+def _random_pair_response(rng):
+    """White-noise complex pair response, shape (1, nfreq, 4, ...).
+
+    Complex, so it describes a cross pair rather than an
+    autocorrelation.
+    """
+    shape = (1, len(_POL_FREQS), 4) + _pol_shape()
+    return rng.normal(size=shape) + 1j * rng.normal(size=shape)
+
+
+def _band_limited_scalar(rng):
+    """A random real scalar map that is band-limited on the grid."""
+    L = _POL_LMAX + 1
+    flm = s2fft.utils.signal_generator.generate_flm(rng, L, reality=True)
+    return np.asarray(
+        s2fft.inverse(
+            jnp.asarray(flm),
+            L=L,
+            spin=0,
+            sampling="mwss",
+            method="jax",
+            reality=True,
+        )
+    )
+
+
+def _band_limited_positive(rng):
+    """A band-limited scalar map that is positive everywhere.
+
+    The offset is a monopole, so the map stays band-limited.
+    """
+    scalar = _band_limited_scalar(rng)
+    return scalar - scalar.min() + np.ptp(scalar)
+
+
+def _band_limited_qu_pair(rng):
+    """A random real (Q, U) pair band-limited as a spin-2 field.
+
+    Q + iU is synthesized from spin -2 coefficients, so both spin
+    combinations Q -/+ iU are exactly band-limited and the discrete
+    MWSS analysis of either one is exact.
+    """
+    L = _POL_LMAX + 1
+    flm = s2fft.utils.signal_generator.generate_flm(
+        rng, L, spin=2, reality=False
+    )
+    f_minus = np.asarray(
+        s2fft.inverse(
+            jnp.asarray(flm),
+            L=L,
+            spin=-2,
+            sampling="mwss",
+            method="jax",
+        )
+    )
+    return f_minus.real, f_minus.imag
+
+
+class TestPolarization:
+    def test_polarized_linearity_superposition(self):
+        """V(2*sky1 + sky2) = 2*V(sky1) + V(sky2), all Stokes at once.
+
+        The physical Stokes states form a convex cone, so the
+        superposed sky is itself a sky that could exist.
+        """
+        rng = np.random.default_rng(201)
+        sky1 = _random_stokes_sky(rng)
+        sky2 = _random_stokes_sky(rng)
+        _assert_physical_stokes(2.0 * sky1 + sky2, stokes_axis=1)
+        beam = _random_pair_response(rng)
+        phases = _pol_phases(8)
+        vis1 = _pol_vis(beam, sky1, phases)
+        vis2 = _pol_vis(beam, sky2, phases)
+        vis_comb = _pol_vis(beam, 2.0 * sky1 + sky2, phases)
+        scale = np.abs(vis_comb).max()
+        np.testing.assert_allclose(
+            vis_comb,
+            2.0 * vis1 + vis2,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+    def test_unpolarized_sky_reduces_to_scalar_pipeline(self):
+        """An (I, 0, 0, 0) sky through an intensity-only pair response
+        reproduces the scalar pipeline over a sidereal day.
+
+        Band-limited maps, because the two pipelines may pick different
+        (equally valid) discrete representatives of an aliased map; the
+        physical statement is about resolved fields.
+
+        The scalar ``Beam`` is an autocorrelation power pattern, so this
+        is the one test in the section on an auto pair, and its
+        intensity response is non-negative accordingly.
+        """
+        rng = np.random.default_rng(202)
+        shape = _pol_shape()
+        nfreq = len(_POL_FREQS)
+        intensity = (
+            _POL_FREQ_SCALE[:, None, None] * _band_limited_positive(rng)[None]
+        )
+        response = (
+            _POL_FREQ_SCALE[::-1, None, None]
+            * _band_limited_positive(rng)[None]
+        )
+        horizon = np.ones(shape, dtype=bool)
+
+        sky_maps = np.zeros((nfreq, 4) + shape)
+        sky_maps[:, 0] = intensity
+        _assert_physical_stokes(sky_maps, stokes_axis=1)
+        beam_maps = np.zeros((1, nfreq, 4) + shape, dtype=np.complex128)
+        beam_maps[0, :, 0] = response
+
+        phases = _pol_phases(12)
+        pol_vis = _pol_vis(beam_maps, sky_maps, phases, pair=_AUTO_PAIR)
+
+        scalar_sky = Sky(
+            jnp.asarray(intensity),
+            jnp.asarray(_POL_FREQS),
+            sampling="mwss",
+            coord="mepa",
+        )
+        scalar_beam = Beam(
+            jnp.asarray(response),
+            jnp.asarray(_POL_FREQS),
+            sampling="mwss",
+            horizon=jnp.asarray(horizon),
+        )
+        scalar_vis = convolve(
+            scalar_beam.compute_alm(),
+            scalar_sky.compute_alm(),
+            phases,
+        )
+        scale = np.abs(scalar_vis).max()
+        np.testing.assert_allclose(
+            pol_vis[:, 0, :],
+            scalar_vis,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+        # An auto pair of positive maps measures a real, positive power.
+        scalar_vis = np.asarray(scalar_vis)
+        np.testing.assert_allclose(scalar_vis.imag, 0.0, atol=1e-10 * scale)
+        assert (scalar_vis.real > 0).all()
+        # Non-vacuity: the two pipelines are matched on a signal that
+        # actually turns with the sky, not just on a shared monopole.
+        assert np.abs(scalar_vis - scalar_vis[0]).max() > 1e-3 * scale
+
+    def test_stokes_convention_invariance(self):
+        """Expressing sky and response in COSMO instead of IAU leaves
+        the visibilities unchanged; mislabeling one side does not."""
+        rng = np.random.default_rng(203)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        phases = _pol_phases(6)
+        vis_iau = _pol_vis(beam_maps, sky_maps, phases)
+
+        sky_cosmo = np.asarray(iau_to_cosmo(sky_maps, stokes_axis=1))
+        beam_cosmo = np.asarray(iau_to_cosmo(beam_maps, stokes_axis=2))
+        horizon = np.ones(_pol_shape(), dtype=bool)
+        beam = PairStokesBeam(
+            beam_cosmo,
+            _POL_FREQS,
+            [_CROSS_PAIR],
+            sampling="mwss",
+            convention="COSMO",
+            horizon=horizon,
+        )
+        sky = PolarizedSky(
+            sky_cosmo,
+            _POL_FREQS,
+            sampling="mwss",
+            coord="mepa",
+            convention="COSMO",
+        )
+        vis_cosmo = polarized_convolve(
+            beam.compute_alm(), sky.compute_alm(), phases
+        )
+        scale = np.abs(vis_iau).max()
+        np.testing.assert_allclose(
+            vis_cosmo,
+            vis_iau,
+            rtol=1e-12,
+            atol=1e-12 * scale,
+        )
+
+        # Non-vacuity: the U sign flip matters. COSMO-valued sky data
+        # mislabeled as IAU produces different visibilities.
+        vis_mislabeled = _pol_vis(beam_maps, sky_cosmo, phases)
+        assert np.abs(vis_mislabeled - vis_iau).max() > 1e-6 * scale
+
+    def test_polarized_sidereal_periodicity(self):
+        """Full-Stokes visibilities repeat after one sidereal day."""
+        rng = np.random.default_rng(204)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        n = 12
+        phases = rot_alm_z(
+            _POL_LMAX,
+            N_times=2 * n,
+            delta_t=sidereal_day["earth"] / n,
+            world="earth",
+        )
+        vis = _pol_vis(beam_maps, sky_maps, phases)
+        scale = np.abs(vis).max()
+        np.testing.assert_allclose(
+            vis[:n],
+            vis[n:],
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+        # Non-vacuity: the visibility actually varies over the day.
+        assert np.abs(vis[:n] - vis[0]).max() > 1e-3 * scale
+
+    def test_z_rotated_polarized_sky_matches_time_shift(self):
+        """Rigidly rotating the sky about the z axis equals advancing
+        sidereal time, for every Stokes component at once.
+
+        On the equiangular grid a rotation by a whole number of phi
+        steps is an exact roll of the pixel axis, with Q and U carried
+        unchanged since the theta-phi basis rotates with the sky. The
+        phase machinery must therefore map the rolled sky at the
+        reference time onto the unrolled sky at the matching time.
+        """
+        rng = np.random.default_rng(205)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        nphi = _pol_shape()[1]
+        phases = _pol_phases(nphi)
+        vis = _pol_vis(beam_maps, sky_maps, phases)
+        shift = 5
+        rolled = np.roll(sky_maps, -shift, axis=-1)
+        vis_rolled = _pol_vis(beam_maps, rolled, phases)
+        scale = np.abs(vis).max()
+        np.testing.assert_allclose(
+            vis_rolled[0],
+            vis[shift],
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+    def test_joint_rotation_leaves_visibility_invariant(self):
+        """Rotating sky and beam by the same rotation is unobservable.
+
+        The Q/U blocks must transport as spin-2 under the shared
+        Wigner-D action for the contraction to stay put.
+        """
+        rng = np.random.default_rng(206)
+        sky_maps = _random_stokes_sky(rng)
+        beam_maps = _random_pair_response(rng)
+        horizon = np.ones(_pol_shape(), dtype=bool)
+        sky = PolarizedSky(
+            sky_maps,
+            _POL_FREQS,
+            sampling="mwss",
+            coord="mepa",
+        )
+        beam = PairStokesBeam(
+            beam_maps,
+            _POL_FREQS,
+            [_CROSS_PAIR],
+            sampling="mwss",
+            horizon=horizon,
+        )
+        sky_alm = sky.compute_alm()
+        # Identity phases: a single time at the reference epoch.
+        phases = rot_alm_z(_POL_LMAX, times=jnp.array([0.0]))
+        vis0 = polarized_convolve(beam.compute_alm(), sky_alm, phases)
+
+        rotation = (0.9, 0.6, -0.4)
+        dl_array = s2fft.generate_rotate_dls(_POL_LMAX + 1, rotation[1])
+        sky_alm_rot = rotations.rotate_alm(
+            sky_alm, rotation, dl_array=dl_array
+        )
+        beam_alm_rot = beam.compute_alm_in_frame(rotation, dl_array)
+        vis_rot = polarized_convolve(beam_alm_rot, sky_alm_rot, phases)
+        scale = np.abs(vis0).max()
+        np.testing.assert_allclose(
+            vis_rot,
+            vis0,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+        # Non-vacuity: rotating only the sky does change the answer.
+        vis_half = polarized_convolve(beam.compute_alm(), sky_alm_rot, phases)
+        assert np.abs(vis_half - vis0).max() > 1e-6 * scale
+
+    def test_stokes_selection_rules(self):
+        """Blind responses see nothing: an intensity-only response
+        rejects polarization, and I/V do not mix even though they share
+        the spin-0 transform.
+
+        Phrased as differences between physical skies, because a sky
+        carrying Q/U or V but no intensity cannot exist. The
+        convolution is linear in the sky, so the difference between two
+        skies that agree except in one Stokes component is exactly that
+        component's contribution to the visibility.
+        """
+        rng = np.random.default_rng(207)
+        nfreq = len(_POL_FREQS)
+        shape = _pol_shape()
+
+        def beam_with(*names):
+            maps = np.zeros((1, nfreq, 4) + shape, dtype=np.complex128)
+            for name in names:
+                maps[:, :, "IQUV".index(name)] = rng.normal(
+                    size=(1, nfreq) + shape
+                ) + 1j * rng.normal(size=(1, nfreq) + shape)
+            return maps
+
+        i_beam = beam_with("I")
+        qu_beam = beam_with("Q", "U")
+        v_beam = beam_with("V")
+
+        # Physical skies differing in exactly one Stokes component.
+        # Zeroing polarization or raising the intensity both keep the
+        # sky inside the cone.
+        sky = _random_stokes_sky(rng)
+        no_linear = sky.copy()
+        no_linear[:, 1:3] = 0.0
+        no_circular = sky.copy()
+        no_circular[:, 3] = 0.0
+        brighter = sky.copy()
+        brighter[:, 0] *= 2.0
+        for variant in (no_linear, no_circular, brighter):
+            _assert_physical_stokes(variant, stokes_axis=1)
+
+        phases = _pol_phases(6)
+
+        def response_to_change(beam_maps, variant):
+            """What a response measures of the changed component."""
+            return np.asarray(
+                _pol_vis(beam_maps, sky, phases)
+                - _pol_vis(beam_maps, variant, phases)
+            )
+
+        # Non-vacuity anchors: each response does see its own component.
+        matched = [
+            (i_beam, brighter),  # intensity response sees intensity
+            (qu_beam, no_linear),  # linear-pol response sees Q, U
+            (v_beam, no_circular),  # circular response sees V
+        ]
+        scale = min(np.abs(response_to_change(b, v)).max() for b, v in matched)
+        assert scale > 0
+
+        blind_cases = [
+            (i_beam, no_linear),  # intensity response rejects Q, U
+            (i_beam, no_circular),  # intensity response rejects V
+            (qu_beam, brighter),  # linear-pol response rejects I
+            (v_beam, brighter),  # circular response rejects I
+        ]
+        for beam_maps, variant in blind_cases:
+            np.testing.assert_allclose(
+                response_to_change(beam_maps, variant),
+                0.0,
+                atol=1e-12 * scale,
+            )
+
+    def test_polarization_angle_rotation_by_45_degrees(self):
+        """A 45 degree polarization-angle rotation maps Q onto U.
+
+        Rotating the polarization frame of sky and response together is
+        unobservable; a response matched to the original sky is exactly
+        orthogonal to the rotated sky at the reference time, since
+        pointwise Q*Q' + U*U' = Q(-U) + UQ = 0.
+
+        The sky carries the intensity that its partial polarization
+        requires. The response is a pure polarization-differencing row
+        with no intensity response -- what an orthogonal feed pair has,
+        hence the cross-pair label -- which is what keeps that
+        intensity out of the visibility.
+        """
+        rng = np.random.default_rng(208)
+        q_raw, u_raw = _band_limited_qu_pair(rng)
+        stokes = np.stack(
+            (_band_limited_scalar(rng), q_raw, u_raw, np.zeros_like(q_raw))
+        )
+        stokes = _physical_stokes(stokes, stokes_axis=0)
+        q_map, u_map = stokes[1], stokes[2]
+        # Polarization angle rotated by 45 degrees: (Q, U) -> (-U, Q).
+        # Intensity is unchanged by a rotation of the polarization
+        # frame, so the rotated sky is physical too.
+        rotated = stokes.copy()
+        rotated[1] = -u_map
+        rotated[2] = q_map
+        _assert_physical_stokes(rotated, stokes_axis=0)
+        # Responses see only the linear polarization.
+        response = np.zeros_like(stokes)
+        response[1], response[2] = q_map, u_map
+        response_rot = np.zeros_like(stokes)
+        response_rot[1], response_rot[2] = -u_map, q_map
+
+        freq_scale = _POL_FREQ_SCALE[:, None, None, None]
+        sky1 = freq_scale * stokes[None]
+        sky2 = freq_scale * rotated[None]
+        beam1 = (freq_scale * response[None])[None]
+        beam2 = (freq_scale * response_rot[None])[None]
+
+        phases = _pol_phases(8)
+        vis11 = _pol_vis(beam1, sky1, phases)
+        vis22 = _pol_vis(beam2, sky2, phases)
+        scale = np.abs(vis11).max()
+        assert scale > 0
+        np.testing.assert_allclose(
+            vis22,
+            vis11,
+            rtol=1e-10,
+            atol=1e-10 * scale,
+        )
+
+        # Matched response at the reference time: full polarized power,
+        # real and positive.
+        vis_matched = np.asarray(vis11[0, 0])
+        np.testing.assert_allclose(vis_matched.imag, 0.0, atol=1e-10 * scale)
+        assert (vis_matched.real > 1e-6 * scale).all()
+        # Orthogonal at the reference time after the 45 degree turn.
+        vis_cross = _pol_vis(beam1, sky2, phases)
+        np.testing.assert_allclose(vis_cross[0], 0.0, atol=1e-10 * scale)
+
+    def test_real_responses_and_sky_give_real_visibilities(self):
+        """A real Stokes response observing a real Stokes sky measures
+        a real visibility at every time.
+
+        Time evolution is a rigid rotation of a real sky, so the full
+        Stokes integrand stays real; any imaginary residual would be a
+        broken Hermitian pairing between the spin +/-2 blocks.
+        """
+        rng = np.random.default_rng(209)
+
+        def real_stokes(rng):
+            """A real band-limited IQUV block, shape (4, ntheta, nphi)."""
+            i_map = _band_limited_scalar(rng)
+            v_map = 0.1 * _band_limited_scalar(rng)
+            q_map, u_map = _band_limited_qu_pair(rng)
+            return np.stack((i_map, q_map, u_map, v_map))
+
+        def add_freq_axis(stokes):
+            return _POL_FREQ_SCALE[:, None, None, None] * stokes[None]
+
+        # The sky must be a physical brightness distribution; the
+        # response need only be real.
+        sky_maps = add_freq_axis(_physical_stokes(real_stokes(rng), 0))
+        beam_maps = add_freq_axis(real_stokes(rng))[None]  # add pair axis
+        phases = _pol_phases(16)
+        vis = np.asarray(_pol_vis(beam_maps, sky_maps, phases))
+        scale = np.abs(vis).max()
+        assert scale > 0
+        np.testing.assert_allclose(vis.imag, 0.0, atol=1e-10 * scale)
