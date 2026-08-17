@@ -247,3 +247,23 @@ def test_packed_and_full_operators_do_not_collide():
         ((lmax + 1) ** 2, npix),
         (ncoeff_spin2, npix),
     }
+
+
+def test_dense_cache_nbytes_tracks_both_flavours():
+    """Retention is unbounded by design, so it must be inspectable."""
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+    assert dense.dense_cache_nbytes() == 0
+
+    packed = dense.precompute_dense_matrix(
+        (npix,), lmax, "healpix", nside=nside
+    )
+    assert dense.dense_cache_nbytes() == packed.nbytes
+
+    dense.dense_compute_alm(
+        jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=2
+    )
+    assert dense.dense_cache_nbytes() > packed.nbytes
+
+    dense.clear_dense_matrix_cache()
+    assert dense.dense_cache_nbytes() == 0

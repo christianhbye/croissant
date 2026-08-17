@@ -40,9 +40,9 @@ def main():
     )
     print(f"three_matrix_mib={total_matrix_mib:.3f}")
     print(f"total_build_seconds={perf_counter() - started:.6f}")
-    from croissant.dense import _DENSE_MATRIX_CACHE
+    from croissant.dense import dense_cache_nbytes
 
-    print(f"cache_entries={len(_DENSE_MATRIX_CACHE)}")
+    print(f"cache_mib={dense_cache_nbytes() / 2**20:.3f}")
 
     for spin, transform in zip((0, -2, 2), transforms, strict=True):
         first_started = perf_counter()

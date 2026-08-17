@@ -415,6 +415,32 @@ def clear_dense_matrix_cache():
         _DENSE_MATRIX_CACHE.clear()
 
 
+def dense_cache_nbytes():
+    """
+    Total bytes of dense analysis operators croissant currently holds.
+
+    The cache is deliberately unbounded: an eviction policy would make
+    the documented precompute-then-jit recipe conditional, since a later
+    unrelated build could drop a warmed matrix and leave the next jitted
+    explicit-dense call raising. The tradeoff is that retention grows
+    with the number of distinct configurations touched -- a band-limit
+    sweep at nside=32 over seven values of lmax retains about 904 MiB.
+    This reports that figure so it can be watched, and
+    :func:`clear_dense_matrix_cache` releases it.
+
+    Returns
+    -------
+    int
+        Size in bytes of every cached operator, both the packed real
+        and the full complex flavour.
+
+    """
+    with _DENSE_MATRIX_CACHE_LOCK:
+        return sum(
+            int(matrix.nbytes) for matrix in _DENSE_MATRIX_CACHE.values()
+        )
+
+
 @partial(eqx.filter_jit, inline=True)
 def apply_packed_matrix(data, matrix, lmax, spatial_ndim=None):
     """

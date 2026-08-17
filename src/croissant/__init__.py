@@ -16,6 +16,7 @@ from .beam import Beam
 from .dense import (
     DenseSphericalTransform,
     clear_dense_matrix_cache,
+    dense_cache_nbytes,
     dense_compute_alm,
     precompute_dense_matrix,
 )

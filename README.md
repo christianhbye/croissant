@@ -183,8 +183,15 @@ matrix is then captured as a compile-time constant, which can increase
 compilation time and keeps the matrix alive as long as the compiled
 function.) `Beam` and `Sky` handle this automatically: they precompute the
 matrix during initialization and thread it through their jitted methods as
-a dynamic argument. Use `croissant.clear_dense_matrix_cache()` to release
-Croissant's in-process matrix references.
+a dynamic argument. Dense operators are cached for the life of the process
+and are never evicted, so that a matrix warmed with
+`croissant.precompute_dense_matrix` is always still there when a later
+`jax.jit`-ed call needs it. The cost is that retention grows with the
+number of distinct configurations you touch: each `lmax`, `niter`, `nside`
+and sampling combination is a separate entry, and a band-limit sweep at
+`nside=32` over seven values of `lmax` retains about 904 MiB. Call
+`croissant.dense_cache_nbytes()` to see the current total and
+`croissant.clear_dense_matrix_cache()` to release all of it.
 
 `engine="kernel"` needs the same care, with its own functions:
 `croissant.precompute_kernel(..., forward=True)` for the analysis kernel,
