@@ -272,3 +272,17 @@ def test_dense_cache_nbytes_tracks_both_flavours():
 
     dense.clear_dense_matrix_cache()
     assert dense.dense_cache_nbytes() == 0
+
+
+def test_full_operator_assembly_is_chunk_size_independent():
+    """Row batching must not change the assembled operator.
+
+    The builder pulls back coefficient basis vectors in chunks. If
+    assembly and chunking are correctly separated, a one-row-at-a-time
+    build and a batched one are bitwise identical.
+    """
+    lmax, spin, nside = 3, 2, 2
+    args = (lmax, "healpix", nside, spin, 0, "complex128")
+    batched = dense._build_analysis_matrix(*args, chunk_size=32)
+    one_at_a_time = dense._build_analysis_matrix(*args, chunk_size=1)
+    np.testing.assert_array_equal(batched, one_at_a_time)

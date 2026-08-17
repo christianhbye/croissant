@@ -441,6 +441,10 @@ def dense_cache_nbytes():
         )
 
 
+# eqx.filter_jit, not jax.jit: lmax arrives as a plain Python int and is
+# used to build the output shape, so plain jit would trace it and fail.
+# Same reason sphere._compute_alm_s2fft uses filter_jit -- it takes
+# sampling as a string.
 @partial(eqx.filter_jit, inline=True)
 def apply_packed_matrix(data, matrix, lmax, spatial_ndim=None):
     """
@@ -513,6 +517,7 @@ def _build_analysis_matrix(
     spin,
     niter,
     complex_dtype_name,
+    chunk_size=32,
 ):
     """Materialize selected rows of corrected s2fft's linear operator."""
     complex_dtype = np.dtype(complex_dtype_name)
@@ -556,11 +561,7 @@ def _build_analysis_matrix(
     # actually has. Seed the basis from that dtype rather than from the
     # requested one, which is a statement about the stored matrix.
     cotangent_dtype = coefficients.dtype
-    matrix = jnp.empty(
-        (ncoeff, int(np.prod(spatial_shape))),
-        dtype=complex_dtype,
-    )
-    chunk_size = 32
+    blocks = []
     for start in range(0, ncoeff, chunk_size):
         stop = min(start + chunk_size, ncoeff)
         coefficient_basis = jax.nn.one_hot(
@@ -571,10 +572,10 @@ def _build_analysis_matrix(
         rows = jax.vmap(lambda cotangent: pullback(cotangent)[0])(
             coefficient_basis
         ).reshape(stop - start, -1)
-        matrix = matrix.at[start:stop].set(rows.astype(complex_dtype))
+        blocks.append(rows.astype(complex_dtype))
     # JAX's holomorphic VJP uses the complex transpose convention, so each
     # pulled-back coefficient basis vector is already one analysis row.
-    return matrix
+    return jnp.concatenate(blocks, axis=0)
 
 
 def _full_matrix_for(lmax, sampling, nside, spin, niter, complex_dtype):
@@ -671,6 +672,10 @@ class DenseSphericalTransform(eqx.Module):
         self.niter = int(niter)
         self.spatial_shape = tuple(spatial_shape)
 
+    # jax.jit, not eqx.filter_jit: every non-array this method needs is a
+    # static eqx.field on self, so the pytree already carries them as
+    # static. apply_packed_matrix below cannot do the same -- it takes
+    # lmax as a plain int and builds a shape from it.
     @jax.jit
     def __call__(self, data):
         """Apply the cached analysis matrix to arbitrary leading batches."""
