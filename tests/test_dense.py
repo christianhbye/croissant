@@ -263,7 +263,12 @@ def test_dense_cache_nbytes_tracks_both_flavours():
     dense.dense_compute_alm(
         jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=2
     )
-    assert dense.dense_cache_nbytes() > packed.nbytes
+    (full,) = (
+        matrix
+        for matrix in dense._DENSE_MATRIX_CACHE.values()
+        if matrix is not packed
+    )
+    assert dense.dense_cache_nbytes() == packed.nbytes + full.nbytes
 
     dense.clear_dense_matrix_cache()
     assert dense.dense_cache_nbytes() == 0
