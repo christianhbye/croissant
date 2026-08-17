@@ -76,7 +76,7 @@ def _kernel_dtype(sampling):
     phase shifts); ``jnp.asarray`` then silently downcasts to
     float32/complex64 whenever ``jax_enable_x64`` is off, like any
     other JAX array. Included in the cache key for the same reason
-    ``sphere._dense_matrix_key`` includes ``complex_dtype``: a kernel
+    ``dense._dense_matrix_key`` includes ``complex_dtype``: a kernel
     built before ``jax.config.update("jax_enable_x64", True)`` must not
     be silently reused afterwards at the earlier, reduced precision.
     """

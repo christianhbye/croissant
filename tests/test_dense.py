@@ -1,4 +1,4 @@
-"""Tests for cached dense scalar and spin transforms."""
+"""Tests for the dense SHT engine: builders, cache and apply."""
 
 import jax
 import jax.numpy as jnp
@@ -9,8 +9,11 @@ from croissant import utils
 from croissant.dense import (
     DenseSphericalTransform,
     _build_analysis_matrix,
+    _positive_lm_indices,
     dense_compute_alm,
+    precompute_dense_matrix,
 )
+from croissant.footprints import spatial_shape
 
 
 def _random_valid_alm(lmax, spin, seed):
@@ -156,3 +159,34 @@ def test_dense_cache_reuses_matrix_for_identical_geometry():
     second = DenseSphericalTransform(3, "mwss", spin=0)
     assert jnp.array_equal(first.matrix, second.matrix)
     assert _build_analysis_matrix.cache_info().hits > hits_before
+
+
+def test_equiangular_builder_produces_the_packed_operator():
+    """The one-hot builder must keep s2fft's reality=True packing.
+
+    The builder pushes one-hot pixel maps through a real forward
+    transform and keeps only m >= 0. Losing reality=True would still
+    produce a matrix of the right shape, so the guard has to compare
+    values against s2fft directly.
+    """
+    lmax, sampling = 4, "dh"
+    shape = spatial_shape(lmax, sampling, None)
+    matrix = precompute_dense_matrix(shape, lmax, sampling)
+
+    ncoeff = (lmax + 1) * (lmax + 2) // 2
+    assert matrix.shape == (ncoeff, int(np.prod(shape)))
+
+    rng = np.random.default_rng(seed=0)
+    maps = jnp.asarray(rng.standard_normal(shape))
+    expected = s2fft.forward(
+        maps,
+        L=lmax + 1,
+        sampling=sampling,
+        method="jax",
+        reality=True,
+    )
+    ell, emm = _positive_lm_indices(lmax)
+    packed = matrix @ maps.reshape(-1)
+    np.testing.assert_allclose(
+        packed, expected[ell, lmax + emm], rtol=1e-12, atol=1e-12
+    )

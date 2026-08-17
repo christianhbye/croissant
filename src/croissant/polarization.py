@@ -372,12 +372,12 @@ def _prepare_engines(
                     forward=False,
                 )
         elif engine == "dense" and spin == 0 and reality:
-            # The one block that takes sphere.py's packed-real dense
-            # route, which needs its matrix threaded in. Every other
-            # block is complex or spin-weighted, so sphere.compute_alm
-            # routes it to croissant.dense, which builds under
+            # The one block that takes the packed-real dense route,
+            # which needs its matrix threaded in. Every other block is
+            # complex or spin-weighted, so sphere.compute_alm routes it
+            # to dense.dense_compute_alm, which builds under
             # jax.ensure_compile_time_eval and needs nothing from here.
-            dense_matrix = sphere.dense_matrix_for(
+            dense_matrix = dense.dense_matrix_for(
                 spatial_shape,
                 lmax,
                 sampling,

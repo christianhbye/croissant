@@ -70,7 +70,7 @@ import jax  # noqa: E402
 import jax.numpy as jnp  # noqa: E402
 import numpy as np  # noqa: E402
 
-from croissant import footprints, kernel, sphere  # noqa: E402
+from croissant import dense, footprints, kernel, sphere  # noqa: E402
 
 MEMORY_CAP_MIB = 1024
 SCALAR_NSIDES = (8, 16, 32)
@@ -140,7 +140,7 @@ def _median(values):
 def _clear_caches():
     """Drop every precomputed object, including JAX's compilation cache."""
     kernel.clear_kernel_cache()
-    sphere.clear_dense_matrix_cache()
+    dense.clear_dense_matrix_cache()
     jax.clear_caches()
 
 

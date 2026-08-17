@@ -551,14 +551,14 @@ def test_pair_response_spin0_block_is_complex():
 def test_dense_polarized_inside_jit_needs_a_warmed_cache():
     """The packed-real block cannot build its operator inside a trace.
 
-    Only the sky's real spin-0 block takes sphere.py's packed-real dense
-    route and so needs its matrix threaded in; the spin-weighted blocks
-    reach croissant.dense, which builds under
+    Only the sky's real spin-0 block takes the packed-real dense route
+    and so needs its matrix threaded in; the spin-weighted blocks reach
+    the full-layout operator, which builds under
     ``jax.ensure_compile_time_eval`` and is unaffected. So an explicit
     "dense" field constructed inside jax.jit must raise unless that one
     matrix was precomputed first, exactly as SphBase requires.
     """
-    from croissant import sphere
+    from croissant import dense
 
     nside = 8
     npix = 12 * nside**2
@@ -572,12 +572,12 @@ def test_dense_polarized_inside_jit_needs_a_warmed_cache():
             maps, freqs, sampling="healpix", engine="dense"
         ).compute_alm()
 
-    sphere.clear_dense_matrix_cache()
+    dense.clear_dense_matrix_cache()
     with pytest.raises(RuntimeError, match="precompute_dense_matrix"):
         analyse(data)
 
     lmax = PolarizedSky(data, freqs, sampling="healpix").lmax
-    sphere.precompute_dense_matrix(
+    dense.precompute_dense_matrix(
         (npix,), lmax, "healpix", nside=nside, niter=0
     )
     got = analyse(data)
