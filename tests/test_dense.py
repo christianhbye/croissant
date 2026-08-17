@@ -5,10 +5,9 @@ import jax.numpy as jnp
 import numpy as np
 import s2fft
 
-from croissant import utils
+from croissant import dense, utils
 from croissant.dense import (
     DenseSphericalTransform,
-    _build_analysis_matrix,
     _positive_lm_indices,
     dense_compute_alm,
     precompute_dense_matrix,
@@ -154,11 +153,18 @@ def test_dense_transform_matches_s2fft_for_complex_input():
 
 
 def test_dense_cache_reuses_matrix_for_identical_geometry():
-    hits_before = _build_analysis_matrix.cache_info().hits
+    """A repeated configuration is served from the cache, not rebuilt.
+
+    The unified dict has no hit counter, so reuse is shown by the
+    second transform holding the very array the first one stored: a
+    rebuild would produce an equal but distinct array.
+    """
+    dense.clear_dense_matrix_cache()
     first = DenseSphericalTransform(3, "mwss", spin=0)
     second = DenseSphericalTransform(3, "mwss", spin=0)
     assert jnp.array_equal(first.matrix, second.matrix)
-    assert _build_analysis_matrix.cache_info().hits > hits_before
+    assert first.matrix is second.matrix
+    assert len(dense._DENSE_MATRIX_CACHE) == 1
 
 
 def test_equiangular_builder_produces_the_packed_operator():
@@ -190,3 +196,45 @@ def test_equiangular_builder_produces_the_packed_operator():
     np.testing.assert_allclose(
         packed, expected[ell, lmax + emm], rtol=1e-12, atol=1e-12
     )
+
+
+def test_clear_releases_both_operator_flavours():
+    """One clear function must empty the whole engine's cache.
+
+    Before unification clear_dense_matrix_cache reached only the packed
+    half; the VJP half was reachable only through an lru_cache's own
+    cache_clear, which no public name exposed.
+    """
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+    dense.precompute_dense_matrix((npix,), lmax, "healpix", nside=nside)
+    dense.dense_compute_alm(
+        jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=2
+    )
+    assert len(dense._DENSE_MATRIX_CACHE) == 2
+
+    dense.clear_dense_matrix_cache()
+    assert len(dense._DENSE_MATRIX_CACHE) == 0
+
+
+def test_packed_and_full_operators_do_not_collide():
+    """Identical geometry, two flavours, two entries.
+
+    Both are spin 0 at the same lmax, sampling, nside and niter. Only
+    the packed flag separates them, so a key that omitted it would
+    return the m >= 0 operator to a caller expecting the full one.
+    """
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+    packed = dense.precompute_dense_matrix(
+        (npix,), lmax, "healpix", nside=nside
+    )
+    dense.dense_compute_alm(
+        jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=0
+    )
+
+    assert len(dense._DENSE_MATRIX_CACHE) == 2
+    shapes = {m.shape for m in dense._DENSE_MATRIX_CACHE.values()}
+    ncoeff_packed = (lmax + 1) * (lmax + 2) // 2
+    assert packed.shape == (ncoeff_packed, npix)
+    assert shapes == {(ncoeff_packed, npix), ((lmax + 1) ** 2, npix)}

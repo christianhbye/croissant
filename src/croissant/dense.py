@@ -1,6 +1,6 @@
 """Cached dense spherical harmonic analysis for scalar and spin fields."""
 
-from functools import lru_cache, partial
+from functools import partial
 from threading import RLock
 
 import equinox as eqx
@@ -17,14 +17,27 @@ _DENSE_MATRIX_CACHE = {}
 _DENSE_MATRIX_CACHE_LOCK = RLock()
 
 
-def _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter):
-    """Return a hashable key for a cached dense SHT analysis matrix."""
-    _, complex_dtype = utils.engine_dtypes()
+def _dense_matrix_key(
+    spatial_shape, lmax, sampling, nside, spin, packed, niter, complex_dtype
+):
+    """Return a hashable key for a cached dense SHT analysis matrix.
+
+    ``packed`` separates the m >= 0 real operator from the full complex
+    one. Both flavours exist at spin 0 and identical geometry, so
+    without it a caller asking for one could be handed the other.
+
+    Keys on ``jax.default_backend()`` rather than a device string, which
+    is what sphere's half and ``kernel.precompute_kernel`` already do.
+    Two devices on one backend therefore share an entry, costing a
+    transfer rather than correctness.
+    """
     return (
         tuple(spatial_shape),
         int(lmax),
         str(sampling),
         None if nside is None else int(nside),
+        int(spin),
+        bool(packed),
         int(niter),
         np.dtype(complex_dtype).str,
         jax.default_backend(),
@@ -281,7 +294,17 @@ def precompute_dense_matrix(
     matrix : jax.Array
         Cached dense analysis matrix on the current default JAX device.
     """
-    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
+    _, complex_dtype = utils.engine_dtypes()
+    key = _dense_matrix_key(
+        spatial_shape,
+        lmax,
+        sampling,
+        nside,
+        spin=0,
+        packed=True,
+        niter=niter,
+        complex_dtype=complex_dtype,
+    )
     with _DENSE_MATRIX_CACHE_LOCK:
         matrix = _DENSE_MATRIX_CACHE.get(key)
         if matrix is None:
@@ -359,7 +382,17 @@ def dense_matrix_for(
         return precompute_dense_matrix(
             spatial_shape, lmax, sampling, nside=nside, niter=niter
         )
-    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
+    _, complex_dtype = utils.engine_dtypes()
+    key = _dense_matrix_key(
+        spatial_shape,
+        lmax,
+        sampling,
+        nside,
+        spin=0,
+        packed=True,
+        niter=niter,
+        complex_dtype=complex_dtype,
+    )
     with _DENSE_MATRIX_CACHE_LOCK:
         matrix = _DENSE_MATRIX_CACHE.get(key)
     if matrix is not None:
@@ -447,7 +480,6 @@ def _valid_lm_indices(lmax, spin):
     return np.asarray(ell_indices), np.asarray(m_indices)
 
 
-@lru_cache(maxsize=6)
 def _build_analysis_matrix(
     lmax,
     sampling,
@@ -455,10 +487,8 @@ def _build_analysis_matrix(
     spin,
     niter,
     complex_dtype_name,
-    device_key=None,
 ):
     """Materialize selected rows of corrected s2fft's linear operator."""
-    del device_key
     complex_dtype = np.dtype(complex_dtype_name)
     spatial_shape = _spatial_shape(lmax, sampling, nside)
     ell_indices, m_indices = _valid_lm_indices(lmax, spin)
@@ -518,7 +548,28 @@ def _build_analysis_matrix(
         matrix = matrix.at[start:stop].set(rows.astype(complex_dtype))
     # JAX's holomorphic VJP uses the complex transpose convention, so each
     # pulled-back coefficient basis vector is already one analysis row.
-    return matrix, ell_indices, m_indices, spatial_shape
+    return matrix
+
+
+def _full_matrix_for(lmax, sampling, nside, spin, niter, complex_dtype):
+    """Fetch the full complex operator for one configuration."""
+    shape = _spatial_shape(lmax, sampling, nside)
+    key = _dense_matrix_key(
+        shape, lmax, sampling, nside, spin, False, niter, complex_dtype
+    )
+    with _DENSE_MATRIX_CACHE_LOCK:
+        matrix = _DENSE_MATRIX_CACHE.get(key)
+        if matrix is None:
+            matrix = _build_analysis_matrix(
+                lmax,
+                sampling,
+                nside,
+                spin,
+                niter,
+                np.dtype(complex_dtype).name,
+            )
+            _DENSE_MATRIX_CACHE[key] = matrix
+    return matrix
 
 
 class DenseSphericalTransform(eqx.Module):
@@ -547,18 +598,18 @@ class DenseSphericalTransform(eqx.Module):
         if dtype.kind != "c":
             raise ValueError("Dense transform dtype must be complex.")
         with jax.ensure_compile_time_eval():
-            device_key = str(jnp.empty((), dtype=jnp.uint8).device)
-            matrix, ell_indices, m_indices, spatial_shape = (
-                _build_analysis_matrix(
-                    int(lmax),
-                    str(sampling),
-                    None if nside is None else int(nside),
-                    int(spin),
-                    int(niter),
-                    dtype.name,
-                    device_key,
-                )
+            matrix = _full_matrix_for(
+                int(lmax),
+                str(sampling),
+                None if nside is None else int(nside),
+                int(spin),
+                int(niter),
+                dtype,
             )
+        ell_indices, m_indices = _valid_lm_indices(int(lmax), int(spin))
+        spatial_shape = _spatial_shape(
+            int(lmax), str(sampling), None if nside is None else int(nside)
+        )
         self.matrix = jnp.asarray(matrix)
         self.ell_indices = jnp.asarray(ell_indices, dtype=jnp.int32)
         self.m_indices = jnp.asarray(m_indices, dtype=jnp.int32)
