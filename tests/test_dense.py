@@ -218,23 +218,32 @@ def test_clear_releases_both_operator_flavours():
 
 
 def test_packed_and_full_operators_do_not_collide():
-    """Identical geometry, two flavours, two entries.
+    """Identical geometry, three operators, three entries.
 
-    Both are spin 0 at the same lmax, sampling, nside and niter. Only
-    the packed flag separates them, so a key that omitted it would
-    return the m >= 0 operator to a caller expecting the full one.
+    This covers both of the key's own discriminators. The packed and
+    the spin-0 full operator agree on lmax, sampling, nside and niter,
+    so only the packed flag separates them: a key that omitted it would
+    return the m >= 0 operator to a caller expecting the full one. The
+    spin-2 operator then agrees with the spin-0 full one on everything
+    including the packed flag, so only spin separates those two.
     """
     lmax, nside, npix = 4, 2, 48
     dense.clear_dense_matrix_cache()
     packed = dense.precompute_dense_matrix(
         (npix,), lmax, "healpix", nside=nside
     )
-    dense.dense_compute_alm(
-        jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=0
-    )
+    for spin in (0, 2):
+        dense.dense_compute_alm(
+            jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=spin
+        )
 
-    assert len(dense._DENSE_MATRIX_CACHE) == 2
+    assert len(dense._DENSE_MATRIX_CACHE) == 3
     shapes = {m.shape for m in dense._DENSE_MATRIX_CACHE.values()}
     ncoeff_packed = (lmax + 1) * (lmax + 2) // 2
+    ncoeff_spin2 = (lmax + 1) ** 2 - 2**2
     assert packed.shape == (ncoeff_packed, npix)
-    assert shapes == {(ncoeff_packed, npix), ((lmax + 1) ** 2, npix)}
+    assert shapes == {
+        (ncoeff_packed, npix),
+        ((lmax + 1) ** 2, npix),
+        (ncoeff_spin2, npix),
+    }

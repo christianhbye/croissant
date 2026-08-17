@@ -552,22 +552,47 @@ def _build_analysis_matrix(
 
 
 def _full_matrix_for(lmax, sampling, nside, spin, niter, complex_dtype):
-    """Fetch the full complex operator for one configuration."""
+    """Fetch the full complex operator for one configuration.
+
+    The build runs under ``jax.ensure_compile_time_eval`` here rather
+    than at the call sites, so that "nothing traced ever enters this
+    cache" is a property of the cache itself. The matrix depends only
+    on static geometry, so the context yields a concrete array even
+    when a trace is active; without it a caller inside ``jax.jit``
+    would store a tracer, and since retention is unbounded that entry
+    would poison its key for the life of the process. Nesting inside a
+    caller's own such context is harmless.
+
+    The build happens while the cache lock is held, deliberately: it
+    makes two threads racing on one configuration wait for a single
+    build rather than each starting their own, which for the full
+    operator is minutes of work apiece. Releasing the lock around the
+    build would turn this into a double-checked pattern that admits
+    exactly those duplicate builds.
+    """
     shape = _spatial_shape(lmax, sampling, nside)
     key = _dense_matrix_key(
-        shape, lmax, sampling, nside, spin, False, niter, complex_dtype
+        shape,
+        lmax,
+        sampling,
+        nside,
+        spin=spin,
+        packed=False,
+        niter=niter,
+        complex_dtype=complex_dtype,
     )
     with _DENSE_MATRIX_CACHE_LOCK:
         matrix = _DENSE_MATRIX_CACHE.get(key)
         if matrix is None:
-            matrix = _build_analysis_matrix(
-                lmax,
-                sampling,
-                nside,
-                spin,
-                niter,
-                np.dtype(complex_dtype).name,
-            )
+            with jax.ensure_compile_time_eval():
+                matrix = _build_analysis_matrix(
+                    lmax,
+                    sampling,
+                    nside,
+                    spin,
+                    niter,
+                    np.dtype(complex_dtype).name,
+                )
             _DENSE_MATRIX_CACHE[key] = matrix
     return matrix
 
