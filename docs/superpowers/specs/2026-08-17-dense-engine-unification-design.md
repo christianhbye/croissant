@@ -110,29 +110,35 @@ Cost of the accumulation is real and should be recorded: the cache key includes
 the life of the process. Bounded retention remains a legitimate future item;
 this PR deliberately does not take it.
 
-### D3. `engine_dtypes` moves to `footprints.py`
+### D3. `engine_dtypes` moves to `utils.py`
 
 `_dense_dtypes` has three consumers, not two: `sphere.py`, and `kernel.py:266`
 via `from .sphere import _dense_dtypes`. Its own comment at `kernel.py:259`
 calls it "the dtype contract croissant's engines share". Leaving it in
 `dense.py` would make the kernel engine import from the dense engine.
 
-It moves to `footprints.py` — the module that already owns cross-engine
-geometry and size prediction (`transform_lmax`, `spatial_shape`,
-`_kernel_itemsize`, `_COMPLEX_ITEMSIZE`) — and is renamed `engine_dtypes`,
-since the name `_dense_dtypes` already misdescribes a helper the kernel engine
-imports.
+It moves to `utils.py` and is renamed `engine_dtypes`, since the name
+`_dense_dtypes` already misdescribes a helper the kernel engine imports.
+`utils.py` is the general helper module and is already imported at module level
+by both `sphere.py` and `kernel.py`, so no consumer gains a dependency it did
+not already have.
+
+`footprints.py` was considered and rejected. Its docstring promises helpers that
+are "pure arithmetic over the transform's geometry", and it imports no `jax`;
+`engine_dtypes` reads `jax.config.x64_enabled`, which is runtime configuration,
+not geometry. Co-locating them would also sit awkwardly next to
+`_COMPLEX_ITEMSIZE`, which hard-codes complex128 — that is, `footprints`
+already assumes one answer to the question `engine_dtypes` exists to ask.
 
 This also removes a workaround: `kernel.py:265` currently notes "Imported
 lazily because sphere imports this module", so the helper's present home forces
-a function-body import to dodge a cycle. From `footprints.py` it becomes an
-ordinary module-level import, alongside the `transform_lmax` that module
-already provides.
+a function-body import to dodge a cycle. From `utils.py` it becomes an ordinary
+module-level import.
 
 ### D4. Symbols that cross module boundaries lose the leading underscore
 
 `_apply_dense_matrix` is called by `sphere.compute_alm` and becomes
-`dense.apply_packed_matrix`. `_dense_dtypes` becomes `footprints.engine_dtypes`
+`dense.apply_packed_matrix`. `_dense_dtypes` becomes `utils.engine_dtypes`
 per D3. Symbols that stay internal to `dense.py` keep their underscore.
 
 This makes the cross-module surface explicit rather than relying on the
@@ -246,7 +252,7 @@ bitwise identical.
 - `polarization.py:380`: `sphere.dense_matrix_for` becomes
   `dense.dense_matrix_for`. `polarization.py` already imports `dense`.
 - `kernel.py:266`: `from .sphere import _dense_dtypes` becomes
-  `from .footprints import engine_dtypes`.
+  `from . import utils` at module level, calling `utils.engine_dtypes()`.
 - Docstring and comment references to `sphere._dense_dtypes` and
   `sphere._dense_matrix_key` (`kernel.py:79`, `kernel.py:259-260`,
   `tests/test_kernel_engine.py:110`, `tests/test_kernel_engine.py:217`) are
@@ -322,7 +328,7 @@ contract), `tests/test_sphere.py:410-432` (cache identity and entry count).
    work unchanged from the top-level namespace.
 4. `kernel.py` imports no code from `sphere.py`, and its lazy
    `from .sphere import _dense_dtypes` becomes a module-level import from
-   `footprints`. Docstring cross-references to `croissant.sphere.compute_alm`
+   `utils`. Docstring cross-references to `croissant.sphere.compute_alm`
    and `SphBase` are unaffected and stay.
 5. Full suite green, `tests/test_physics.py` 0 diff vs main, ruff clean.
 6. Both commits pass the suite independently.
