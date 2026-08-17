@@ -672,7 +672,11 @@ def _full_matrix_for(lmax, sampling, nside, spin, niter, complex_dtype):
         matrix = _DENSE_MATRIX_CACHE.get(key)
         if matrix is None:
             matrix = _build_analysis_matrix(
-                lmax, sampling, nside, spin, niter,
+                lmax,
+                sampling,
+                nside,
+                spin,
+                niter,
                 np.dtype(complex_dtype).name,
             )
             _DENSE_MATRIX_CACHE[key] = matrix
@@ -833,8 +837,9 @@ def dense_cache_nbytes():
 
     """
     with _DENSE_MATRIX_CACHE_LOCK:
-        return sum(int(matrix.nbytes) for matrix in
-                   _DENSE_MATRIX_CACHE.values())
+        return sum(
+            int(matrix.nbytes) for matrix in _DENSE_MATRIX_CACHE.values()
+        )
 ```
 
 Add `dense_cache_nbytes` to the `from .dense import ...` line in `__init__.py`.
