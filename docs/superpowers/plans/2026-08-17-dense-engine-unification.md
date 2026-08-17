@@ -80,7 +80,7 @@ uv run ruff check && uv run ruff format --check
 | `src/croissant/kernel.py` | unchanged except its dtype import moves to module level |
 | `src/croissant/polarization.py` | one call site retargeted |
 | `src/croissant/__init__.py` | re-points two public names to `.dense` |
-| `tests/test_dense.py` | **new** — cache policy and builder tests added here |
+| `tests/test_dense.py` | **already exists** (158 lines since `d4736db`, four VJP tests) — this plan APPENDS cache-policy and builder tests to it, never recreates it |
 | `tests/test_sphere.py` | unchanged except its imports; the existing dense tests stay put so the move's diff stays readable |
 | `README.md` | `clear_dense_matrix_cache` gets a real paragraph |
 
