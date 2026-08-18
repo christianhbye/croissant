@@ -608,6 +608,61 @@ def test_precomputed_kernel_is_reused_inside_a_trace():
     )
 
 
+def test_precomputed_inverse_kernel_is_reused_inside_a_trace():
+    """The refinement path walks the same ladder as the forward one.
+
+    ``niter > 0`` needs a synthesis kernel alongside the analysis one,
+    and that second lookup is its own branch. A HALF-warm cache is the
+    case worth pinning: a warm forward kernel with a cold inverse must
+    still raise rather than quietly dropping the refinement the caller
+    asked for.
+    """
+    import jax
+
+    from croissant import sphere
+
+    rng = np.random.default_rng(51)
+    data = rng.normal(size=(2, 12 * NSIDE**2))
+
+    @jax.jit
+    def call(x):
+        return sphere.compute_alm(
+            x,
+            lmax=LMAX,
+            sampling="healpix",
+            nside=NSIDE,
+            niter=3,
+            reality=True,
+            engine="kernel",
+        )
+
+    # Forward warm, inverse cold: the refinement kernel is still absent.
+    kernel.clear_kernel_cache()
+    kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, reality=True)
+    with pytest.raises(RuntimeError, match="inverse kernel"):
+        call(data)
+
+    # Both warm: the whole refined transform runs off the cache.
+    kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, reality=True, forward=False
+    )
+    got = np.asarray(call(data))
+    expected = np.asarray(
+        sphere.compute_alm(
+            data,
+            LMAX,
+            "healpix",
+            nside=NSIDE,
+            niter=3,
+            reality=True,
+            engine="s2fft",
+        )
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
 def test_auto_keeps_the_kernel_engine_when_the_cache_is_warm():
     """A cached kernel must count the same as a threaded-in one.
 
