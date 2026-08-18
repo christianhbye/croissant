@@ -21,7 +21,11 @@ from .dense import (
     precompute_dense_matrix,
 )
 from .engine_select import resolve_engine
-from .kernel import clear_kernel_cache, precompute_kernel
+from .kernel import (
+    clear_kernel_cache,
+    kernel_cache_nbytes,
+    precompute_kernel,
+)
 from .polarization import PairStokesBeam, PolarizedSky, polarized_convolve
 from .simulator import Simulator
 from .sky import Sky

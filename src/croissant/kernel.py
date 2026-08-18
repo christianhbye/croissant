@@ -39,6 +39,7 @@ from .footprints import kernel_nbytes, transform_lmax
 __all__ = [
     "cached_kernel",
     "clear_kernel_cache",
+    "kernel_cache_nbytes",
     "kernel_compute_alm",
     "kernel_nbytes",
     "precompute_kernel",
@@ -274,6 +275,35 @@ def clear_kernel_cache():
     """Release all cached kernels held by croissant."""
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE.clear()
+
+
+def kernel_cache_nbytes():
+    """
+    Total bytes of Wigner-d kernels croissant currently holds.
+
+    The cache is bounded by a kernel COUNT rather than a byte budget
+    (see ``_KERNEL_CACHE_MAXSIZE``), and the entries are far from
+    uniform in size: 32 of them at nside=128 is a ~16 GiB ceiling while
+    ``engine="auto"`` advertises a 512 MiB cap for one choice. Those two
+    numbers govern different things and are not in tension by design,
+    but they can add up, and a count tells a caller nothing about how
+    much memory is actually resident.
+
+    Making the bound byte-based is deliberately not the answer: evicting
+    by size would drop whichever kernel happens to be largest rather
+    than whichever is least likely to be reused, and the floor on the
+    count is one polarized simulation's working set. Report the figure
+    instead, as :func:`croissant.dense.dense_cache_nbytes` does for the
+    dense engine, and let :func:`clear_kernel_cache` release it.
+
+    Returns
+    -------
+    int
+        Size in bytes of every cached kernel, forward and inverse.
+
+    """
+    with _KERNEL_CACHE_LOCK:
+        return sum(int(held.nbytes) for held in _KERNEL_CACHE.values())
 
 
 def kernel_compute_alm(

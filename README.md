@@ -211,9 +211,21 @@ later traced calls whether or not you also thread the result through as
 `kernel=`. Passing it explicitly is still the clearer form, and the only one
 that survives a `clear_kernel_cache()`.
 `Beam` and `Sky` handle this automatically too, precomputing the forward
-kernel (and the inverse kernel, if `niter > 0`) during initialization. Use
-`croissant.clear_kernel_cache()` to release Croissant's in-process kernel
-references.
+kernel (and the inverse kernel, if `niter > 0`) during initialization.
+
+Unlike the dense cache, the kernel cache is bounded — but by a kernel
+*count*, currently 32, not by bytes. The floor on that number is one
+polarized simulation's working set: a `PairStokesBeam` and a `PolarizedSky`
+at `niter > 0` need a forward and an inverse kernel per transformed block,
+and a smaller cache makes the two evict each other on every construction,
+silently losing the reuse the cache exists to provide. The ceiling is the
+other side of the same coin: 32 kernels at `nside=128` is about 16 GiB,
+against the 512 MiB budget rule 3 applies to a single choice. The two govern
+different things, but they add up. Call `croissant.kernel_cache_nbytes()` to
+see what is actually resident and `croissant.clear_kernel_cache()` to release
+it — that release valve is offered deliberately in place of a byte-based
+eviction policy, which would drop whichever kernel is largest rather than
+whichever is least likely to be reused.
 
 `engine="auto"` never turns a working call into a `RuntimeError` this way.
 Call `croissant.sphere.compute_alm` from inside your own `jax.jit` with

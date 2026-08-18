@@ -741,6 +741,35 @@ def test_spin_kernels_are_built_at_the_complex_layout():
     assert built.shape[-1] == 2 * (LMAX + 1) - 1
 
 
+def test_kernel_cache_nbytes_reports_what_is_held():
+    """The kernel cache's retention must be as visible as dense's.
+
+    ``_KERNEL_CACHE_MAXSIZE`` bounds a kernel COUNT, not a byte budget,
+    and the entries are not the same size: 32 of them at nside=128 is a
+    ~16 GiB ceiling while ``auto`` advertises a 512 MiB cap for a single
+    choice. Making the bound byte-based would need eviction to rank
+    kernels by reuse likelihood rather than size, which is why it is
+    deliberately not done -- so the figure has to be observable instead,
+    exactly as ``dense_cache_nbytes`` makes dense's unbounded retention
+    observable.
+    """
+    kernel.clear_kernel_cache()
+    assert kernel.kernel_cache_nbytes() == 0
+
+    analysis = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, reality=True
+    )
+    assert kernel.kernel_cache_nbytes() == analysis.nbytes
+
+    synthesis = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, reality=True, forward=False
+    )
+    assert kernel.kernel_cache_nbytes() == analysis.nbytes + synthesis.nbytes
+
+    kernel.clear_kernel_cache()
+    assert kernel.kernel_cache_nbytes() == 0
+
+
 def test_sub_floor_band_limits_share_one_cached_kernel():
     """Two sub-floor band-limits build one kernel, so they must key alike.
 
