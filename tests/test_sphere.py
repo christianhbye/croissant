@@ -550,3 +550,23 @@ def test_dense_truncated_lmax_matches_truncated_s2fft():
     )
 
     np.testing.assert_allclose(actual, truncated, rtol=1e-12, atol=1e-12)
+
+
+def test_freqs_accepts_any_array_like():
+    """A plain list of frequencies must not be a TypeError.
+
+    ``jnp.atleast_1d`` rejects a list outright, with a message naming
+    neither the argument nor the fix, so ``Sky([...], [50.0])`` failed on
+    a perfectly ordinary call. The polarized containers already coerce
+    (``polarization._spatial_metadata``), and ``Simulator`` already
+    coerces its own ``times``, so this was an inconsistency between
+    sibling entry points rather than a deliberate contract.
+    """
+    data = np.zeros((2, 12 * 8**2))
+    obj = SphBase(data, [50.0, 60.0], "healpix", niter=0)
+    np.testing.assert_allclose(np.asarray(obj.freqs), [50.0, 60.0])
+    assert obj.freqs.shape == (2,)
+
+    # A bare scalar must still broadcast to one frequency.
+    single = SphBase(np.zeros((1, 12 * 8**2)), 50.0, "healpix", niter=0)
+    assert single.freqs.shape == (1,)

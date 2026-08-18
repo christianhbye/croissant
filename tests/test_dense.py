@@ -176,11 +176,13 @@ def test_equiangular_builder_produces_the_packed_operator():
     against. Comparing values rather than only the matrix shape is what
     makes this a regression test for the relocation.
 
-    What this does not pin is the builder's own ``reality=True``: for
-    the real one-hot basis maps it feeds s2fft, the general transform
-    returns identical m >= 0 coefficients, so dropping the flag would
-    still pass here. Losing it costs roughly a factor two in build work
-    and memory, not correctness.
+    What this cannot pin is the builder's own ``reality=True``: for the
+    real one-hot basis maps it feeds s2fft, the general transform
+    returns identical m >= 0 coefficients, so dropping the flag still
+    passes here -- verified, not assumed. Losing it costs roughly a
+    factor two in build work and memory, not correctness, so it is
+    pinned by watching the call instead, in
+    ``test_equiangular_builder_asks_s2fft_for_the_real_transform``.
     """
     lmax, sampling = 4, "dh"
     shape = spatial_shape(lmax, sampling, None)
@@ -203,6 +205,38 @@ def test_equiangular_builder_produces_the_packed_operator():
     np.testing.assert_allclose(
         packed, expected[ell, lmax + emm], rtol=1e-12, atol=1e-12
     )
+
+
+def test_equiangular_builder_asks_s2fft_for_the_real_transform(monkeypatch):
+    """Pin the builder's ``reality=True``, which values cannot pin.
+
+    ``test_equiangular_builder_produces_the_packed_operator`` compares
+    coefficients, and for the real one-hot basis maps this builder feeds
+    s2fft the general transform returns identical ``m >= 0`` values --
+    so dropping the flag costs roughly a factor two in build work and
+    memory while passing every value assertion. The only way to hold on
+    to it is to watch the call.
+    """
+    seen = []
+    real_forward = s2fft.forward
+
+    def recording_forward(*args, **kwargs):
+        seen.append(kwargs.get("reality"))
+        return real_forward(*args, **kwargs)
+
+    monkeypatch.setattr(s2fft, "forward", recording_forward)
+    # The builder is filter_jit-wrapped and keys on geometry alone, so a
+    # trace cached by an earlier test would never reach the patch.
+    jax.clear_caches()
+    dense.clear_dense_matrix_cache()
+
+    lmax, sampling = 5, "dh"
+    precompute_dense_matrix(
+        spatial_shape(lmax, sampling, None), lmax, sampling
+    )
+
+    assert seen, "the builder never reached s2fft.forward"
+    assert all(flag is True for flag in seen)
 
 
 def test_clear_releases_both_operator_flavours():

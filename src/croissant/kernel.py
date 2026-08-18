@@ -37,7 +37,9 @@ from . import utils
 from .footprints import kernel_nbytes, transform_lmax
 
 __all__ = [
+    "cached_kernel",
     "clear_kernel_cache",
+    "kernel_cache_nbytes",
     "kernel_compute_alm",
     "kernel_nbytes",
     "precompute_kernel",
@@ -86,20 +88,109 @@ def _kernel_dtype(sampling):
     return jnp.complex64 if is_complex else jnp.float32
 
 
+def _reject_spin_reality(spin, reality):
+    """Refuse ``reality=True`` for a spin-weighted kernel.
+
+    ``reality`` asserts the Hermitian symmetry only a real field has,
+    and a spin-weighted field is complex, so the pair is a contradiction
+    rather than a preference. ``sphere.compute_alm`` has rejected it
+    since #124; this module used to absorb it silently instead, which
+    left the one function callers are told to use for jit warm-up as the
+    one that did not check. Every internal caller normalises before
+    reaching here, so this only ever fires on a contradiction the caller
+    wrote out.
+    """
+    if int(spin) != 0 and bool(reality):
+        raise ValueError("Nonzero-spin kernels require reality=False.")
+
+
+def _kernel_cache_key(lmax, sampling, nside, spin, reality, forward):
+    """Build the cache key for one kernel configuration.
+
+    Shared by the writer and the reader so the two cannot drift apart.
+    Keyed on the band-limit the kernel is BUILT at, not the one
+    requested: every sub-floor lmax at one nside builds the identical
+    kernel, so keying on the request would fill a cache whose whole
+    purpose is to hold a working set with byte-identical duplicates.
+
+    ``reality`` is expected already forced through the
+    ``reality and spin == 0`` rule by the caller.
+    """
+    return (
+        int(transform_lmax(lmax, sampling, nside=nside)),
+        str(sampling),
+        None if nside is None else int(nside),
+        int(spin),
+        bool(reality),
+        bool(forward),
+        np.dtype(_kernel_dtype(sampling)).str,
+        jax.default_backend(),
+    )
+
+
+def cached_kernel(
+    lmax, sampling, nside=None, spin=0, reality=False, forward=True
+):
+    """
+    Return an already-built kernel for this configuration, or None.
+
+    A lookup, never a build. This is what lets a caller inside a trace
+    use a kernel it warmed earlier: the trace forbids BUILDING one, not
+    holding one. :func:`precompute_kernel` is the writer; this is the
+    read-only half, and both derive their key from
+    :func:`_kernel_cache_key` so a hit here means a hit there.
+
+    Parameters
+    ----------
+    lmax : int
+        Maximum spherical harmonic degree.
+    sampling : str
+        Sampling scheme understood by s2fft.
+    nside : int or None
+        HEALPix resolution parameter, required for ``"healpix"``.
+    spin : int
+        Spin weight of the field.
+    reality : bool
+        Whether the kernel is for a real field. Rejected for nonzero
+        spin, the same rule the writer applies, so that a caller who
+        asks the two functions the same question gets the same answer.
+    forward : bool
+        Analysis kernel if True, synthesis kernel if False.
+
+    Returns
+    -------
+    jax.Array or None
+        The cached kernel, or None if this configuration is not held.
+
+    """
+    _reject_spin_reality(spin, reality)
+    key = _kernel_cache_key(lmax, sampling, nside, spin, reality, forward)
+    with _KERNEL_CACHE_LOCK:
+        held = _KERNEL_CACHE.get(key)
+        if held is not None:
+            _KERNEL_CACHE.move_to_end(key)
+        return held
+
+
 def precompute_kernel(
     lmax, sampling, nside=None, spin=0, reality=False, forward=True
 ):
     """
     Build and cache the Wigner-d kernel for one transform configuration.
 
-    Must be called outside ``jax.jit``. Converting the numpy-built
-    kernel to a ``jax.Array`` while a trace is active would return a
-    tracer bound to that trace; caching it in the module-level,
-    trace-independent cache would let a later, unrelated call read
-    back a leaked tracer. Callers reaching this from inside a trace
+    Safe to call inside ``jax.jit``. The conversion of the numpy-built
+    kernel runs under ``jax.ensure_compile_time_eval``, so the cache
+    holds a concrete array. Without that context ``jnp.asarray``
+    returns a tracer bound to the active trace, and this cache outlives
+    the trace, so a single call from inside one poisoned that geometry's
+    key for the life of the process: every later read, traced or not,
+    raised ``UnexpectedTracerError`` naming an unrelated function.
+
+    Callers reaching this from inside a trace
     (:func:`kernel_compute_alm`, :class:`croissant.sphere.SphBase`)
-    raise ``RuntimeError`` instead of calling this function, and expect
-    the kernel to have been built here first, outside any trace.
+    still raise ``RuntimeError`` rather than build implicitly, so that
+    an explicit ``engine="kernel"`` request cannot turn a compilation
+    into a large silent build.
 
     Parameters
     ----------
@@ -124,9 +215,12 @@ def precompute_kernel(
         and :func:`croissant.footprints.kernel_nbytes`: this function is
         the documented way to warm a kernel for a jitted call, and a
         default that disagreed with the apply path would make the
-        documented recipe raise. Forced to False for nonzero spin, the
-        same ``reality and spin == 0`` rule the other three apply,
-        because s2fft's real precompute path is only valid at spin 0.
+        documented recipe raise. ``True`` is REJECTED for nonzero spin
+        rather than quietly forced, matching
+        :func:`croissant.sphere.compute_alm`: s2fft's real precompute
+        path is only valid at spin 0, and a spin-weighted field is
+        complex, so the pair is a contradiction rather than a
+        preference.
     forward : bool
         Build the analysis kernel if True, the synthesis kernel if
         False. The synthesis kernel is only needed for iterative
@@ -140,24 +234,10 @@ def precompute_kernel(
         ``transform_lmax(...) + 1``.
 
     """
-    # Forced here rather than left to callers, so the key, the built
-    # shape and the value the apply path passes cannot disagree.
-    reality = bool(reality) and spin == 0
-    # Keyed on the band-limit the kernel is BUILT at, not the one
-    # requested: every sub-floor lmax at one nside builds the identical
-    # kernel, so keying on the request would fill a cache whose whole
-    # purpose is to hold a working set with byte-identical duplicates.
+    _reject_spin_reality(spin, reality)
+    reality = bool(reality)
     build_lmax = transform_lmax(lmax, sampling, nside=nside)
-    key = (
-        int(build_lmax),
-        str(sampling),
-        None if nside is None else int(nside),
-        int(spin),
-        reality,
-        bool(forward),
-        np.dtype(_kernel_dtype(sampling)).str,
-        jax.default_backend(),
-    )
+    key = _kernel_cache_key(lmax, sampling, nside, spin, reality, forward)
     with _KERNEL_CACHE_LOCK:
         if key in _KERNEL_CACHE:
             _KERNEL_CACHE.move_to_end(key)
@@ -172,7 +252,16 @@ def precompute_kernel(
         nside=nside,
         forward=bool(forward),
     )
-    array = jnp.asarray(built)
+    # Under an active trace jnp.asarray returns a tracer bound to that
+    # trace, and this cache outlives it: the entry would poison its key
+    # for the life of the process. The kernel depends only on static
+    # geometry, so ensure_compile_time_eval yields a concrete array
+    # instead. Established here, in the writer, rather than at the call
+    # sites, so that "nothing traced ever enters this cache" is a
+    # property of the cache itself -- the same rule dense's two writers
+    # follow. Nesting inside a caller's own such context is harmless.
+    with jax.ensure_compile_time_eval():
+        array = jnp.asarray(built)
 
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE[key] = array
@@ -186,6 +275,35 @@ def clear_kernel_cache():
     """Release all cached kernels held by croissant."""
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE.clear()
+
+
+def kernel_cache_nbytes():
+    """
+    Total bytes of Wigner-d kernels croissant currently holds.
+
+    The cache is bounded by a kernel COUNT rather than a byte budget
+    (see ``_KERNEL_CACHE_MAXSIZE``), and the entries are far from
+    uniform in size: 32 of them at nside=128 is a ~16 GiB ceiling while
+    ``engine="auto"`` advertises a 512 MiB cap for one choice. Those two
+    numbers govern different things and are not in tension by design,
+    but they can add up, and a count tells a caller nothing about how
+    much memory is actually resident.
+
+    Making the bound byte-based is deliberately not the answer: evicting
+    by size would drop whichever kernel happens to be largest rather
+    than whichever is least likely to be reused, and the floor on the
+    count is one polarized simulation's working set. Report the figure
+    instead, as :func:`croissant.dense.dense_cache_nbytes` does for the
+    dense engine, and let :func:`clear_kernel_cache` release it.
+
+    Returns
+    -------
+    int
+        Size in bytes of every cached kernel, forward and inverse.
+
+    """
+    with _KERNEL_CACHE_LOCK:
+        return sum(int(held.nbytes) for held in _KERNEL_CACHE.values())
 
 
 def kernel_compute_alm(
@@ -224,8 +342,12 @@ def kernel_compute_alm(
     reality : bool
         Whether the field is real. Defaults to False, matching
         :func:`croissant.sphere.compute_alm`: only a caller that knows
-        its own data is real may claim the packed transform. Forced
-        False for nonzero spin, which s2fft's precompute path requires.
+        its own data is real may claim the packed transform. ``True`` is
+        REJECTED for nonzero spin rather than quietly forced, the same
+        rule :func:`precompute_kernel` and
+        :func:`croissant.sphere.compute_alm` apply: s2fft's real
+        precompute path is only valid at spin 0, and a spin-weighted
+        field is complex, so the pair is a contradiction.
     kernel : jax.Array or None
         Precomputed forward (analysis) kernel, as returned by
         :func:`precompute_kernel` with ``forward=True``. This is
@@ -274,24 +396,39 @@ def kernel_compute_alm(
     batch_shape = data.shape[:-spatial_ndim]
     flat = data.reshape((-1,) + spatial_shape)
 
-    reality = bool(reality) and spin == 0
+    _reject_spin_reality(spin, reality)
+    reality = bool(reality)
     L = lmax + 1
     forward_kernel = kernel
     if forward_kernel is None:
         if isinstance(data, jax.core.Tracer):
-            raise RuntimeError(
-                "The kernel must be precomputed before "
-                "kernel_compute_alm is called inside jax.jit. Call "
-                "precompute_kernel(...) once outside jax.jit."
+            # A trace forbids BUILDING a kernel, not holding one. A
+            # cache warmed earlier is as good as one threaded in by
+            # hand, and refusing it made the documented warm-up recipe
+            # work only for callers who also passed kernel=.
+            forward_kernel = cached_kernel(
+                lmax,
+                sampling,
+                nside=nside,
+                spin=spin,
+                reality=reality,
+                forward=True,
             )
-        forward_kernel = precompute_kernel(
-            lmax,
-            sampling,
-            nside=nside,
-            spin=spin,
-            reality=reality,
-            forward=True,
-        )
+            if forward_kernel is None:
+                raise RuntimeError(
+                    "The kernel must be precomputed before "
+                    "kernel_compute_alm is called inside jax.jit. Call "
+                    "precompute_kernel(...) once outside jax.jit."
+                )
+        else:
+            forward_kernel = precompute_kernel(
+                lmax,
+                sampling,
+                nside=nside,
+                spin=spin,
+                reality=reality,
+                forward=True,
+            )
     analyse = partial(
         s2fft.precompute_transforms.spherical.forward,
         L=L,
@@ -314,20 +451,31 @@ def kernel_compute_alm(
     # scalar dense matrix in gram form.
     if inverse_kernel is None:
         if isinstance(data, jax.core.Tracer):
-            raise RuntimeError(
-                "The inverse kernel must be precomputed before "
-                "kernel_compute_alm is called inside jax.jit with "
-                "niter > 0. Call precompute_kernel(..., forward=False) "
-                "once outside jax.jit."
+            inverse_kernel = cached_kernel(
+                lmax,
+                sampling,
+                nside=nside,
+                spin=spin,
+                reality=reality,
+                forward=False,
             )
-        inverse_kernel = precompute_kernel(
-            lmax,
-            sampling,
-            nside=nside,
-            spin=spin,
-            reality=reality,
-            forward=False,
-        )
+            if inverse_kernel is None:
+                raise RuntimeError(
+                    "The inverse kernel must be precomputed before "
+                    "kernel_compute_alm is called inside jax.jit with "
+                    "niter > 0. Call "
+                    "precompute_kernel(..., forward=False) "
+                    "once outside jax.jit."
+                )
+        else:
+            inverse_kernel = precompute_kernel(
+                lmax,
+                sampling,
+                nside=nside,
+                spin=spin,
+                reality=reality,
+                forward=False,
+            )
     synthesise = partial(
         s2fft.precompute_transforms.spherical.inverse,
         L=L,

@@ -528,16 +528,189 @@ def test_compute_alm_inside_jit_without_precompute_raises():
         call(data)
 
 
+def test_no_tracer_ever_enters_the_kernel_cache():
+    """Building inside jax.jit must still cache a concrete array.
+
+    ``precompute_kernel`` is exported at top level and the README tells
+    callers to use it, yet it carries no tracer guard of its own --
+    only its callers check their input. One call from inside a trace
+    therefore stores a tracer under that geometry's key, and the entry
+    is sticky: a later call from outside any trace reads the dead
+    tracer back and raises ``UnexpectedTracerError`` naming an
+    unrelated function. The builder must establish
+    ``jax.ensure_compile_time_eval`` itself rather than trusting its
+    callers to have done it, exactly as dense's two writers do.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    kernel.clear_kernel_cache()
+
+    @jax.jit
+    def build(scale):
+        built = kernel.precompute_kernel(
+            LMAX, "healpix", nside=NSIDE, spin=0, reality=True
+        )
+        return scale * jnp.abs(built).sum()
+
+    build(jnp.asarray(1.0))
+
+    assert len(kernel._KERNEL_CACHE) == 1
+    for cached in kernel._KERNEL_CACHE.values():
+        assert not isinstance(cached, jax.core.Tracer)
+        # The symptom of a cached tracer: the entry cannot be used
+        # outside the trace that created it.
+        np.asarray(cached)
+
+
+def test_precomputed_kernel_is_reused_inside_a_trace():
+    """A warm cache is as good as a kernel threaded in by hand.
+
+    The dense engine has served a cold explicit request from its cache
+    since #142 (``dense.dense_matrix_for``): warm hit returns, cold
+    explicit raises, cold automatic builds. The kernel engine raised in
+    all three cases, so the documented warm-up recipe -- call
+    ``precompute_kernel`` once outside ``jax.jit`` -- only worked if the
+    caller also threaded the result through as ``kernel=``. Refusing a
+    kernel that is already sitting in the cache is a policy with no
+    remaining justification now that nothing traced can enter it.
+    """
+    import jax
+
+    from croissant import sphere
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(31)
+    data = rng.normal(size=(2, 12 * NSIDE**2))
+
+    # The documented recipe: warm it once, outside any trace.
+    kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, reality=True)
+
+    @jax.jit
+    def call(x):
+        return sphere.compute_alm(
+            x,
+            lmax=LMAX,
+            sampling="healpix",
+            nside=NSIDE,
+            reality=True,
+            engine="kernel",
+        )
+
+    got = np.asarray(call(data))
+    expected = np.asarray(
+        sphere.compute_alm(
+            data, LMAX, "healpix", nside=NSIDE, reality=True, engine="s2fft"
+        )
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_precomputed_inverse_kernel_is_reused_inside_a_trace():
+    """The refinement path walks the same ladder as the forward one.
+
+    ``niter > 0`` needs a synthesis kernel alongside the analysis one,
+    and that second lookup is its own branch. A HALF-warm cache is the
+    case worth pinning: a warm forward kernel with a cold inverse must
+    still raise rather than quietly dropping the refinement the caller
+    asked for.
+    """
+    import jax
+
+    from croissant import sphere
+
+    rng = np.random.default_rng(51)
+    data = rng.normal(size=(2, 12 * NSIDE**2))
+
+    @jax.jit
+    def call(x):
+        return sphere.compute_alm(
+            x,
+            lmax=LMAX,
+            sampling="healpix",
+            nside=NSIDE,
+            niter=3,
+            reality=True,
+            engine="kernel",
+        )
+
+    # Forward warm, inverse cold: the refinement kernel is still absent.
+    kernel.clear_kernel_cache()
+    kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, reality=True)
+    with pytest.raises(RuntimeError, match="inverse kernel"):
+        call(data)
+
+    # Both warm: the whole refined transform runs off the cache.
+    kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, reality=True, forward=False
+    )
+    got = np.asarray(call(data))
+    expected = np.asarray(
+        sphere.compute_alm(
+            data,
+            LMAX,
+            "healpix",
+            nside=NSIDE,
+            niter=3,
+            reality=True,
+            engine="s2fft",
+        )
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_auto_keeps_the_kernel_engine_when_the_cache_is_warm():
+    """A cached kernel must count the same as a threaded-in one.
+
+    ``degrade_for_trace`` exists so auto never hands back an engine
+    that then refuses to run. Once a warm cache is enough for the
+    kernel engine to run inside a trace, degrading away from it is no
+    longer avoiding a failure -- it is silently downgrading a caller
+    onto s2fft while the kernel they already paid to build sits unused.
+    Constructing a field inside a trace is how a caller differentiates
+    through the construction itself, which is exactly when the same
+    geometry has usually been built once already.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    from croissant import Sky
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(41)
+    data = jnp.asarray(np.abs(rng.normal(size=(1, 10, 18))) + 1.0)
+    freqs = np.array([50.0])
+
+    # Precondition: outside a trace this geometry resolves to kernel,
+    # so any change below is the trace's doing and not the policy's.
+    assert Sky(data, freqs, sampling="mwss").engine == "kernel"
+
+    seen = []
+
+    def loss(x):
+        sky = Sky(x, freqs, sampling="mwss")
+        seen.append(sky.engine)
+        return jnp.abs(sky.compute_alm()).sum()
+
+    jax.grad(loss)(data)
+    assert seen[-1] == "kernel"
+
+
 def test_precompute_kernel_default_matches_the_apply_default():
     """The documented jit warm-up recipe must actually apply.
 
-    ``kernel_compute_alm``, ``sphere.compute_alm`` and
-    ``footprints.kernel_nbytes`` all default to ``reality=True``. A
-    builder defaulting to False returns a kernel whose last axis is
-    ``2L - 1`` where the apply path slices ``ftm`` to ``m >= 0`` and
-    expects ``L``, so the README's own recipe raised a shape error --
-    and the kernel engine has no pre-warmed-cache escape hatch, so this
-    is the only supported path.
+    ``precompute_kernel``, ``kernel_compute_alm``,
+    ``sphere.compute_alm`` and ``footprints.kernel_nbytes`` default
+    ``reality`` alike -- to ``False`` since #137, matching s2fft. What
+    matters is that they agree: ``reality`` sets the kernel's shape, so
+    a builder disagreeing with the apply path returns a kernel whose
+    last axis is ``2L - 1`` where the apply path slices ``ftm`` to
+    ``m >= 0`` and expects ``L``, and the README's own recipe raises a
+    shape error.
     """
     import jax
 
@@ -570,23 +743,87 @@ def test_precompute_kernel_default_matches_the_apply_default():
     )
 
 
-def test_precompute_kernel_forces_reality_false_for_spin():
-    """The builder applies the same rule the predictor and apply do.
+def test_precompute_kernel_rejects_reality_true_for_spin():
+    """The builder must refuse the contradiction, not absorb it.
 
-    ``kernel_nbytes`` and ``kernel_compute_alm`` both force
-    ``reality = reality and spin == 0`` because s2fft's real precompute
-    path is only valid at spin 0. Leaving the builder out of that
-    agreement is what lets a caller key, build and then fail to apply.
+    ``sphere.compute_alm`` has raised on ``spin != 0`` with
+    ``reality=True`` since #124, because reality is an assertion about
+    the data and a spin-weighted field is complex. The builder took the
+    same pair and quietly built something else, so the one entry point a
+    caller is told to use for jit warm-up was the one that did not check.
+    Every internal caller already normalises before reaching here
+    (``kernel_compute_alm``, ``polarization._block_reality``), so the
+    only thing this rejects is a contradiction the caller wrote out.
     """
     kernel.clear_kernel_cache()
-    forced = kernel.precompute_kernel(
-        LMAX, "healpix", nside=NSIDE, spin=2, reality=True
-    )
-    explicit = kernel.precompute_kernel(
+    with pytest.raises(ValueError, match="reality=False"):
+        kernel.precompute_kernel(
+            LMAX, "healpix", nside=NSIDE, spin=2, reality=True
+        )
+    with pytest.raises(ValueError, match="reality=False"):
+        kernel.cached_kernel(
+            LMAX, "healpix", nside=NSIDE, spin=2, reality=True
+        )
+    # The transform entry point rejects it too. Only the size
+    # predictors mirror the rule silently, because their job is to
+    # describe the transform rather than to police their caller.
+    with pytest.raises(ValueError, match="reality=False"):
+        kernel.kernel_compute_alm(
+            np.zeros((1, 12 * NSIDE**2), dtype=complex),
+            LMAX,
+            "healpix",
+            nside=NSIDE,
+            spin=2,
+            reality=True,
+        )
+
+
+def test_spin_kernels_are_built_at_the_complex_layout():
+    """The builder, the predictor and the apply path must agree.
+
+    s2fft's real precompute path is only valid at spin 0, so a
+    spin-weighted kernel's last axis is ``2L - 1`` rather than ``L``.
+    Building one layout and applying the other is a shape error, not a
+    slow path, so the layout the other three assume is worth pinning.
+
+    This test used to assert the same thing by way of ``reality=True``
+    collapsing silently onto this kernel. That pair now raises; see
+    ``test_precompute_kernel_rejects_reality_true_for_spin``.
+    """
+    kernel.clear_kernel_cache()
+    built = kernel.precompute_kernel(
         LMAX, "healpix", nside=NSIDE, spin=2, reality=False
     )
-    assert forced is explicit
-    assert forced.shape[-1] == 2 * (LMAX + 1) - 1
+    assert built.shape[-1] == 2 * (LMAX + 1) - 1
+
+
+def test_kernel_cache_nbytes_reports_what_is_held():
+    """The kernel cache's retention must be as visible as dense's.
+
+    ``_KERNEL_CACHE_MAXSIZE`` bounds a kernel COUNT, not a byte budget,
+    and the entries are not the same size: 32 of them at nside=128 is a
+    ~16 GiB ceiling while ``auto`` advertises a 512 MiB cap for a single
+    choice. Making the bound byte-based would need eviction to rank
+    kernels by reuse likelihood rather than size, which is why it is
+    deliberately not done -- so the figure has to be observable instead,
+    exactly as ``dense_cache_nbytes`` makes dense's unbounded retention
+    observable.
+    """
+    kernel.clear_kernel_cache()
+    assert kernel.kernel_cache_nbytes() == 0
+
+    analysis = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, reality=True
+    )
+    assert kernel.kernel_cache_nbytes() == analysis.nbytes
+
+    synthesis = kernel.precompute_kernel(
+        LMAX, "healpix", nside=NSIDE, reality=True, forward=False
+    )
+    assert kernel.kernel_cache_nbytes() == analysis.nbytes + synthesis.nbytes
+
+    kernel.clear_kernel_cache()
+    assert kernel.kernel_cache_nbytes() == 0
 
 
 def test_sub_floor_band_limits_share_one_cached_kernel():
@@ -601,6 +838,46 @@ def test_sub_floor_band_limits_share_one_cached_kernel():
     lower = kernel.precompute_kernel(14, "healpix", nside=NSIDE)
     assert low is lower
     assert len(kernel._KERNEL_CACHE) == 1
+
+
+def test_polarized_auto_keeps_the_kernel_engine_when_the_cache_is_warm():
+    """The polarized path walks the same ladder, per block.
+
+    ``_analysis_alm`` resolves an engine per spin block, so each block
+    has its own cache entries and must be judged on its own. A polarized
+    field rebuilt inside a trace -- an MCMC step differentiating through
+    construction -- should keep the kernels the first construction paid
+    for rather than silently dropping every block onto s2fft.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    from croissant.polarization import PolarizedSky
+
+    nside = 4
+    npix = 12 * nside**2
+    rng = np.random.default_rng(23)
+    freqs = [10.0, 20.0]
+    data = jnp.asarray(rng.normal(size=(2, 4, npix)))
+
+    kernel.clear_kernel_cache()
+    warm = PolarizedSky(data, freqs, sampling="healpix", niter=3)
+    # Precondition: outside a trace both transformed blocks pick kernel.
+    assert warm.engine == {
+        "IV": "kernel",
+        "P_MINUS": "kernel",
+        "P_PLUS": None,
+    }
+
+    seen = []
+
+    def loss(x):
+        sky = PolarizedSky(x, freqs, sampling="healpix", niter=3)
+        seen.append(dict(sky.engine))
+        return jnp.abs(sky.data).sum()
+
+    jax.grad(loss)(data)
+    assert seen[-1] == dict(warm.engine)
 
 
 def test_rebuilding_a_polarized_pair_reuses_every_cached_kernel(monkeypatch):

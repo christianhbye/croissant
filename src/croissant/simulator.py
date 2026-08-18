@@ -194,6 +194,10 @@ class Simulator(eqx.Module):
             temperature is supported for now.
 
         """
+        # Coerce before comparing: jnp.allclose rejects a plain list,
+        # so passing one died inside the agreement check rather than
+        # reporting a disagreement. rot_alm_z does the same for `times`.
+        freqs = jnp.atleast_1d(jnp.asarray(freqs))
         if not (
             jnp.allclose(beam.freqs, freqs) and jnp.allclose(sky.freqs, freqs)
         ):
