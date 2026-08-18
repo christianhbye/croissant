@@ -56,9 +56,22 @@ def compute_visibilities(beam_alm, sky_alm, phases, norm):
     norm : jnp.ndarray
         Normalization factors for each pair. Shape (N_pairs,) for scalar
         normalization or (N_pairs, N_freqs) for frequency-dependent
-        normalization. For pair (p, q), this should be
-        sqrt(total_power_p * total_power_q) computed from the
-        auto-correlation beams.
+        normalization.
+
+        Two conventions are in use, and they answer different
+        questions. ``sqrt(total_power_p * total_power_q)`` from the
+        auto-correlation beams, via ``pair_normalization``, puts the
+        correlation on the scale of the two antennas' own powers; it is
+        always well conditioned and is the convention interferometry
+        uses, because a separated pair's own monopole washes out with
+        the fringe. Dividing instead by the pair beam's own integral
+        returns the temperature of the isotropic sky that would
+        reproduce the visibility, which is a temperature wherever that
+        integral survives. The two coincide exactly for identical
+        antennas and differ by the pair's coherence otherwise. See the
+        "Temperature units" section of ``docs/polarization.md``, and
+        ``polarized_convolve(normalization="auto-I")`` for the
+        full-Stokes counterpart.
 
     Returns
     -------

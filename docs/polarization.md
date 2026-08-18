@@ -268,12 +268,12 @@ analysis (default: the upper hemisphere, `theta <= pi/2`; pass `horizon=`
 to override), so below-horizon response is excluded from all four
 components' coefficients alike.
 
-`PairStokesBeam` performs no physical normalization. Its first luseepy
-consumer supplies open-circuit effective-length products in `m^2`, then
-applies the frequency-dependent physical scale after the native transforms.
-Cross-pair normalization is never inferred from a complex Stokes response; an
-explicit per-pair or per-pair-per-frequency `normalization` argument to
-`polarized_convolve` remains available for users who want it.
+`PairStokesBeam` applies no physical scale of its own. Its first luseepy
+consumer supplies open-circuit effective-length products in `m^2`, then applies
+the frequency-dependent physical scale after the native transforms. An explicit
+per-pair or per-pair-per-frequency `normalization` argument to
+`polarized_convolve` remains available, alongside the `"auto-I"` mode described
+below.
 
 The polarized primitive does not apply the scalar `fgnd` ground correction,
 which is not meaningful applied independently to Q, U, and V; luseepy adds the
@@ -282,6 +282,95 @@ Moon covariance algebraically upstream. Unpolarized ground would be
 ground pickup is deferred: `PairStokesBeam` has no `compute_fgnd` analogue and
 `correct_ground_loss` is scalar-only, so there is no path that silently
 applies scalar-ground assumptions to Q, U, or V.
+
+## Temperature units
+
+`polarized_convolve(..., normalization="auto-I")` divides each pair by its own
+intensity-response integral, which `PairStokesBeam.compute_norm()` returns:
+
+    T_eff = int T(n) M_I(n) dOmega / int M_I(n) dOmega
+
+That is Eq. 18 of the LuSEE-Night antenna analysis, and the same normalization
+the scalar `Simulator.sim()` already applies via `Beam.compute_norm()`. It
+answers "which isotropic unpolarized sky would reproduce this visibility", so
+the result carries the sky's own units: a sky in Kelvin yields a visibility in
+Kelvin. Every instrument constant -- `k_B`, `eta_0 / lambda^2`, the `m^2` of the
+effective lengths -- cancels between numerator and denominator, which is
+precisely why croissant can produce this number without knowing any of them.
+
+A pair whose intensity response integrates to zero is blind to an isotropic
+sky, so no such temperature exists for it. `"auto-I"` raises there rather than
+returning a quotient by a vanishing denominator. The guard is numerical only,
+comparing the intensity monopole against the response's own harmonic norm; how
+usable a small-but-nonzero response is remains the caller's judgement, informed
+by the diagnostics below.
+
+### This is not the only Kelvin
+
+A voltage-sensing multiport receiver has a second, different one: the
+blackbody-equivalent temperature, obtained by dividing the port covariance by
+its response to a 1 K enclosure, `4 k_B M Re(Z_A) M^H` with
+`M = Z_L (Z_A + Z_L)^-1`. That temperature is defined for the whole covariance
+matrix, off-diagonals included, and it requires the antenna and load impedance
+matrices. croissant knows neither and does not attempt it; luseepy computes it
+downstream from the raw contraction. The two definitions agree for an
+autocorrelation on an isotropic sky -- thermal equilibrium -- which is the
+natural cross-check between the two codebases.
+
+`normalization` therefore defaults to `None`, and consumers that calibrate
+downstream should leave it there.
+
+### What rides along with the temperature
+
+A pair response is a row of a Mueller matrix, so the normalized number is the
+intensity response's view of the sky plus whatever the other Stokes rows pick
+up. `PairStokesBeam.response_diagnostics()` reports how much else is present.
+The three quantities are deliberately not the same kind of number:
+
+- `circular_leakage`, `|int M_V dOmega| / |int M_I dOmega|`. V is spin 0, so an
+  isotropic circularly polarized sky exists and this is the Kelvin that a 1 K
+  such sky would add to the reading.
+- `linear_response`, the share of the response's harmonic power carried by the
+  spin -/+2 blocks. Q and U have no `ell = 0` coefficient -- a spin-2 field has
+  no monopole -- and there is no isotropic linearly polarized sky to define a
+  leakage against, so no monopole ratio exists for them. This is a power ratio
+  instead: it says how polarization-sensitive the row is, not how much leaks,
+  which depends on the sky.
+- `coherence`, described next.
+
+Separating the Stokes components themselves is not a forward-simulation
+problem: it needs at least four pairs with independent response rows, inverted
+per time and frequency, and it recovers beam-convolved Stokes rather than the
+sky's own. That inversion belongs to the data analyst.
+
+### Relationship to multipair
+
+`multipair.compute_visibilities` takes a caller-supplied `norm`, conventionally
+`sqrt(P_a * P_b)` from the two antennas' autocorrelation powers. That is a
+different convention from `"auto-I"`, not a competing answer to the same
+question. For a pair response `M_ab`, Cauchy-Schwarz gives
+
+    |int M_I,ab dOmega| <= sqrt(int M_I,aa dOmega * int M_I,bb dOmega)
+
+with equality exactly when the two antennas are identical. Their ratio is the
+`coherence` reported by `response_diagnostics()`: 1 for identical antennas,
+where the two conventions coincide, and the conversion factor between them
+otherwise.
+
+Each convention owns a regime. `"auto-I"` is a temperature wherever the pair's
+own monopole survives, which covers co-located or sub-wavelength baselines --
+LuSEE's case at these frequencies. For separated antennas the product beam
+carries a fringe, the pair's monopole washes out toward zero, and no
+isotropic-sky temperature interpretation exists at all; `sqrt(P_a * P_b)` is
+the normalization that survives there, which is why interferometry uses it.
+
+### Ground
+
+`correct_ground_loss` stays scalar-only, and it applies to a normalized
+intensity channel: take an auto pair, normalize with `"auto-I"`, and the
+result is an antenna temperature with the same implicit ground loss the scalar
+pipeline has, correctable the same way. It is not meaningful applied
+independently to Q, U, or V, and polarized ground pickup remains deferred.
 
 ## s2fft dependency
 
