@@ -13,6 +13,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from . import dense, rotations, sphere, utils
+from .constants import Y00
 
 STOKES_IQUV = ("I", "Q", "U", "V")
 POLARIZATION_COMPONENTS = ("I", "V", "P_MINUS", "P_PLUS")
@@ -905,6 +906,109 @@ class PairStokesBeam(eqx.Module):
         phase = jnp.exp(1j * emms * jnp.radians(self.beam_rot))
         return alm * phase
 
+    def compute_norm(self, lmax=None):
+        """Integral of the intensity response over the full sphere.
+
+        This is the denominator of the response-weighted sky
+        temperature: dividing a pair visibility by it returns the
+        temperature of the isotropic unpolarized sky that would
+        reproduce that visibility.
+
+        The value is complex in general. Only an autocorrelation is
+        guaranteed a real, non-negative intensity response; a cross
+        pair's may carry any phase, and taking its real part would
+        silently discard half the normalization.
+
+        Parameters
+        ----------
+        lmax : int or None
+            Band limit for the underlying transform. Defaults to the
+            object's own ``lmax``.
+
+        Returns
+        -------
+        jax.Array
+            Complex normalization with shape ``(pair, frequency)``.
+
+        """
+        return _intensity_response_integral(self.compute_alm(lmax=lmax))
+
+    def response_diagnostics(self, lmax=None):
+        """How contaminated the normalized temperature reading is.
+
+        The number ``normalization="auto-I"`` returns is the intensity
+        response's view of the sky *plus* whatever the other Stokes
+        rows pick up. These diagnostics say how much else is riding
+        along. They describe the response only; how much actually
+        leaks depends on the sky.
+
+        The three quantities are deliberately not the same kind of
+        number, because the physics does not allow it:
+
+        ``circular_leakage``
+            ``|int M_V dOmega| / |int M_I dOmega|``. V is spin 0, so an
+            isotropic circularly polarized sky exists and this is the
+            Kelvin such a 1 K sky would add to the reading.
+        ``linear_response``
+            Share of the response's harmonic power carried by the spin
+            -/+2 blocks. Q and U have no ell=0 coefficient and no
+            isotropic state to define a leakage against, so this is a
+            power ratio rather than a temperature -- it says how
+            polarization-sensitive the row is, not how much leaks.
+        ``coherence``
+            ``|int M_I,ab| / sqrt(int M_I,aa * int M_I,bb)``, the pair's
+            overlap with its own autocorrelations. It is 1 for
+            identical antennas, where this normalization and
+            ``multipair``'s ``sqrt(P_a * P_b)`` coincide, and it is the
+            factor between them otherwise. ``nan`` where the two
+            autocorrelation pairs are not both present in ``pairs``.
+
+        Parameters
+        ----------
+        lmax : int or None
+            Band limit for the underlying transform.
+
+        Returns
+        -------
+        dict of jax.Array
+            Each value has shape ``(pair, frequency)``.
+
+        """
+        alm = self.compute_alm(lmax=lmax)
+        intensity_integral = _intensity_response_integral(alm)
+        lix, mix = utils.getidx(utils.lmax_from_shape(alm.shape), 0, 0)
+        circular_integral = alm[:, :, 1, lix, mix] / Y00
+        intensity_power = jnp.sqrt(
+            jnp.sum(jnp.abs(alm[:, :, 0]) ** 2, axis=(-2, -1))
+        )
+        linear_power = jnp.sqrt(
+            jnp.sum(jnp.abs(alm[:, :, 2:]) ** 2, axis=(-3, -2, -1))
+        )
+        return {
+            "circular_leakage": jnp.abs(circular_integral)
+            / jnp.abs(intensity_integral),
+            "linear_response": linear_power / intensity_power,
+            "coherence": self._pair_coherence(intensity_integral),
+        }
+
+    def _pair_coherence(self, intensity_integral):
+        """Overlap of each pair with its own autocorrelations."""
+        position = {pair: index for index, pair in enumerate(self.pairs)}
+        rows = []
+        for a, b in self.pairs:
+            auto_a = position.get((a, a))
+            auto_b = position.get((b, b))
+            if auto_a is None or auto_b is None:
+                rows.append(jnp.full(intensity_integral.shape[1:], jnp.nan))
+            else:
+                rows.append(
+                    jnp.sqrt(
+                        jnp.abs(intensity_integral[auto_a])
+                        * jnp.abs(intensity_integral[auto_b])
+                    )
+                )
+        return jnp.abs(intensity_integral) / jnp.stack(rows)
+
     def compute_alm_in_frame(self, rotation, dl_array, lmax=None):
         """Rotate all pair/component alms with a shared spatial rotation."""
         return rotations.rotate_alm(
@@ -912,7 +1016,54 @@ class PairStokesBeam(eqx.Module):
         )
 
 
-@jax.jit
+#: Relative floor below which an intensity response counts as absent.
+#: Compared against the response's own harmonic norm, so it is a pure
+#: numerical guard against dividing by zero, not a quality judgement:
+#: how usable a small-but-nonzero response is belongs to the caller,
+#: informed by ``PairStokesBeam.response_diagnostics``.
+_INTENSITY_NORM_FLOOR = 1e-12
+
+
+def _intensity_monopole(beam_alm):
+    """The ell=0, m=0 coefficient of the intensity response."""
+    lix, mix = utils.getidx(utils.lmax_from_shape(beam_alm.shape), 0, 0)
+    return beam_alm[..., 0, lix, mix]
+
+
+def _intensity_response_integral(beam_alm):
+    """``int M_I dOmega`` per (pair, frequency), kept complex."""
+    return _intensity_monopole(beam_alm) / Y00
+
+
+def _auto_intensity_normalization(beam_alm):
+    """Normalization that puts a pair visibility in sky-temperature units.
+
+    Dividing by the intensity response's own integral answers "which
+    isotropic unpolarized sky would reproduce this visibility", so the
+    result is a temperature whenever the sky's is.
+
+    A pair whose intensity response integrates to zero -- a differencing
+    pair, say -- is blind to an isotropic sky, so no such temperature
+    exists and this raises instead of returning a meaningless quotient.
+    The check needs concrete values, so it is skipped under a trace.
+    """
+    monopole = _intensity_monopole(beam_alm)
+    if not isinstance(beam_alm, jax.core.Tracer):
+        scale = jnp.sqrt(jnp.sum(jnp.abs(beam_alm) ** 2, axis=(-3, -2, -1)))
+        blind = np.asarray(jnp.abs(monopole) <= _INTENSITY_NORM_FLOOR * scale)
+        if blind.any():
+            pair_index, freq_index = np.nonzero(blind)
+            raise ValueError(
+                "normalization='auto-I' needs an intensity response to "
+                "divide by, but it vanishes for (pair, frequency) index "
+                f"{list(zip(pair_index.tolist(), freq_index.tolist()))}. "
+                "Such a pair is blind to an isotropic sky, so its "
+                "visibility has no sky-temperature equivalent; pass an "
+                "explicit normalization array instead."
+            )
+    return monopole / Y00
+
+
 def polarized_convolve(beam_alm, sky_alm, phases, normalization=None):
     """Convolve frequency-aligned full-Stokes sky and pair-response alms.
 
@@ -924,14 +1075,31 @@ def polarized_convolve(beam_alm, sky_alm, phases, normalization=None):
         Shape ``(frequency, 4, ell, m)`` in the internal harmonic dual.
     phases : array_like
         Shape ``(time, m)`` using Croissant's ``exp(-i*m*phi)`` convention.
-    normalization : array_like or None
+    normalization : array_like, ``"auto-I"``, or None
         Optional scalar, pair, or pair-by-frequency normalization.
+        ``"auto-I"`` divides each pair by its own intensity-response
+        integral, which puts the result in the sky's temperature units;
+        see ``PairStokesBeam.compute_norm``. ``None`` (the default)
+        returns the raw contraction.
 
     Returns
     -------
     array
         Complex visibilities with shape ``(time, pair, frequency)``.
     """
+    if isinstance(normalization, str):
+        if normalization != "auto-I":
+            raise ValueError(
+                f"Unknown normalization {normalization!r}; expected "
+                '"auto-I", an array, or None.'
+            )
+        normalization = _auto_intensity_normalization(beam_alm)
+    return _contract_polarized(beam_alm, sky_alm, phases, normalization)
+
+
+@jax.jit
+def _contract_polarized(beam_alm, sky_alm, phases, normalization):
+    """The traced contraction; ``normalization`` is already an array."""
     result = jnp.einsum(
         "fclm,tm,pfclm->tpf",
         sky_alm.conjugate(),
