@@ -387,35 +387,61 @@ class SphBase(eqx.Module):
 
         tracing = isinstance(self.data, jax.core.Tracer)
         if self._engine == "kernel" and tracing:
-            # A kernel cannot be built while a trace is active: converting
-            # the numpy-built kernel to a jax.Array would yield a tracer
-            # bound to this trace, which the module-level cache must never
-            # retain (see kernel.precompute_kernel's docstring).
-            if explicit_engine:
-                raise RuntimeError(
-                    "The kernel must be precomputed before a kernel "
-                    "SphBase object is constructed inside jax.jit. Call "
-                    "precompute_kernel(...) once outside jax.jit."
-                )
-            # Constructing a field inside a trace is how a caller
-            # differentiates through the construction itself, so raising
-            # here would cost them that for a choice they never made.
-            # Only cost changes: the engines agree to ~1e-13.
+            # A trace forbids BUILDING a kernel -- converting the
+            # numpy-built kernel to a jax.Array mid-trace would yield a
+            # tracer the module-level cache must never retain -- but it
+            # does not forbid using one this process already holds.
+            # Consult the cache before deciding, the same ladder
+            # dense.dense_matrix_for walks: warm hit runs, cold explicit
+            # raises, cold automatic degrades.
+            from . import kernel as _kernel
             from .engine_select import degrade_for_trace
             from .footprints import transform_lmax
 
-            self._engine = degrade_for_trace(
+            def _held(forward):
+                return (
+                    _kernel.cached_kernel(
+                        self.lmax,
+                        self.sampling,
+                        nside=self.nside,
+                        spin=0,
+                        reality=True,
+                        forward=forward,
+                    )
+                    is not None
+                )
+
+            # One call, so the niter > 0 "needs both kernels" half of
+            # the rule stays in degrade_for_trace rather than being
+            # rewritten here.
+            runnable = degrade_for_trace(
                 self._engine,
+                has_kernel=_held(True),
+                has_inverse_kernel=_held(False),
                 niter=self._niter,
                 sub_floor=(
                     transform_lmax(self.lmax, self.sampling, nside=self.nside)
                     != self.lmax
                 ),
             )
-            self._engine_reason = (
-                "kernels cannot be built inside a jax trace; degraded "
-                "from the automatic choice"
-            )
+            if runnable != self._engine:
+                if explicit_engine:
+                    raise RuntimeError(
+                        "The kernel must be precomputed before a kernel "
+                        "SphBase object is constructed inside jax.jit. "
+                        "Call precompute_kernel(...) once outside "
+                        "jax.jit."
+                    )
+                # Constructing a field inside a trace is how a caller
+                # differentiates through the construction itself, so
+                # raising here would cost them that for a choice they
+                # never made. Only cost changes: the engines agree to
+                # ~1e-13.
+                self._engine = runnable
+                self._engine_reason = (
+                    "kernels cannot be built inside a jax trace; "
+                    "degraded from the automatic choice"
+                )
 
         if self._engine == "dense":
             self._dense_matrix = dense.dense_matrix_for(
@@ -431,13 +457,11 @@ class SphBase(eqx.Module):
             self._inverse_kernel = None
         elif self._engine == "kernel":
             self._dense_matrix = None
-            # Reached only outside a trace: the degrade-or-raise check
-            # above has already dealt with the traced case, so the built
-            # kernel is always a concrete array, never a leaked tracer
-            # (see kernel.precompute_kernel's docstring). Unlike dense,
-            # there is no per-key cache fallback for a traced build --
-            # an explicit engine="kernel" must precompute first, exactly
-            # as kernel_compute_alm requires when called inside a trace.
+            # Inside a trace this is reached only on a cache hit, which
+            # the check above has already confirmed, so precompute_kernel
+            # returns the held array without building. Outside one it
+            # builds as usual. Either way the result is a concrete
+            # array, never a leaked tracer.
             from . import kernel as _kernel
 
             self._kernel = _kernel.precompute_kernel(

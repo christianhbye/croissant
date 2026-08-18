@@ -203,11 +203,13 @@ jitted call as `kernel=...` and `inverse_kernel=...`. Its `reality`
 defaults to `True` to match the apply path, and is forced to `False` for
 spin-weighted fields, so the same call is correct for scalar and spin
 blocks alike. Called from inside
-`jax.jit` without a precomputed kernel, `compute_alm(..., engine="kernel")`
-raises `RuntimeError` rather than silently building — and unlike dense,
-there is no pre-warmed-cache escape hatch here: the kernel engine's check
-raises as soon as the input is a tracer and no kernel was passed
-explicitly, even if `precompute_kernel` already warmed the cache earlier.
+`jax.jit` with no kernel available at all, `compute_alm(..., engine="kernel")`
+raises `RuntimeError` rather than silently building. A warm cache counts as
+available: a trace forbids *building* a kernel, not using one this process
+already holds, so a single `precompute_kernel(...)` outside `jax.jit` serves
+later traced calls whether or not you also thread the result through as
+`kernel=`. Passing it explicitly is still the clearer form, and the only one
+that survives a `clear_kernel_cache()`.
 `Beam` and `Sky` handle this automatically too, precomputing the forward
 kernel (and the inverse kernel, if `niter > 0`) during initialization. Use
 `croissant.clear_kernel_cache()` to release Croissant's in-process kernel
@@ -215,8 +217,8 @@ references.
 
 `engine="auto"` never turns a working call into a `RuntimeError` this way.
 Call `croissant.sphere.compute_alm` from inside your own `jax.jit` with
-nothing precomputed and an automatic choice of `"kernel"` degrades to an
-engine that can actually run: `"s2fft"` normally, or `"dense"` for a
+nothing precomputed and nothing cached, and an automatic choice of
+`"kernel"` degrades to an engine that can actually run: `"s2fft"` normally, or `"dense"` for a
 band-limit below the HEALPix floor, where the matrix-free engine cannot
 serve the transform at all. Only an *explicit* `engine="kernel"` raises,
 because a named engine is a cost decision croissant will not silently swap

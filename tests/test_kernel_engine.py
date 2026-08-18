@@ -563,6 +563,88 @@ def test_no_tracer_ever_enters_the_kernel_cache():
         np.asarray(cached)
 
 
+def test_precomputed_kernel_is_reused_inside_a_trace():
+    """A warm cache is as good as a kernel threaded in by hand.
+
+    The dense engine has served a cold explicit request from its cache
+    since #142 (``dense.dense_matrix_for``): warm hit returns, cold
+    explicit raises, cold automatic builds. The kernel engine raised in
+    all three cases, so the documented warm-up recipe -- call
+    ``precompute_kernel`` once outside ``jax.jit`` -- only worked if the
+    caller also threaded the result through as ``kernel=``. Refusing a
+    kernel that is already sitting in the cache is a policy with no
+    remaining justification now that nothing traced can enter it.
+    """
+    import jax
+
+    from croissant import sphere
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(31)
+    data = rng.normal(size=(2, 12 * NSIDE**2))
+
+    # The documented recipe: warm it once, outside any trace.
+    kernel.precompute_kernel(LMAX, "healpix", nside=NSIDE, reality=True)
+
+    @jax.jit
+    def call(x):
+        return sphere.compute_alm(
+            x,
+            lmax=LMAX,
+            sampling="healpix",
+            nside=NSIDE,
+            reality=True,
+            engine="kernel",
+        )
+
+    got = np.asarray(call(data))
+    expected = np.asarray(
+        sphere.compute_alm(
+            data, LMAX, "healpix", nside=NSIDE, reality=True, engine="s2fft"
+        )
+    )
+    np.testing.assert_allclose(
+        got, expected, rtol=0, atol=1e-10 * np.abs(expected).max()
+    )
+
+
+def test_auto_keeps_the_kernel_engine_when_the_cache_is_warm():
+    """A cached kernel must count the same as a threaded-in one.
+
+    ``degrade_for_trace`` exists so auto never hands back an engine
+    that then refuses to run. Once a warm cache is enough for the
+    kernel engine to run inside a trace, degrading away from it is no
+    longer avoiding a failure -- it is silently downgrading a caller
+    onto s2fft while the kernel they already paid to build sits unused.
+    Constructing a field inside a trace is how a caller differentiates
+    through the construction itself, which is exactly when the same
+    geometry has usually been built once already.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    from croissant import Sky
+
+    kernel.clear_kernel_cache()
+    rng = np.random.default_rng(41)
+    data = jnp.asarray(np.abs(rng.normal(size=(1, 10, 18))) + 1.0)
+    freqs = np.array([50.0])
+
+    # Precondition: outside a trace this geometry resolves to kernel,
+    # so any change below is the trace's doing and not the policy's.
+    assert Sky(data, freqs, sampling="mwss").engine == "kernel"
+
+    seen = []
+
+    def loss(x):
+        sky = Sky(x, freqs, sampling="mwss")
+        seen.append(sky.engine)
+        return jnp.abs(sky.compute_alm()).sum()
+
+    jax.grad(loss)(data)
+    assert seen[-1] == "kernel"
+
+
 def test_precompute_kernel_default_matches_the_apply_default():
     """The documented jit warm-up recipe must actually apply.
 
@@ -636,6 +718,46 @@ def test_sub_floor_band_limits_share_one_cached_kernel():
     lower = kernel.precompute_kernel(14, "healpix", nside=NSIDE)
     assert low is lower
     assert len(kernel._KERNEL_CACHE) == 1
+
+
+def test_polarized_auto_keeps_the_kernel_engine_when_the_cache_is_warm():
+    """The polarized path walks the same ladder, per block.
+
+    ``_analysis_alm`` resolves an engine per spin block, so each block
+    has its own cache entries and must be judged on its own. A polarized
+    field rebuilt inside a trace -- an MCMC step differentiating through
+    construction -- should keep the kernels the first construction paid
+    for rather than silently dropping every block onto s2fft.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    from croissant.polarization import PolarizedSky
+
+    nside = 4
+    npix = 12 * nside**2
+    rng = np.random.default_rng(23)
+    freqs = [10.0, 20.0]
+    data = jnp.asarray(rng.normal(size=(2, 4, npix)))
+
+    kernel.clear_kernel_cache()
+    warm = PolarizedSky(data, freqs, sampling="healpix", niter=3)
+    # Precondition: outside a trace both transformed blocks pick kernel.
+    assert warm.engine == {
+        "IV": "kernel",
+        "P_MINUS": "kernel",
+        "P_PLUS": None,
+    }
+
+    seen = []
+
+    def loss(x):
+        sky = PolarizedSky(x, freqs, sampling="healpix", niter=3)
+        seen.append(dict(sky.engine))
+        return jnp.abs(sky.data).sum()
+
+    jax.grad(loss)(data)
+    assert seen[-1] == dict(warm.engine)
 
 
 def test_rebuilding_a_polarized_pair_reuses_every_cached_kernel(monkeypatch):

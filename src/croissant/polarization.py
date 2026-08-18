@@ -330,27 +330,51 @@ def _prepare_engines(
         )
 
         if engine == "kernel" and tracing:
-            if explicit:
-                raise RuntimeError(
-                    "The kernel must be precomputed before a kernel "
-                    "polarized field is constructed inside jax.jit. Call "
-                    "precompute_kernel(...) once outside jax.jit."
+            # A trace forbids BUILDING a kernel, not using one this
+            # process already holds, so consult the cache before
+            # deciding -- per block, since each block keys separately on
+            # its own spin and reality. Same ladder as SphBase and
+            # dense.dense_matrix_for: warm hit runs, cold explicit
+            # raises, cold automatic degrades.
+            held = {
+                forward: _kernel.cached_kernel(
+                    lmax,
+                    sampling,
+                    nside=nside,
+                    spin=spin,
+                    reality=reality,
+                    forward=forward,
                 )
-            # Constructing a polarized field inside a trace worked before
-            # these fields became engine-selectable, so degrade rather
-            # than break it; only cost changes, since the engines agree
-            # to ~1e-13. An explicit request is never softened.
-            engine = degrade_for_trace(
+                is not None
+                for forward in (True, False)
+            }
+            runnable = degrade_for_trace(
                 engine,
+                has_kernel=held[True],
+                has_inverse_kernel=held[False],
                 niter=niter,
                 sub_floor=(
                     transform_lmax(lmax, sampling, nside=nside) != int(lmax)
                 ),
             )
-            reason = (
-                "kernels cannot be built inside a jax trace; "
-                "degraded from the automatic choice"
-            )
+            if runnable != engine:
+                if explicit:
+                    raise RuntimeError(
+                        "The kernel must be precomputed before a kernel "
+                        "polarized field is constructed inside jax.jit. "
+                        "Call precompute_kernel(...) once outside "
+                        "jax.jit."
+                    )
+                # Constructing a polarized field inside a trace worked
+                # before these fields became engine-selectable, so
+                # degrade rather than break it; only cost changes, since
+                # the engines agree to ~1e-13. An explicit request is
+                # never softened.
+                engine = runnable
+                reason = (
+                    "kernels cannot be built inside a jax trace; "
+                    "degraded from the automatic choice"
+                )
 
         kernel = inverse_kernel = dense_matrix = None
         if engine == "kernel":
