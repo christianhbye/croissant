@@ -619,3 +619,185 @@ def test_a_band_limit_at_the_floor_does_not_take_the_dense_bypass(
     floor = 2 * nside - 1
     alm = sky.compute_alm(lmax=floor)
     assert alm.shape == (1, 4, floor + 1, 2 * floor + 1)
+
+
+def test_pair_beam_norm_integrates_the_intensity_response():
+    """A uniform intensity response integrates to 4 pi over the sphere.
+
+    This is the denominator of Eq. 18 in the LuSEE antenna analysis:
+    the response-weighted sky temperature divides by the response's
+    integral over the full sphere.
+    """
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    data = np.zeros((1, 2, 4) + shape, dtype=np.complex128)
+    data[:, :, 0] = 1.0
+    beam = PairStokesBeam(
+        data,
+        [10.0, 20.0],
+        [(0, 0)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    norm = beam.compute_norm()
+    assert norm.shape == (1, 2)
+    np.testing.assert_allclose(norm, 4.0 * np.pi, rtol=1e-10)
+
+
+def test_pair_beam_norm_keeps_a_complex_intensity_response():
+    """A cross pair's intensity response may carry any phase.
+
+    ``utils.total_power`` returns ``real(monopole) / Y00`` because a
+    scalar beam is real. Reusing it here would silently drop half of a
+    cross pair's normalization, so this pins the complex value.
+    """
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    data = np.zeros((1, 1, 4) + shape, dtype=np.complex128)
+    data[:, :, 0] = 1.0j
+    beam = PairStokesBeam(
+        data,
+        [10.0],
+        [(0, 1)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    np.testing.assert_allclose(
+        beam.compute_norm(),
+        4.0j * np.pi,
+        rtol=1e-10,
+    )
+
+
+def test_auto_i_normalization_rejects_a_pair_with_no_intensity_response():
+    """A differencing pair is blind to an isotropic sky.
+
+    Its visibility therefore has no sky-temperature equivalent, and
+    dividing by the vanishing intensity integral would return a
+    meaningless quotient rather than a temperature.
+    """
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    beam_data = np.zeros((1, 1, 4) + shape, dtype=np.complex128)
+    beam_data[0, 0, 1] = 1.0  # a V-only response: no intensity row
+    beam = PairStokesBeam(
+        beam_data,
+        [10.0],
+        [(0, 1)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    sky_data = np.zeros((1, 4) + shape)
+    sky_data[0, 0] = 1.0
+    sky = PolarizedSky(sky_data, [10.0], sampling="mwss")
+    phases = rot_alm_z(lmax, N_times=2, delta_t=1.0, world="earth")
+    with pytest.raises(ValueError, match="blind to an isotropic sky"):
+        polarized_convolve(
+            beam.compute_alm(),
+            sky.compute_alm(),
+            phases,
+            normalization="auto-I",
+        )
+
+
+def test_polarized_convolve_rejects_an_unknown_normalization_name():
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    beam = PairStokesBeam(
+        np.zeros((1, 1, 4) + shape, dtype=np.complex128),
+        [10.0],
+        [(0, 0)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    sky = PolarizedSky(np.zeros((1, 4) + shape), [10.0], sampling="mwss")
+    phases = rot_alm_z(lmax, N_times=2, delta_t=1.0, world="earth")
+    with pytest.raises(ValueError, match="Unknown normalization"):
+        polarized_convolve(
+            beam.compute_alm(),
+            sky.compute_alm(),
+            phases,
+            normalization="auto-i",
+        )
+
+
+def test_response_diagnostics_report_circular_leakage():
+    """Circular leakage is a monopole ratio because V is spin 0.
+
+    An isotropic circularly polarized sky exists, so "how many K does a
+    1 K isotropic V sky add to my reading" is a well-posed question and
+    its answer is the ratio of the two monopole integrals.
+    """
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    data = np.zeros((1, 1, 4) + shape, dtype=np.complex128)
+    # Input maps are IQUV; the alm is the internal (I, V, P-, P+) dual,
+    # so V is index 3 here and index 1 there.
+    data[0, 0, 0] = 1.0  # intensity response
+    data[0, 0, 3] = 0.25  # circular response
+    beam = PairStokesBeam(
+        data,
+        [10.0],
+        [(0, 0)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    diagnostics = beam.response_diagnostics()
+    np.testing.assert_allclose(
+        diagnostics["circular_leakage"], 0.25, rtol=1e-10
+    )
+    np.testing.assert_allclose(diagnostics["linear_response"], 0.0, atol=1e-12)
+
+
+def test_response_diagnostics_report_linear_response_as_a_power_ratio():
+    """Linear response cannot be a monopole ratio.
+
+    Q and U live in the spin -/+2 blocks, which have no ell=0
+    coefficient at all, and no isotropic linearly polarized sky exists
+    to define a leakage against. The honest scalar is the share of the
+    response's power carried by those blocks.
+    """
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    rng = np.random.default_rng(7)
+    data = np.zeros((1, 1, 4) + shape, dtype=np.complex128)
+    data[0, 0, 0] = 1.0
+    data[0, 0, 1] = rng.normal(size=shape)
+    data[0, 0, 2] = rng.normal(size=shape)
+    data[0, 0, 3] = rng.normal(size=shape)
+    beam = PairStokesBeam(
+        data,
+        [10.0],
+        [(0, 1)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    alm = np.asarray(beam.compute_alm())[0, 0]
+    expected = np.sqrt((np.abs(alm[2:]) ** 2).sum()) / np.sqrt(
+        (np.abs(alm[0]) ** 2).sum()
+    )
+    np.testing.assert_allclose(
+        beam.response_diagnostics()["linear_response"],
+        expected,
+        rtol=1e-10,
+    )
+
+
+def test_coherence_is_nan_without_both_autocorrelations():
+    """Coherence is defined against a pair's own autocorrelations.
+
+    A beam holding only cross pairs cannot supply them, so the
+    diagnostic reports nan rather than inventing a scale.
+    """
+    lmax = 4
+    shape = _mwss_shape(lmax)
+    data = np.zeros((1, 1, 4) + shape, dtype=np.complex128)
+    data[0, 0, 0] = 1.0
+    beam = PairStokesBeam(
+        data,
+        [10.0],
+        [(0, 1)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+    assert np.isnan(np.asarray(beam.response_diagnostics()["coherence"])).all()

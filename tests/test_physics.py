@@ -1391,6 +1391,79 @@ def _band_limited_scalar(rng):
     )
 
 
+def _half_band_limited_complex(rng):
+    """A complex map band-limited to half the grid's band limit.
+
+    Effective-length products are what a pair response is built from,
+    and a product doubles the band limit. Synthesizing the factors at
+    half the limit keeps the product exactly representable on the grid,
+    so the quadrature that follows is exact rather than aliased.
+    """
+    L = _POL_LMAX + 1
+    half = L // 2
+    parts = []
+    for _ in range(2):
+        flm = s2fft.utils.signal_generator.generate_flm(
+            rng, half, reality=True
+        )
+        padded = np.zeros((L, 2 * L - 1), dtype=complex)
+        padded[:half, L - half : L + half - 1] = flm
+        parts.append(
+            np.asarray(
+                s2fft.inverse(
+                    jnp.asarray(padded),
+                    L=L,
+                    spin=0,
+                    sampling="mwss",
+                    method="jax",
+                    reality=True,
+                )
+            )
+        )
+    return parts[0] + 1j * parts[1]
+
+
+def _effective_length_pair_beam(rng, identical):
+    """A pair beam built the way an instrument's really is.
+
+    Intensity rows follow the multiport receive model: for ports a and
+    b, M_I = H_theta_a H_theta_b* + H_phi_a H_phi_b*. Pairs are ordered
+    (0,0), (1,1), (0,1) so the cross pair's autocorrelations are both
+    present and the coherence is defined.
+    """
+    shape = _pol_shape()
+    theta_a = _half_band_limited_complex(rng)
+    phi_a = _half_band_limited_complex(rng)
+    if identical:
+        theta_b, phi_b = theta_a, phi_a
+    else:
+        theta_b = _half_band_limited_complex(rng)
+        phi_b = _half_band_limited_complex(rng)
+
+    def intensity(first, second):
+        return (
+            first[0] * second[0].conjugate() + first[1] * second[1].conjugate()
+        )
+
+    port_a = (theta_a, phi_a)
+    port_b = (theta_b, phi_b)
+    rows = [
+        intensity(port_a, port_a),
+        intensity(port_b, port_b),
+        intensity(port_a, port_b),
+    ]
+    data = np.zeros((3, len(_POL_FREQS), 4) + shape, dtype=np.complex128)
+    for index, row in enumerate(rows):
+        data[index, :, 0] = _POL_FREQ_SCALE[:, None, None] * row[None]
+    return PairStokesBeam(
+        data,
+        _POL_FREQS,
+        [(0, 0), (1, 1), (0, 1)],
+        sampling="mwss",
+        horizon=np.ones(shape, dtype=bool),
+    )
+
+
 def _band_limited_positive(rng):
     """A band-limited scalar map that is positive everywhere.
 
@@ -1812,3 +1885,97 @@ class TestPolarization:
         scale = np.abs(vis).max()
         assert scale > 0
         np.testing.assert_allclose(vis.imag, 0.0, atol=1e-10 * scale)
+
+    def test_isotropic_sky_returns_its_own_temperature(self):
+        """An isotropic unpolarized sky at T reads back as T.
+
+        This is Eq. 18 of the LuSEE antenna analysis, the definition
+        that makes the normalized visibility a temperature:
+
+            T_eff = int T(n) M_I(n) dOmega / int M_I(n) dOmega,
+
+        which collapses to T for a sky with no structure, whatever the
+        response pattern is. It holds at every time and frequency
+        because an isotropic sky has no orientation for the phases to
+        act on.
+        """
+        rng = np.random.default_rng(220)
+        shape = _pol_shape()
+        temperature = _POL_FREQ_SCALE * 300.0
+        sky_maps = np.zeros((len(_POL_FREQS), 4) + shape)
+        sky_maps[:, 0] = temperature[:, None, None]
+        _assert_physical_stokes(sky_maps, stokes_axis=1)
+
+        # An arbitrary non-negative intensity row: the invariant must
+        # not depend on the shape of the response.
+        beam_maps = np.zeros((1, len(_POL_FREQS), 4) + shape)
+        beam_maps[0, :, 0] = (
+            _POL_FREQ_SCALE[::-1, None, None]
+            * _band_limited_positive(rng)[None]
+        )
+        horizon = np.ones(shape, dtype=bool)
+        beam = PairStokesBeam(
+            beam_maps,
+            _POL_FREQS,
+            [_AUTO_PAIR],
+            sampling="mwss",
+            horizon=horizon,
+        )
+        sky = PolarizedSky(sky_maps, _POL_FREQS, sampling="mwss", coord="mepa")
+        vis = polarized_convolve(
+            beam.compute_alm(),
+            sky.compute_alm(),
+            _pol_phases(8),
+            normalization="auto-I",
+        )
+        expected = np.broadcast_to(
+            temperature[None, None, :], np.asarray(vis).shape
+        )
+        np.testing.assert_allclose(np.asarray(vis).real, expected, rtol=1e-10)
+        np.testing.assert_allclose(
+            np.asarray(vis).imag, 0.0, atol=1e-10 * temperature.max()
+        )
+
+    def test_identical_antennas_make_the_two_normalizations_agree(self):
+        """auto-I and multipair's sqrt(P_a * P_b) coincide exactly when
+        the two antennas are identical.
+
+        The pair response is then its own autocorrelation, so the
+        pair's own intensity integral and the geometric mean of the two
+        autos are the same number. This is the regime the scalar
+        multipair section already exercises, and it is why the two
+        conventions are not competing answers.
+        """
+        rng = np.random.default_rng(221)
+        beam = _effective_length_pair_beam(rng, identical=True)
+        norm = np.asarray(beam.compute_norm())
+        auto_powers = jnp.stack([norm[0].real, norm[1].real])
+        multipair_norm = np.asarray(pair_normalization(auto_powers, [(0, 1)]))
+        np.testing.assert_allclose(
+            np.abs(norm[2]), multipair_norm[0], rtol=1e-10
+        )
+        np.testing.assert_allclose(
+            beam.response_diagnostics()["coherence"][2], 1.0, rtol=1e-10
+        )
+
+    def test_coherence_is_the_factor_between_the_two_normalizations(self):
+        """For different antennas the two conventions differ, and the
+        coherence is exactly the ratio between them.
+
+        Cauchy-Schwarz bounds the pair's own intensity integral by the
+        geometric mean of the autos, so the coherence lies in (0, 1]
+        and converts one normalization into the other.
+        """
+        rng = np.random.default_rng(222)
+        beam = _effective_length_pair_beam(rng, identical=False)
+        norm = np.asarray(beam.compute_norm())
+        auto_powers = jnp.stack([norm[0].real, norm[1].real])
+        multipair_norm = np.asarray(pair_normalization(auto_powers, [(0, 1)]))[
+            0
+        ]
+        coherence = np.asarray(beam.response_diagnostics()["coherence"][2])
+        assert (coherence < 1.0).all()
+        assert (coherence > 0.0).all()
+        np.testing.assert_allclose(
+            np.abs(norm[2]), coherence * multipair_norm, rtol=1e-10
+        )
