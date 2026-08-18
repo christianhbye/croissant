@@ -315,7 +315,7 @@ contract), `tests/test_sphere.py:410-432` (cache identity and entry count).
 | --- | --- |
 | VJP half becomes unbounded (D2) | Accepted and documented; D6 makes it observable |
 | `clear_dense_matrix_cache` semantics widen silently | Test 1 above; called out in the PR body |
-| Equiangular builder loses `reality=True` in the rewrite | Test 4 above |
+| Equiangular builder loses `reality=True` in the rewrite | **Not mitigated.** Test 4 pins the builder's values against s2fft, but on the real one-hot basis maps it uses, `reality=False` returns identical `m >= 0` coefficients, so the flag itself is unpinned. Accepted: losing it costs ~2x build work and memory, not correctness. Recorded in Test 4's docstring |
 | Backend-vs-device key change alters caching on multi-device hosts | Costs a transfer, not correctness; noted in the PR body |
 | Large move obscures a real change in review | Structure as two commits: a pure relocation with no behaviour change, then the policy and cleanup commit. Each must pass the suite alone so the branch stays bisectable |
 

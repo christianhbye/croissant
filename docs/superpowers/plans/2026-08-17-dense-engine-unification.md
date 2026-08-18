@@ -261,7 +261,7 @@ the module dependency.
 - Modify: `src/croissant/__init__.py:21`
 - Modify: `tests/test_sphere.py:11-17`
 - Modify: `benchmarks/benchmark_dense_healpix.py:14-15`, `benchmarks/benchmark_engines.py:143`
-- Test: `tests/test_dense.py` (new)
+- Test: `tests/test_dense.py` (already exists; append to it)
 
 **Interfaces:**
 - Consumes: `utils.engine_dtypes()` from Task 1.
@@ -278,9 +278,11 @@ the module dependency.
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/test_dense.py`. This test pins the one behaviour the move could
-silently break — the equiangular builder's `reality=True` packing, which is
-what makes its output the packed operator by construction:
+Append to the existing `tests/test_dense.py` — do not recreate it, and keep
+its four VJP tests. Its header already carries the imports below; add only
+what is missing. This test pins the one behaviour the move could silently
+break — the equiangular builder's `reality=True` packing, which is what makes
+its output the packed operator by construction:
 
 ```python
 """Tests for the dense SHT engine: builders, cache and apply."""
@@ -1077,10 +1079,9 @@ suite — five commits times a 6-10 minute suite is nearly an hour to re-derive
 what CI checks on the final tree anyway, and a commit that breaks the dense
 engine breaks these files.
 
-Note the earlier commits legitimately lack `tests/test_dense.py`; `pytest`
-errors on a missing path, so drop it from the `--exec` command for the two
-doc commits at the base of the branch, or start the rebase from the first
-code commit.
+`tests/test_dense.py` has existed since `d4736db`, so it is present at every
+commit on this branch and at `main`; the `--exec` command above needs no
+per-commit adjustment.
 
 - [ ] **Step 7: Report to Christian**
 
