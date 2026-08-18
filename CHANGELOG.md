@@ -144,6 +144,35 @@
   it outlives the s2fft pin, and is itself pinned against scipy and the
   Goldberg conjugation relation.
 
+## [5.3.0](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.1...croissant-sim-v5.3.0) (2026-08-18)
+
+
+### Features
+
+* add a precomputed-kernel SHT engine and automatic engine selection ([#136](https://github.com/christianhbye/croissant/issues/136)) ([eb392f9](https://github.com/christianhbye/croissant/commit/eb392f9a2f0e6f0eac3658d624ccb6ef78ea0baf))
+* add dense spherical harmonic engine ([#123](https://github.com/christianhbye/croissant/issues/123)) ([4de2852](https://github.com/christianhbye/croissant/commit/4de2852ad8dd391e9725e35cc8e067b610e3cb7c))
+* full-Stokes polarization support ([#124](https://github.com/christianhbye/croissant/issues/124)) ([d4736db](https://github.com/christianhbye/croissant/commit/d4736db649176d24b3a97aeccf47bc95518d39bf))
+* report polarized visibilities in sky-temperature units ([#144](https://github.com/christianhbye/croissant/issues/144)) ([ab915fe](https://github.com/christianhbye/croissant/commit/ab915fe411c789f670a52db80959aeb233a95de7))
+
+
+### Bug Fixes
+
+* analyze polarized duals at their physical spin ([#131](https://github.com/christianhbye/croissant/issues/131)) ([d98ed7d](https://github.com/christianhbye/croissant/commit/d98ed7d2195c4dee7ae9f4e798e675377c0cb545))
+* furnish SPICE lunar kernels explicitly for lunarsky &gt;= 1.0 ([#127](https://github.com/christianhbye/croissant/issues/127)) ([1218a49](https://github.com/christianhbye/croissant/commit/1218a494797c738906810195849a3a0224fe1a38))
+* reject complex input under reality=True and default it off ([529b874](https://github.com/christianhbye/croissant/commit/529b874e914ca049dda7e888150f43c159502a3e))
+
+
+### Performance Improvements
+
+* derive sky P+ dual from P- on quadrature samplings ([f636241](https://github.com/christianhbye/croissant/commit/f63624172a8a39d33ec05f2fce4f793575f12945))
+* recalibrate the amortisation threshold from measured crossovers ([#138](https://github.com/christianhbye/croissant/issues/138)) ([537d8eb](https://github.com/christianhbye/croissant/commit/537d8eba88c9c264a048f0c60fa3d104d89c10f3))
+
+
+### Documentation
+
+* bring the changelog current and declare Python 3.13 ([0ac2f86](https://github.com/christianhbye/croissant/commit/0ac2f868cf52a10f54e59af0574fa0e73669d945))
+* refresh CLAUDE.md for the engine layer and current Python support ([abe017d](https://github.com/christianhbye/croissant/commit/abe017dcfa3b66def913b88d1e901d4534fc0d10))
+
 ## [5.2.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.0...croissant-sim-v5.2.1) (2026-04-06)
 
 
