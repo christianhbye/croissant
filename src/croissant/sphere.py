@@ -332,7 +332,9 @@ class SphBase(eqx.Module):
         explicit_engine = engine != "auto"
 
         self.data = jnp.asarray(data)
-        self.freqs = jnp.atleast_1d(freqs)
+        # asarray first: jnp.atleast_1d rejects a plain list outright,
+        # with a message naming neither the argument nor the fix.
+        self.freqs = jnp.atleast_1d(jnp.asarray(freqs))
 
         if sampling == "healpix":
             npix = self.data.shape[1]

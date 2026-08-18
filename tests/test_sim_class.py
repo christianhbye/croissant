@@ -424,3 +424,32 @@ def test_beam_enu_east_direction():
     alt_rad = np.radians(alt_deg)
     expected_ratio = (1 + 0.5 * np.cos(alt_rad)) / 1.0
     np.testing.assert_allclose(vis_east / vis_north, expected_ratio, rtol=0.15)
+
+
+def test_simulator_freqs_accepts_any_array_like():
+    """The Simulator must coerce freqs the way it already coerces times.
+
+    ``jnp.allclose`` rejects a plain list, so passing one died before the
+    frequency-agreement check it was trying to run, with a message naming
+    neither ``freqs`` nor the fix. ``rot_alm_z`` does
+    ``jnp.atleast_1d(jnp.asarray(times))`` for exactly this reason a few
+    dozen lines away. The stored value must be coerced too, or a list
+    becomes a multi-leaf pytree on an eqx.Module field.
+    """
+    sky_data = _TSKY[:, None] * jnp.ones((_N_FREQS, _NPIX))
+    sky = Sky(sky_data, _FREQS, coord="equatorial", niter=0)
+    beam = Beam(
+        jnp.ones((_N_FREQS, _NPIX)), _FREQS, sampling="healpix", niter=0
+    )
+    sim = Simulator(
+        beam,
+        sky,
+        _TIMES_JD["earth"],
+        [float(f) for f in _FREQS],
+        0.0,
+        40.0,
+        world="earth",
+    )
+    assert isinstance(sim.freqs, jnp.ndarray)
+    np.testing.assert_allclose(np.asarray(sim.freqs), np.asarray(_FREQS))
+    assert sim.sim().shape == (_N_TIMES, _N_FREQS)
