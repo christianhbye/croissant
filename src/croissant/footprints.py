@@ -169,17 +169,23 @@ def kernel_nbytes(lmax, sampling, nside=None, spin=0, reality=False):
     band-limit on a high-resolution map.
 
     ``reality`` is downgraded to ``False`` whenever ``spin != 0``, even
-    if the caller passes ``reality=True``. This deliberately mirrors
-    ``kernel.kernel_compute_alm``, which forces the same
-    ``reality = reality and spin == 0`` rule because s2fft's real-field
-    precompute path is only valid for spin 0: a spin field has no
-    ``m -> -m`` Hermitian symmetry to exploit, so its kernel always
-    stores the full ``m`` range. Predicting sizes for spin fields
-    without applying this rule under-predicts by very close to 2x (the
-    ratio of ``2 * L - 1`` to ``L``) -- this has been the source of a
-    recurring, silent mismatch between predicted and built kernel sizes,
-    so the rule is enforced once here rather than left for every caller
-    to repeat correctly.
+    if the caller passes ``reality=True``. This is the one place that
+    still absorbs the contradiction rather than raising on it, and
+    deliberately so: the transform entry points
+    (``kernel.precompute_kernel``, ``kernel.kernel_compute_alm``,
+    ``sphere.compute_alm``) reject the pair, but a PREDICTOR's job is to
+    describe whatever the transform would do, not to police its caller
+    -- ``resolve_engine`` must be able to size any configuration it is
+    handed without first validating it.
+
+    s2fft's real-field precompute path is only valid for spin 0: a spin
+    field has no ``m -> -m`` Hermitian symmetry to exploit, so its
+    kernel always stores the full ``m`` range. Predicting sizes for spin
+    fields without applying this rule under-predicts by very close to 2x
+    (the ratio of ``2 * L - 1`` to ``L``) -- this has been the source of
+    a recurring, silent mismatch between predicted and built kernel
+    sizes, so the rule is enforced once here rather than left for every
+    caller to repeat correctly.
 
     Parameters
     ----------

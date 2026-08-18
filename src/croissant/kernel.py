@@ -87,6 +87,22 @@ def _kernel_dtype(sampling):
     return jnp.complex64 if is_complex else jnp.float32
 
 
+def _reject_spin_reality(spin, reality):
+    """Refuse ``reality=True`` for a spin-weighted kernel.
+
+    ``reality`` asserts the Hermitian symmetry only a real field has,
+    and a spin-weighted field is complex, so the pair is a contradiction
+    rather than a preference. ``sphere.compute_alm`` has rejected it
+    since #124; this module used to absorb it silently instead, which
+    left the one function callers are told to use for jit warm-up as the
+    one that did not check. Every internal caller normalises before
+    reaching here, so this only ever fires on a contradiction the caller
+    wrote out.
+    """
+    if int(spin) != 0 and bool(reality):
+        raise ValueError("Nonzero-spin kernels require reality=False.")
+
+
 def _kernel_cache_key(lmax, sampling, nside, spin, reality, forward):
     """Build the cache key for one kernel configuration.
 
@@ -134,10 +150,9 @@ def cached_kernel(
     spin : int
         Spin weight of the field.
     reality : bool
-        Whether the kernel is for a real field. Forced to False for
-        nonzero spin, the same rule the writer applies, so that a
-        caller who asks the two functions the same question gets the
-        same answer.
+        Whether the kernel is for a real field. Rejected for nonzero
+        spin, the same rule the writer applies, so that a caller who
+        asks the two functions the same question gets the same answer.
     forward : bool
         Analysis kernel if True, synthesis kernel if False.
 
@@ -147,9 +162,8 @@ def cached_kernel(
         The cached kernel, or None if this configuration is not held.
 
     """
-    key = _kernel_cache_key(
-        lmax, sampling, nside, spin, bool(reality) and spin == 0, forward
-    )
+    _reject_spin_reality(spin, reality)
+    key = _kernel_cache_key(lmax, sampling, nside, spin, reality, forward)
     with _KERNEL_CACHE_LOCK:
         held = _KERNEL_CACHE.get(key)
         if held is not None:
@@ -200,9 +214,12 @@ def precompute_kernel(
         and :func:`croissant.footprints.kernel_nbytes`: this function is
         the documented way to warm a kernel for a jitted call, and a
         default that disagreed with the apply path would make the
-        documented recipe raise. Forced to False for nonzero spin, the
-        same ``reality and spin == 0`` rule the other three apply,
-        because s2fft's real precompute path is only valid at spin 0.
+        documented recipe raise. ``True`` is REJECTED for nonzero spin
+        rather than quietly forced, matching
+        :func:`croissant.sphere.compute_alm`: s2fft's real precompute
+        path is only valid at spin 0, and a spin-weighted field is
+        complex, so the pair is a contradiction rather than a
+        preference.
     forward : bool
         Build the analysis kernel if True, the synthesis kernel if
         False. The synthesis kernel is only needed for iterative
@@ -216,9 +233,8 @@ def precompute_kernel(
         ``transform_lmax(...) + 1``.
 
     """
-    # Forced here rather than left to callers, so the key, the built
-    # shape and the value the apply path passes cannot disagree.
-    reality = bool(reality) and spin == 0
+    _reject_spin_reality(spin, reality)
+    reality = bool(reality)
     build_lmax = transform_lmax(lmax, sampling, nside=nside)
     key = _kernel_cache_key(lmax, sampling, nside, spin, reality, forward)
     with _KERNEL_CACHE_LOCK:
@@ -296,8 +312,12 @@ def kernel_compute_alm(
     reality : bool
         Whether the field is real. Defaults to False, matching
         :func:`croissant.sphere.compute_alm`: only a caller that knows
-        its own data is real may claim the packed transform. Forced
-        False for nonzero spin, which s2fft's precompute path requires.
+        its own data is real may claim the packed transform. ``True`` is
+        REJECTED for nonzero spin rather than quietly forced, the same
+        rule :func:`precompute_kernel` and
+        :func:`croissant.sphere.compute_alm` apply: s2fft's real
+        precompute path is only valid at spin 0, and a spin-weighted
+        field is complex, so the pair is a contradiction.
     kernel : jax.Array or None
         Precomputed forward (analysis) kernel, as returned by
         :func:`precompute_kernel` with ``forward=True``. This is
@@ -346,7 +366,8 @@ def kernel_compute_alm(
     batch_shape = data.shape[:-spatial_ndim]
     flat = data.reshape((-1,) + spatial_shape)
 
-    reality = bool(reality) and spin == 0
+    _reject_spin_reality(spin, reality)
+    reality = bool(reality)
     L = lmax + 1
     forward_kernel = kernel
     if forward_kernel is None:

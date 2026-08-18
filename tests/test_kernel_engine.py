@@ -687,23 +687,58 @@ def test_precompute_kernel_default_matches_the_apply_default():
     )
 
 
-def test_precompute_kernel_forces_reality_false_for_spin():
-    """The builder applies the same rule the predictor and apply do.
+def test_precompute_kernel_rejects_reality_true_for_spin():
+    """The builder must refuse the contradiction, not absorb it.
 
-    ``kernel_nbytes`` and ``kernel_compute_alm`` both force
-    ``reality = reality and spin == 0`` because s2fft's real precompute
-    path is only valid at spin 0. Leaving the builder out of that
-    agreement is what lets a caller key, build and then fail to apply.
+    ``sphere.compute_alm`` has raised on ``spin != 0`` with
+    ``reality=True`` since #124, because reality is an assertion about
+    the data and a spin-weighted field is complex. The builder took the
+    same pair and quietly built something else, so the one entry point a
+    caller is told to use for jit warm-up was the one that did not check.
+    Every internal caller already normalises before reaching here
+    (``kernel_compute_alm``, ``polarization._block_reality``), so the
+    only thing this rejects is a contradiction the caller wrote out.
     """
     kernel.clear_kernel_cache()
-    forced = kernel.precompute_kernel(
-        LMAX, "healpix", nside=NSIDE, spin=2, reality=True
-    )
-    explicit = kernel.precompute_kernel(
+    with pytest.raises(ValueError, match="reality=False"):
+        kernel.precompute_kernel(
+            LMAX, "healpix", nside=NSIDE, spin=2, reality=True
+        )
+    with pytest.raises(ValueError, match="reality=False"):
+        kernel.cached_kernel(
+            LMAX, "healpix", nside=NSIDE, spin=2, reality=True
+        )
+    # The transform entry point rejects it too. Only the size
+    # predictors mirror the rule silently, because their job is to
+    # describe the transform rather than to police their caller.
+    with pytest.raises(ValueError, match="reality=False"):
+        kernel.kernel_compute_alm(
+            np.zeros((1, 12 * NSIDE**2), dtype=complex),
+            LMAX,
+            "healpix",
+            nside=NSIDE,
+            spin=2,
+            reality=True,
+        )
+
+
+def test_spin_kernels_are_built_at_the_complex_layout():
+    """The builder, the predictor and the apply path must agree.
+
+    s2fft's real precompute path is only valid at spin 0, so a
+    spin-weighted kernel's last axis is ``2L - 1`` rather than ``L``.
+    Building one layout and applying the other is a shape error, not a
+    slow path, so the layout the other three assume is worth pinning.
+
+    This test used to assert the same thing by way of ``reality=True``
+    collapsing silently onto this kernel. That pair now raises; see
+    ``test_precompute_kernel_rejects_reality_true_for_spin``.
+    """
+    kernel.clear_kernel_cache()
+    built = kernel.precompute_kernel(
         LMAX, "healpix", nside=NSIDE, spin=2, reality=False
     )
-    assert forced is explicit
-    assert forced.shape[-1] == 2 * (LMAX + 1) - 1
+    assert built.shape[-1] == 2 * (LMAX + 1) - 1
 
 
 def test_sub_floor_band_limits_share_one_cached_kernel():
