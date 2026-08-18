@@ -332,9 +332,12 @@ def test_engine_dtypes_matches_s2fft_output():
     precision follows JAX's x64 setting rather than the dtype of the
     maps it is applied to, because that is what s2fft.forward does.
     """
-    real_dtype, complex_dtype = utils.engine_dtypes()
+    _, complex_dtype = utils.engine_dtypes()
     nside = 2
-    maps = jnp.zeros((12 * nside**2,), dtype=real_dtype)
+    # float32 deliberately, and never the x64-derived real dtype: the
+    # claim is that the output dtype does not follow the input, so an
+    # input already matching the prediction would prove nothing.
+    maps = jnp.zeros((12 * nside**2,), dtype=jnp.float32)
     alm = s2fft.forward(
         maps,
         L=5,
@@ -343,4 +346,5 @@ def test_engine_dtypes_matches_s2fft_output():
         method="jax",
         reality=True,
     )
+    assert maps.dtype == jnp.float32
     assert alm.dtype == np.dtype(complex_dtype)

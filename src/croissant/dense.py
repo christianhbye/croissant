@@ -1,4 +1,22 @@
-"""Cached dense spherical harmonic analysis for scalar and spin fields."""
+"""Cached dense spherical harmonic analysis for scalar and spin fields.
+
+The engine materializes croissant's spherical harmonic transform once as
+a matrix and afterwards evaluates it as a matrix multiplication. It comes
+in two flavours. The packed-real half
+(:func:`precompute_dense_matrix`, :func:`dense_matrix_for`,
+:func:`apply_packed_matrix`) stores only the independent ``m >= 0``
+coefficients and serves real scalar fields, rebuilding the negative-m
+half from Hermitian symmetry on apply. The full-complex half
+(:class:`DenseSphericalTransform`, :func:`dense_compute_alm`) assembles
+the operator from the VJP of ``s2fft.forward`` and serves spin-weighted
+or complex fields, where that symmetry does not hold.
+
+Both flavours share one process-wide cache, keyed by geometry, spin,
+flavour, refinement count, dtype and backend. Retention is deliberately
+unbounded: an operator warmed outside ``jax.jit`` must still be there
+when a later jitted call needs it. :func:`dense_cache_nbytes` reports
+what is held and :func:`clear_dense_matrix_cache` releases all of it.
+"""
 
 from functools import partial
 from threading import RLock
@@ -27,7 +45,7 @@ def _dense_matrix_key(
     without it a caller asking for one could be handed the other.
 
     Keys on ``jax.default_backend()`` rather than a device string, which
-    is what sphere's half and ``kernel.precompute_kernel`` already do.
+    is what the packed half and ``kernel.precompute_kernel`` already do.
     Two devices on one backend therefore share an entry, costing a
     transfer rather than correctness.
     """
@@ -159,6 +177,12 @@ def _build_dense_matrix_healpix(
     return matrix
 
 
+# eqx.filter_jit, not jax.jit: sampling arrives as a plain string and
+# lmax as a plain int, so plain jit would trace them and fail -- the
+# same reason sphere._compute_alm_s2fft uses it. inline=True carries
+# over from apply_packed_matrix and is inert on this path: it only acts
+# when the call is nested in an enclosing trace, and every builder runs
+# under jax.ensure_compile_time_eval, which drops one.
 @partial(eqx.filter_jit, inline=True)
 def _forward_real_chunk(basis, lmax, sampling, nside, niter):
     """Forward-transform a batch of real maps with the s2fft engine.
@@ -308,14 +332,21 @@ def precompute_dense_matrix(
     with _DENSE_MATRIX_CACHE_LOCK:
         matrix = _DENSE_MATRIX_CACHE.get(key)
         if matrix is None:
-            matrix = _build_dense_matrix(
-                tuple(spatial_shape),
-                lmax,
-                sampling,
-                nside,
-                niter,
-                chunk_size=chunk_size,
-            )
+            # Establish compile-time evaluation here rather than trusting
+            # the caller, for the reason _full_matrix_for documents: the
+            # matrix depends only on static geometry, so a build inside
+            # jax.jit would otherwise store a tracer under this key and,
+            # since retention is unbounded, poison this geometry for the
+            # life of the process.
+            with jax.ensure_compile_time_eval():
+                matrix = _build_dense_matrix(
+                    tuple(spatial_shape),
+                    lmax,
+                    sampling,
+                    nside,
+                    niter,
+                    chunk_size=chunk_size,
+                )
             _DENSE_MATRIX_CACHE[key] = matrix
     return matrix
 
@@ -423,9 +454,11 @@ def dense_cache_nbytes():
     the documented precompute-then-jit recipe conditional, since a later
     unrelated build could drop a warmed matrix and leave the next jitted
     explicit-dense call raising. The tradeoff is that retention grows
-    with the number of distinct configurations touched -- a band-limit
-    sweep at nside=32 over seven values of lmax retains about 904 MiB.
-    This reports that figure so it can be watched, and
+    with the number of distinct configurations touched -- measured on
+    CPU with x64 enabled, a band-limit sweep at nside=32 over seven
+    values of lmax retains about 904 MiB, and about half that under
+    JAX's own x64-disabled default, where the operators are complex64.
+    This reports the current figure so it can be watched, and
     :func:`clear_dense_matrix_cache` releases it.
 
     Returns
@@ -520,6 +553,8 @@ def _build_analysis_matrix(
     chunk_size=32,
 ):
     """Materialize selected rows of corrected s2fft's linear operator."""
+    if chunk_size < 1:
+        raise ValueError("chunk_size must be a positive integer")
     complex_dtype = np.dtype(complex_dtype_name)
     spatial_shape = _spatial_shape(lmax, sampling, nside)
     ell_indices, m_indices = _valid_lm_indices(lmax, spin)

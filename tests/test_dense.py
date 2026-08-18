@@ -3,6 +3,7 @@
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 import s2fft
 
 from croissant import dense, utils
@@ -174,6 +175,12 @@ def test_equiangular_builder_produces_the_packed_operator():
     s2fft.forward is the ground truth its packed output is pinned
     against. Comparing values rather than only the matrix shape is what
     makes this a regression test for the relocation.
+
+    What this does not pin is the builder's own ``reality=True``: for
+    the real one-hot basis maps it feeds s2fft, the general transform
+    returns identical m >= 0 coefficients, so dropping the flag would
+    still pass here. Losing it costs roughly a factor two in build work
+    and memory, not correctness.
     """
     lmax, sampling = 4, "dh"
     shape = spatial_shape(lmax, sampling, None)
@@ -215,6 +222,43 @@ def test_clear_releases_both_operator_flavours():
 
     dense.clear_dense_matrix_cache()
     assert len(dense._DENSE_MATRIX_CACHE) == 0
+
+
+def test_no_tracer_ever_enters_the_dense_cache():
+    """Building inside jax.jit must still cache concrete arrays.
+
+    Retention is unbounded by design, so a tracer stored under a
+    geometry's key poisons that key for the life of the process: every
+    later use of it, traced or not, raises with an error naming an
+    unrelated function. Both writers must therefore establish
+    ``jax.ensure_compile_time_eval`` themselves rather than trusting
+    their callers to have done it.
+    """
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+
+    @jax.jit
+    def build(scale):
+        packed = dense.precompute_dense_matrix(
+            (npix,), lmax, "healpix", nside=nside
+        )
+        # The full operator is reached through its writer rather than
+        # through DenseSphericalTransform, whose __init__ establishes
+        # the context itself: going via the class would pass on a
+        # writer that had lost its own guard.
+        full = dense._full_matrix_for(
+            lmax, "healpix", nside, 2, 0, np.dtype(np.complex128)
+        )
+        return scale * (packed.sum() + full.sum())
+
+    build(jnp.asarray(1.0))
+
+    assert len(dense._DENSE_MATRIX_CACHE) == 2
+    for matrix in dense._DENSE_MATRIX_CACHE.values():
+        assert not isinstance(matrix, jax.core.Tracer)
+        # The symptom of a cached tracer: the entry cannot be used
+        # outside the trace that created it.
+        np.asarray(matrix)
 
 
 def test_packed_and_full_operators_do_not_collide():
@@ -272,6 +316,35 @@ def test_dense_cache_nbytes_tracks_both_flavours():
 
     dense.clear_dense_matrix_cache()
     assert dense.dense_cache_nbytes() == 0
+
+
+@pytest.mark.parametrize("chunk_size", [0, -1])
+def test_builders_reject_a_nonpositive_chunk_size(chunk_size):
+    """Every builder guards its chunk size the same way.
+
+    Unguarded, zero reaches ``range()`` as a step ("must not be zero")
+    and a negative value produces no blocks at all, failing later in
+    ``concatenate`` with nothing pointing at the caller's mistake.
+    """
+    lmax, nside, npix = 3, 2, 48
+    dense.clear_dense_matrix_cache()
+    with pytest.raises(ValueError, match="chunk_size"):
+        dense.precompute_dense_matrix(
+            (npix,), lmax, "healpix", nside=nside, chunk_size=chunk_size
+        )
+    shape = spatial_shape(lmax, "dh", None)
+    with pytest.raises(ValueError, match="chunk_size"):
+        dense.precompute_dense_matrix(shape, lmax, "dh", chunk_size=chunk_size)
+    with pytest.raises(ValueError, match="chunk_size"):
+        dense._build_analysis_matrix(
+            lmax,
+            "healpix",
+            nside,
+            2,
+            0,
+            "complex128",
+            chunk_size=chunk_size,
+        )
 
 
 def test_full_operator_assembly_is_chunk_size_independent():

@@ -259,6 +259,10 @@ def kernel_compute_alm(
     # Croissant's engines share a dtype contract, owned and documented by
     # utils.engine_dtypes: they reproduce s2fft.forward, which returns
     # complex128 on an x64 runtime regardless of the input map dtype.
+    # s2fft's precompute path, which this engine mirrors, instead
+    # inherits the input dtype, so promote the input rather than casting
+    # the result: a float32 map transformed at reduced precision and
+    # cast afterwards keeps its ~1e-7 relative error.
     real_dtype, _ = utils.engine_dtypes()
     data = jnp.asarray(data)
     if data.dtype.kind == "c":

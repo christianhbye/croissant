@@ -9,6 +9,9 @@ import s2fft
 from . import dense, utils
 
 
+# eqx.filter_jit, not jax.jit: sampling arrives as a plain Python string
+# and lmax as a plain int, both used to build shapes, so plain jit would
+# try to trace them and fail.
 @eqx.filter_jit
 def _compute_alm_s2fft(
     data, lmax, sampling, nside=None, niter=0, spin=0, reality=False
@@ -18,6 +21,11 @@ def _compute_alm_s2fft(
     Every axis before the spatial axes is treated as a batch axis. The
     defaults are identical to s2fft's: only a caller that knows its own
     data is real may ask for the packed real transform.
+
+    ``dense._forward_real_chunk`` is a deliberate copy of the
+    ``s2fft.forward`` call below, specialised to spin 0 and real input;
+    dense.py cannot import this module without a cycle. Changes to the
+    arguments pinned here belong there too.
     """
     data = jnp.asarray(data)
     spatial_ndim = utils.spatial_ndim(sampling)
