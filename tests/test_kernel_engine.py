@@ -648,13 +648,14 @@ def test_auto_keeps_the_kernel_engine_when_the_cache_is_warm():
 def test_precompute_kernel_default_matches_the_apply_default():
     """The documented jit warm-up recipe must actually apply.
 
-    ``kernel_compute_alm``, ``sphere.compute_alm`` and
-    ``footprints.kernel_nbytes`` all default to ``reality=True``. A
-    builder defaulting to False returns a kernel whose last axis is
-    ``2L - 1`` where the apply path slices ``ftm`` to ``m >= 0`` and
-    expects ``L``, so the README's own recipe raised a shape error --
-    and the kernel engine has no pre-warmed-cache escape hatch, so this
-    is the only supported path.
+    ``precompute_kernel``, ``kernel_compute_alm``,
+    ``sphere.compute_alm`` and ``footprints.kernel_nbytes`` default
+    ``reality`` alike -- to ``False`` since #137, matching s2fft. What
+    matters is that they agree: ``reality`` sets the kernel's shape, so
+    a builder disagreeing with the apply path returns a kernel whose
+    last axis is ``2L - 1`` where the apply path slices ``ftm`` to
+    ``m >= 0`` and expects ``L``, and the README's own recipe raises a
+    shape error.
     """
     import jax
 

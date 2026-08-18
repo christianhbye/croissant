@@ -200,9 +200,13 @@ follows `jax.config.x64_enabled` between complex128 and complex64). Call
 `croissant.precompute_kernel(..., forward=True)` for the analysis kernel,
 plus `forward=False` for the synthesis kernel if `niter > 0`, passed to the
 jitted call as `kernel=...` and `inverse_kernel=...`. Its `reality`
-defaults to `True` to match the apply path, and is forced to `False` for
-spin-weighted fields, so the same call is correct for scalar and spin
-blocks alike. Called from inside
+defaults to `False`, matching the apply path and `s2fft` — pass
+`reality=True` when your field really is real, and pass the *same* value
+here and at apply time, because `reality` sets the kernel's shape (a last
+axis of `L` rather than `2L - 1`) and a mismatch is a shape error rather
+than a slow path. For spin-weighted fields `reality=True` is rejected
+outright, as it is by `compute_alm`: a spin-weighted field is complex, so
+the pair is a contradiction. Called from inside
 `jax.jit` with no kernel available at all, `compute_alm(..., engine="kernel")`
 raises `RuntimeError` rather than silently building. A warm cache counts as
 available: a trace forbids *building* a kernel, not using one this process
