@@ -11,6 +11,25 @@
   (spin-weighted dense analysis operators). Conventions, the pair-response
   design rationale, and the data model are documented in
   `docs/polarization.md`.
+- **Bug fix (changes results):** analyze the polarized `Q -+ iU` duals at
+  their physical spin. Croissant stores Stokes internally in the IAU
+  convention (`U_IAU = -U_COSMO`), which makes `Q + iU` the spin -2 object
+  and `Q - iU` the spin +2 object in s2fft's Goldberg basis, but
+  `_compute_sky_dual_alm` and `_compute_response_dual_alm` analyzed them
+  at the opposite labels. Statics were unaffected -- a fixed-spin
+  contraction is complete for any spin, and sky and beam used matching
+  labels -- and z-rotations commute with the error, but any frame rotation
+  with `beta != 0` applied the complex conjugate `exp(+2i psi)` of the
+  physical transport phase: order-unity Q/U errors for galactic->FK5/MEPA
+  skies and rotated beams. The mismatch also made the duals of
+  band-limited E/B skies non-band-limited, an O(1) truncation loss at any
+  `lmax`. Consumers pinned to `v5.3.0.dev0` should upgrade.
+- Derive the sky's spin +2 dual from its spin -2 dual on quadrature
+  samplings (healpix, dh, gl), where the discrete analysis commutes with
+  conjugation, skipping one of the sky dual's three transforms and, on the
+  dense HEALPix path, an entire cached spin +2 analysis matrix. The
+  mw/mwss sampling-theorem transforms alias out-of-band power
+  asymmetrically between the spins, so they keep the explicit transform.
 - Generalize `sphere.compute_alm` to arbitrary leading batch axes and to
   spin-weighted/complex fields via `spin`/`reality` arguments; the dense
   engine dispatches spin-0 real input to the packed cached-matrix path and
@@ -43,6 +62,87 @@
   iterative refinement, and automatic differentiation.
 - Allow HEALPix `Beam` and `Sky` objects to set an explicit lower `lmax`
   independently of their pixel resolution.
+
+- Add a precomputed-kernel SHT engine (`croissant.kernel`) and automatic
+  engine selection (`croissant.engine_select`), with `croissant.footprints`
+  predicting kernel and dense sizes without building anything. The kernel
+  engine precomputes only the theta-to-ell Wigner-d table, an
+  `O(nside**3)` footprint against the dense operator's `O(nside**4)`, so it
+  still fits the 512 MiB budget at `nside=128` for scalar fields where the
+  dense operator needs 96.4 GiB. All three engines compute the same linear
+  map and agree to better than 1.4e-13 in every benchmarked configuration,
+  pinned at 1e-10 by `tests/test_engine_equivalence.py`.
+- **Behavior change:** `Beam` and `Sky` now default to `engine="auto"`
+  rather than `engine="s2fft"`, and `PolarizedSky` and `PairStokesBeam`
+  gain the same `engine` argument, also defaulting to `"auto"`. Results
+  are unchanged to the equivalence tolerance above; what changes is the
+  memory and compile profile. The resolved choice and the reason for it
+  are reported by the `engine` and `engine_reason` attributes -- dicts
+  keyed by spin block on the polarized classes, which resolve one engine
+  per block. `"auto"` is a policy, not a promise: pin `engine=`
+  explicitly to freeze behaviour. Inside a jax trace `auto` degrades to an
+  engine that can run there; an explicit request is never softened.
+- Recalibrate the `"auto"` amortisation threshold from measured
+  batch-ladder crossovers rather than a linear cold-cost fit, which
+  overestimated the crossover by about 2x at `lmax=63` where compilation
+  dominates. The threshold is sized from the scalar kernel build cost even
+  for spin fields, because a spin-weighted kernel is twice the bytes but
+  takes the same time to build; bytes still govern the memory budget.
+- Give `croissant.dense` sole ownership of the dense engine, leaving
+  `sphere.py` as dispatch. The packed-real and VJP builders stay split --
+  collapsing them would move scalar HEALPix from a 20.8 s direct build to
+  a 196 s VJP build for an operator the two agree on to 3.06e-15 -- but
+  the cache policy is now uniform across both halves and its retention
+  observable via `dense_cache_nbytes` and `kernel_cache_nbytes`.
+- Fix `kernel.precompute_kernel` caching a tracer when called from inside
+  `jax.jit`. The module cache outlives the trace, so a later, perfectly
+  legitimate call read the dead tracer back and died with
+  `UnexpectedTracerError` naming a function the caller never invoked. The
+  builder now establishes `jax.ensure_compile_time_eval`, as the dense
+  engine does, making "nothing traced ever enters this cache" a property
+  of the cache rather than an obligation on callers.
+- Add `polarized_convolve(..., normalization="auto-I")`, which divides
+  each pair by its own intensity-response integral and so reports
+  polarized visibilities in the sky's own temperature units:
+  `T_eff = int T(n) M_I(n) dOmega / int M_I(n) dOmega`. That is Eq. 18 of
+  the LuSEE-Night antenna analysis and the same normalization the scalar
+  `Simulator.sim()` already applies through `Beam.compute_norm()`; every
+  instrument constant cancels between numerator and denominator, which is
+  why croissant can produce the number without knowing any of them. The
+  denominator is newly exposed as `PairStokesBeam.compute_norm()` and is
+  complex in general -- only an autocorrelation is guaranteed a real
+  intensity response, and taking the real part of a cross pair's would
+  silently drop half the normalization. A pair whose intensity response
+  integrates to zero is blind to an isotropic sky and raises rather than
+  returning a meaningless quotient. `normalization` stays `None` by
+  default: the blackbody-equivalent temperature a voltage-sensing
+  multiport receiver needs is defined from the antenna and load
+  impedances, which croissant does not know and does not ask for, so
+  consumers with their own receiver model keep computing it downstream
+  from the raw contraction.
+- Add `PairStokesBeam.response_diagnostics()`, reporting what rides along
+  with that temperature: `circular_leakage` (a monopole ratio, since V is
+  spin 0 and an isotropic circularly polarized sky exists),
+  `linear_response` (a power ratio, since the spin -/+2 blocks have no
+  `ell=0` coefficient and no isotropic linearly polarized state exists to
+  define a leakage against), and `coherence`, the pair's overlap with its
+  own autocorrelations -- 1 for identical antennas, where this
+  normalization and `multipair`'s `sqrt(P_a * P_b)` coincide, and the
+  factor between the two conventions otherwise.
+- Support Python 3.13 (`requires-python = ">=3.11, <3.14"`); CI tests
+  3.11, 3.12 and 3.13.
+- Fix `Simulator.sim()` dying inside its frequency-agreement check when
+  `freqs` is a plain list; it is now coerced before comparison, as
+  `rot_alm_z` already does for `times`, so a mismatch is reported as a
+  disagreement.
+- Add section G of `tests/test_physics.py`: full-Stokes physical
+  invariants at the `polarized_convolve` level -- Stokes selection rules,
+  IAU/COSMO unobservability when applied to both sides, the 45-degree
+  polarization-angle rotation law, sidereal periodicity, and joint
+  sky+beam rotation invariance -- each with a non-vacuity anchor. The
+  analytic spin-harmonic oracle moved to `tests/harmonics_reference.py` so
+  it outlives the s2fft pin, and is itself pinned against scipy and the
+  Goldberg conjugation relation.
 
 ## [5.2.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.0...croissant-sim-v5.2.1) (2026-04-06)
 
