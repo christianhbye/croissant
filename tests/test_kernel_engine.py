@@ -528,6 +528,41 @@ def test_compute_alm_inside_jit_without_precompute_raises():
         call(data)
 
 
+def test_no_tracer_ever_enters_the_kernel_cache():
+    """Building inside jax.jit must still cache a concrete array.
+
+    ``precompute_kernel`` is exported at top level and the README tells
+    callers to use it, yet it carries no tracer guard of its own --
+    only its callers check their input. One call from inside a trace
+    therefore stores a tracer under that geometry's key, and the entry
+    is sticky: a later call from outside any trace reads the dead
+    tracer back and raises ``UnexpectedTracerError`` naming an
+    unrelated function. The builder must establish
+    ``jax.ensure_compile_time_eval`` itself rather than trusting its
+    callers to have done it, exactly as dense's two writers do.
+    """
+    import jax
+    import jax.numpy as jnp
+
+    kernel.clear_kernel_cache()
+
+    @jax.jit
+    def build(scale):
+        built = kernel.precompute_kernel(
+            LMAX, "healpix", nside=NSIDE, spin=0, reality=True
+        )
+        return scale * jnp.abs(built).sum()
+
+    build(jnp.asarray(1.0))
+
+    assert len(kernel._KERNEL_CACHE) == 1
+    for cached in kernel._KERNEL_CACHE.values():
+        assert not isinstance(cached, jax.core.Tracer)
+        # The symptom of a cached tracer: the entry cannot be used
+        # outside the trace that created it.
+        np.asarray(cached)
+
+
 def test_precompute_kernel_default_matches_the_apply_default():
     """The documented jit warm-up recipe must actually apply.
 

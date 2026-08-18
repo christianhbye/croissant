@@ -92,14 +92,19 @@ def precompute_kernel(
     """
     Build and cache the Wigner-d kernel for one transform configuration.
 
-    Must be called outside ``jax.jit``. Converting the numpy-built
-    kernel to a ``jax.Array`` while a trace is active would return a
-    tracer bound to that trace; caching it in the module-level,
-    trace-independent cache would let a later, unrelated call read
-    back a leaked tracer. Callers reaching this from inside a trace
+    Safe to call inside ``jax.jit``. The conversion of the numpy-built
+    kernel runs under ``jax.ensure_compile_time_eval``, so the cache
+    holds a concrete array. Without that context ``jnp.asarray``
+    returns a tracer bound to the active trace, and this cache outlives
+    the trace, so a single call from inside one poisoned that geometry's
+    key for the life of the process: every later read, traced or not,
+    raised ``UnexpectedTracerError`` naming an unrelated function.
+
+    Callers reaching this from inside a trace
     (:func:`kernel_compute_alm`, :class:`croissant.sphere.SphBase`)
-    raise ``RuntimeError`` instead of calling this function, and expect
-    the kernel to have been built here first, outside any trace.
+    still raise ``RuntimeError`` rather than build implicitly, so that
+    an explicit ``engine="kernel"`` request cannot turn a compilation
+    into a large silent build.
 
     Parameters
     ----------
@@ -172,7 +177,16 @@ def precompute_kernel(
         nside=nside,
         forward=bool(forward),
     )
-    array = jnp.asarray(built)
+    # Under an active trace jnp.asarray returns a tracer bound to that
+    # trace, and this cache outlives it: the entry would poison its key
+    # for the life of the process. The kernel depends only on static
+    # geometry, so ensure_compile_time_eval yields a concrete array
+    # instead. Established here, in the writer, rather than at the call
+    # sites, so that "nothing traced ever enters this cache" is a
+    # property of the cache itself -- the same rule dense's two writers
+    # follow. Nesting inside a caller's own such context is harmless.
+    with jax.ensure_compile_time_eval():
+        array = jnp.asarray(built)
 
     with _KERNEL_CACHE_LOCK:
         _KERNEL_CACHE[key] = array
