@@ -8,13 +8,12 @@ import s2fft
 
 from croissant import utils
 from croissant.constants import Y00
-from croissant.sphere import (
+from croissant.dense import (
     _DENSE_MATRIX_CACHE,
-    SphBase,
     clear_dense_matrix_cache,
-    compute_alm,
     precompute_dense_matrix,
 )
+from croissant.sphere import SphBase, compute_alm
 
 LMAX_PARAMS = [8, 16, 25]
 rng = np.random.default_rng(seed=0)

@@ -1,16 +1,19 @@
-"""Tests for cached dense scalar and spin transforms."""
+"""Tests for the dense SHT engine: builders, cache and apply."""
 
 import jax
 import jax.numpy as jnp
 import numpy as np
+import pytest
 import s2fft
 
-from croissant import utils
+from croissant import dense, utils
 from croissant.dense import (
     DenseSphericalTransform,
-    _build_analysis_matrix,
+    _positive_lm_indices,
     dense_compute_alm,
+    precompute_dense_matrix,
 )
+from croissant.footprints import spatial_shape
 
 
 def _random_valid_alm(lmax, spin, seed):
@@ -151,8 +154,208 @@ def test_dense_transform_matches_s2fft_for_complex_input():
 
 
 def test_dense_cache_reuses_matrix_for_identical_geometry():
-    hits_before = _build_analysis_matrix.cache_info().hits
+    """A repeated configuration is served from the cache, not rebuilt.
+
+    The unified dict has no hit counter, so reuse is shown by the
+    second transform holding the very array the first one stored: a
+    rebuild would produce an equal but distinct array.
+    """
+    dense.clear_dense_matrix_cache()
     first = DenseSphericalTransform(3, "mwss", spin=0)
     second = DenseSphericalTransform(3, "mwss", spin=0)
     assert jnp.array_equal(first.matrix, second.matrix)
-    assert _build_analysis_matrix.cache_info().hits > hits_before
+    assert first.matrix is second.matrix
+    assert len(dense._DENSE_MATRIX_CACHE) == 1
+
+
+def test_equiangular_builder_produces_the_packed_operator():
+    """The relocated builder still reproduces s2fft's coefficients.
+
+    The builder exists only to materialize s2fft's own transform, so
+    s2fft.forward is the ground truth its packed output is pinned
+    against. Comparing values rather than only the matrix shape is what
+    makes this a regression test for the relocation.
+
+    What this does not pin is the builder's own ``reality=True``: for
+    the real one-hot basis maps it feeds s2fft, the general transform
+    returns identical m >= 0 coefficients, so dropping the flag would
+    still pass here. Losing it costs roughly a factor two in build work
+    and memory, not correctness.
+    """
+    lmax, sampling = 4, "dh"
+    shape = spatial_shape(lmax, sampling, None)
+    matrix = precompute_dense_matrix(shape, lmax, sampling)
+
+    ncoeff = (lmax + 1) * (lmax + 2) // 2
+    assert matrix.shape == (ncoeff, int(np.prod(shape)))
+
+    rng = np.random.default_rng(seed=0)
+    maps = jnp.asarray(rng.standard_normal(shape))
+    expected = s2fft.forward(
+        maps,
+        L=lmax + 1,
+        sampling=sampling,
+        method="jax",
+        reality=True,
+    )
+    ell, emm = _positive_lm_indices(lmax)
+    packed = matrix @ maps.reshape(-1)
+    np.testing.assert_allclose(
+        packed, expected[ell, lmax + emm], rtol=1e-12, atol=1e-12
+    )
+
+
+def test_clear_releases_both_operator_flavours():
+    """One clear function must empty the whole engine's cache.
+
+    Before unification clear_dense_matrix_cache reached only the packed
+    half; the VJP half was reachable only through an lru_cache's own
+    cache_clear, which no public name exposed.
+    """
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+    dense.precompute_dense_matrix((npix,), lmax, "healpix", nside=nside)
+    dense.dense_compute_alm(
+        jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=2
+    )
+    assert len(dense._DENSE_MATRIX_CACHE) == 2
+
+    dense.clear_dense_matrix_cache()
+    assert len(dense._DENSE_MATRIX_CACHE) == 0
+
+
+def test_no_tracer_ever_enters_the_dense_cache():
+    """Building inside jax.jit must still cache concrete arrays.
+
+    Retention is unbounded by design, so a tracer stored under a
+    geometry's key poisons that key for the life of the process: every
+    later use of it, traced or not, raises with an error naming an
+    unrelated function. Both writers must therefore establish
+    ``jax.ensure_compile_time_eval`` themselves rather than trusting
+    their callers to have done it.
+    """
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+
+    @jax.jit
+    def build(scale):
+        packed = dense.precompute_dense_matrix(
+            (npix,), lmax, "healpix", nside=nside
+        )
+        # The full operator is reached through its writer rather than
+        # through DenseSphericalTransform, whose __init__ establishes
+        # the context itself: going via the class would pass on a
+        # writer that had lost its own guard.
+        full = dense._full_matrix_for(
+            lmax, "healpix", nside, 2, 0, np.dtype(np.complex128)
+        )
+        return scale * (packed.sum() + full.sum())
+
+    build(jnp.asarray(1.0))
+
+    assert len(dense._DENSE_MATRIX_CACHE) == 2
+    for matrix in dense._DENSE_MATRIX_CACHE.values():
+        assert not isinstance(matrix, jax.core.Tracer)
+        # The symptom of a cached tracer: the entry cannot be used
+        # outside the trace that created it.
+        np.asarray(matrix)
+
+
+def test_packed_and_full_operators_do_not_collide():
+    """Identical geometry, three operators, three entries.
+
+    This covers both of the key's own discriminators. The packed and
+    the spin-0 full operator agree on lmax, sampling, nside and niter,
+    so only the packed flag separates them: a key that omitted it would
+    return the m >= 0 operator to a caller expecting the full one. The
+    spin-2 operator then agrees with the spin-0 full one on everything
+    including the packed flag, so only spin separates those two.
+    """
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+    packed = dense.precompute_dense_matrix(
+        (npix,), lmax, "healpix", nside=nside
+    )
+    for spin in (0, 2):
+        dense.dense_compute_alm(
+            jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=spin
+        )
+
+    assert len(dense._DENSE_MATRIX_CACHE) == 3
+    shapes = {m.shape for m in dense._DENSE_MATRIX_CACHE.values()}
+    ncoeff_packed = (lmax + 1) * (lmax + 2) // 2
+    ncoeff_spin2 = (lmax + 1) ** 2 - 2**2
+    assert packed.shape == (ncoeff_packed, npix)
+    assert shapes == {
+        (ncoeff_packed, npix),
+        ((lmax + 1) ** 2, npix),
+        (ncoeff_spin2, npix),
+    }
+
+
+def test_dense_cache_nbytes_tracks_both_flavours():
+    """Retention is unbounded by design, so it must be inspectable."""
+    lmax, nside, npix = 4, 2, 48
+    dense.clear_dense_matrix_cache()
+    assert dense.dense_cache_nbytes() == 0
+
+    packed = dense.precompute_dense_matrix(
+        (npix,), lmax, "healpix", nside=nside
+    )
+    assert dense.dense_cache_nbytes() == packed.nbytes
+
+    dense.dense_compute_alm(
+        jnp.zeros((1, npix)), lmax, "healpix", nside=nside, spin=2
+    )
+    (full,) = (
+        matrix
+        for matrix in dense._DENSE_MATRIX_CACHE.values()
+        if matrix is not packed
+    )
+    assert dense.dense_cache_nbytes() == packed.nbytes + full.nbytes
+
+    dense.clear_dense_matrix_cache()
+    assert dense.dense_cache_nbytes() == 0
+
+
+@pytest.mark.parametrize("chunk_size", [0, -1])
+def test_builders_reject_a_nonpositive_chunk_size(chunk_size):
+    """Every builder guards its chunk size the same way.
+
+    Unguarded, zero reaches ``range()`` as a step ("must not be zero")
+    and a negative value produces no blocks at all, failing later in
+    ``concatenate`` with nothing pointing at the caller's mistake.
+    """
+    lmax, nside, npix = 3, 2, 48
+    dense.clear_dense_matrix_cache()
+    with pytest.raises(ValueError, match="chunk_size"):
+        dense.precompute_dense_matrix(
+            (npix,), lmax, "healpix", nside=nside, chunk_size=chunk_size
+        )
+    shape = spatial_shape(lmax, "dh", None)
+    with pytest.raises(ValueError, match="chunk_size"):
+        dense.precompute_dense_matrix(shape, lmax, "dh", chunk_size=chunk_size)
+    with pytest.raises(ValueError, match="chunk_size"):
+        dense._build_analysis_matrix(
+            lmax,
+            "healpix",
+            nside,
+            2,
+            0,
+            "complex128",
+            chunk_size=chunk_size,
+        )
+
+
+def test_full_operator_assembly_is_chunk_size_independent():
+    """Row batching must not change the assembled operator.
+
+    The builder pulls back coefficient basis vectors in chunks. If
+    assembly and chunking are correctly separated, a one-row-at-a-time
+    build and a batched one are bitwise identical.
+    """
+    lmax, spin, nside = 3, 2, 2
+    args = (lmax, "healpix", nside, spin, 0, "complex128")
+    batched = dense._build_analysis_matrix(*args, chunk_size=32)
+    one_at_a_time = dense._build_analysis_matrix(*args, chunk_size=1)
+    np.testing.assert_array_equal(batched, one_at_a_time)

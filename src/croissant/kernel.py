@@ -76,7 +76,7 @@ def _kernel_dtype(sampling):
     phase shifts); ``jnp.asarray`` then silently downcasts to
     float32/complex64 whenever ``jax_enable_x64`` is off, like any
     other JAX array. Included in the cache key for the same reason
-    ``sphere._dense_matrix_key`` includes ``complex_dtype``: a kernel
+    ``dense._dense_matrix_key`` includes ``complex_dtype``: a kernel
     built before ``jax.config.update("jax_enable_x64", True)`` must not
     be silently reused afterwards at the earlier, reduced precision.
     """
@@ -257,15 +257,13 @@ def kernel_compute_alm(
             "engine='s2fft'."
         )
     # Croissant's engines share a dtype contract, owned and documented by
-    # sphere._dense_dtypes: they reproduce s2fft.forward, which returns
-    # complex128 on an x64 runtime even for float32 maps. s2fft's
-    # PRECOMPUTE path instead inherits the input dtype, so a float32 map
-    # would come back complex64 with ~1e-7 relative error. Promote the
-    # input rather than casting the result: casting the result would keep
-    # that error. Imported lazily because sphere imports this module.
-    from .sphere import _dense_dtypes
-
-    real_dtype, _ = _dense_dtypes()
+    # utils.engine_dtypes: they reproduce s2fft.forward, which returns
+    # complex128 on an x64 runtime regardless of the input map dtype.
+    # s2fft's precompute path, which this engine mirrors, instead
+    # inherits the input dtype, so promote the input rather than casting
+    # the result: a float32 map transformed at reduced precision and
+    # cast afterwards keeps its ~1e-7 relative error.
+    real_dtype, _ = utils.engine_dtypes()
     data = jnp.asarray(data)
     if data.dtype.kind == "c":
         data = data.astype(jnp.result_type(real_dtype, 1j))

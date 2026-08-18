@@ -10,10 +10,7 @@ def main():
     import jax
     import jax.numpy as jnp
 
-    from croissant.dense import (
-        DenseSphericalTransform,
-        _build_analysis_matrix,
-    )
+    from croissant.dense import DenseSphericalTransform
 
     jax.config.update("jax_enable_x64", True)
     nside = 32
@@ -43,7 +40,9 @@ def main():
     )
     print(f"three_matrix_mib={total_matrix_mib:.3f}")
     print(f"total_build_seconds={perf_counter() - started:.6f}")
-    print(f"cache={_build_analysis_matrix.cache_info()}")
+    from croissant.dense import dense_cache_nbytes
+
+    print(f"cache_mib={dense_cache_nbytes() / 2**20:.3f}")
 
     for spin, transform in zip((0, -2, 2), transforms, strict=True):
         first_started = perf_counter()

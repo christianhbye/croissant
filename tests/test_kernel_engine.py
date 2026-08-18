@@ -107,7 +107,7 @@ def test_kernel_cache_key_tracks_the_x64_flag():
     jax.config.update("jax_enable_x64", True) would silently hand back
     an array with less precision than an x64 runtime callers expect.
     The cache key must include the resulting dtype (mirroring
-    sphere._dense_matrix_key, which includes dtype for exactly this
+    dense._dense_matrix_key, which includes dtype for exactly this
     reason) so toggling the flag misses the cache instead of reusing
     the old array.
     """
@@ -214,7 +214,7 @@ def test_kernel_compute_alm_matches_s2fft_engine_scalar():
 def test_kernel_engine_follows_the_dtype_contract():
     """The engines share a dtype policy, so the kernel engine must too.
 
-    Per ``sphere._dense_dtypes``, croissant's engines reproduce
+    Per ``utils.engine_dtypes``, croissant's engines reproduce
     ``s2fft.forward``: complex128 out on an x64 runtime even for float32
     maps. A kernel engine that instead inherited the input dtype would
     silently change precision downstream, which the alm-value

@@ -6,6 +6,7 @@ import s2fft
 from lunarsky import Time
 
 import croissant as cro
+from croissant import utils
 from croissant.constants import Y00
 
 rng = np.random.default_rng(seed=0)
@@ -322,3 +323,28 @@ def test_lmax_from_ntheta_hp(nside):
 def test_lmax_from_ntheta_invalid_sampling():
     with pytest.raises(ValueError):
         cro.utils.lmax_from_ntheta(10, "invalid_sampling")
+
+
+def test_engine_dtypes_matches_s2fft_output():
+    """The dtype contract must track what s2fft actually returns.
+
+    This is the whole reason the helper exists: the dense matrix
+    precision follows JAX's x64 setting rather than the dtype of the
+    maps it is applied to, because that is what s2fft.forward does.
+    """
+    _, complex_dtype = utils.engine_dtypes()
+    nside = 2
+    # float32 deliberately, and never the x64-derived real dtype: the
+    # claim is that the output dtype does not follow the input, so an
+    # input already matching the prediction would prove nothing.
+    maps = jnp.zeros((12 * nside**2,), dtype=jnp.float32)
+    alm = s2fft.forward(
+        maps,
+        L=5,
+        nside=nside,
+        sampling="healpix",
+        method="jax",
+        reality=True,
+    )
+    assert maps.dtype == jnp.float32
+    assert alm.dtype == np.dtype(complex_dtype)

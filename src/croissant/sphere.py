@@ -1,5 +1,4 @@
 from functools import partial
-from threading import RLock
 
 import equinox as eqx
 import jax
@@ -7,50 +6,12 @@ import jax.numpy as jnp
 import numpy as np
 import s2fft
 
-from . import utils
-
-_DENSE_MATRIX_CACHE = {}
-_DENSE_MATRIX_CACHE_LOCK = RLock()
+from . import dense, utils
 
 
-def _dense_dtypes():
-    """Return the real and complex dtypes of a dense SHT matrix.
-
-    The dense engine reproduces ``s2fft.forward``, which always outputs
-    complex128 alms on an x64-enabled runtime (float32 maps included) and
-    complex64 otherwise. The matrix precision therefore follows JAX's x64
-    setting rather than the dtype of the input maps.
-    """
-    if jax.config.x64_enabled:
-        return jnp.float64, jnp.complex128
-    return jnp.float32, jnp.complex64
-
-
-def _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter):
-    """Return a hashable key for a cached dense SHT analysis matrix."""
-    _, complex_dtype = _dense_dtypes()
-    return (
-        tuple(spatial_shape),
-        int(lmax),
-        str(sampling),
-        None if nside is None else int(nside),
-        int(niter),
-        np.dtype(complex_dtype).str,
-        jax.default_backend(),
-    )
-
-
-def _positive_lm_indices(lmax):
-    """Indices for healpy-ordered, independent m >= 0 coefficients."""
-    ell = np.concatenate(
-        [np.arange(m, lmax + 1, dtype=np.int32) for m in range(lmax + 1)]
-    )
-    emm = np.concatenate(
-        [np.full(lmax - m + 1, m, dtype=np.int32) for m in range(lmax + 1)]
-    )
-    return ell, emm
-
-
+# eqx.filter_jit, not jax.jit: sampling arrives as a plain Python string
+# and lmax as a plain int, both used to build shapes, so plain jit would
+# try to trace them and fail.
 @eqx.filter_jit
 def _compute_alm_s2fft(
     data, lmax, sampling, nside=None, niter=0, spin=0, reality=False
@@ -60,6 +21,11 @@ def _compute_alm_s2fft(
     Every axis before the spatial axes is treated as a batch axis. The
     defaults are identical to s2fft's: only a caller that knows its own
     data is real may ask for the packed real transform.
+
+    ``dense._forward_real_chunk`` is a deliberate copy of the
+    ``s2fft.forward`` call below, specialised to spin 0 and real input;
+    dense.py cannot import this module without a cycle. Changes to the
+    arguments pinned here belong there too.
     """
     data = jnp.asarray(data)
     spatial_ndim = utils.spatial_ndim(sampling)
@@ -81,351 +47,6 @@ def _compute_alm_s2fft(
     )
     flat_alm = jax.vmap(m2alm)(flat_data)
     return flat_alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
-
-
-def _build_dense_matrix_healpix(
-    spatial_shape,
-    lmax,
-    nside,
-    niter,
-    chunk_size,
-):
-    """Build a HEALPix matrix by evaluating spherical harmonics directly."""
-    from scipy import special
-
-    npix = int(np.prod(spatial_shape))
-    if spatial_shape != (npix,):
-        raise ValueError("HEALPix maps must have one spatial pixel axis")
-
-    ell, emm = _positive_lm_indices(lmax)
-    nalm = len(ell)
-    _, complex_dtype = _dense_dtypes()
-    if chunk_size is None:
-        # Limit each host-side spherical-harmonic block to roughly 64 MiB.
-        complex_itemsize = np.dtype(complex_dtype).itemsize
-        chunk_size = min(256, max(1, (64 << 20) // (npix * complex_itemsize)))
-    if chunk_size < 1:
-        raise ValueError("chunk_size must be a positive integer")
-    chunk_size = min(int(chunk_size), nalm)
-
-    theta = np.asarray(
-        utils.generate_theta(lmax=None, sampling="healpix", nside=nside)
-    )
-    phi = np.asarray(
-        utils.generate_phi(lmax=None, sampling="healpix", nside=nside)
-    )
-    blocks = []
-    for start in range(0, nalm, chunk_size):
-        stop = min(start + chunk_size, nalm)
-        ell_chunk = ell[start:stop, None]
-        emm_chunk = emm[start:stop, None]
-        if hasattr(special, "sph_harm_y"):
-            block = special.sph_harm_y(
-                ell_chunk,
-                emm_chunk,
-                theta[None, :],
-                phi[None, :],
-            )
-        else:  # pragma: no cover - SciPy < 1.15 compatibility
-            block = special.sph_harm(
-                emm_chunk,
-                ell_chunk,
-                phi[None, :],
-                theta[None, :],
-            )
-        blocks.append(block.astype(np.dtype(complex_dtype)))
-    harmonics = jnp.asarray(np.concatenate(blocks, axis=0))
-
-    pixel_area = jnp.asarray(4 * np.pi / npix, dtype=harmonics.real.dtype)
-    if niter == 0:
-        return pixel_area * jnp.conj(harmonics)
-
-    # For iterative refinement, express synthesis and analysis in the L**2
-    # independent real harmonic degrees of freedom: m=0 contributes one real
-    # value, while m>0 contributes real and imaginary parts.
-    packed_real = []
-    packed_imag = []
-    row = 0
-    for m in range(lmax + 1):
-        for _ in range(m, lmax + 1):
-            packed_real.append(row)
-            row += 1
-            if m == 0:
-                packed_imag.append(-1)
-            else:
-                packed_imag.append(row)
-                row += 1
-
-    packed_real = np.asarray(packed_real, dtype=np.int32)
-    packed_imag = np.asarray(packed_imag, dtype=np.int32)
-    ndof = (lmax + 1) ** 2
-    synthesis = jnp.zeros((ndof, npix), dtype=harmonics.real.dtype)
-    base = jnp.zeros_like(synthesis)
-
-    zero = emm == 0
-    synthesis = synthesis.at[packed_real].set(
-        jnp.where(zero[:, None], harmonics.real, 2 * harmonics.real)
-    )
-    base = base.at[packed_real].set(pixel_area * harmonics.real)
-
-    positive = ~zero
-    synthesis = synthesis.at[packed_imag[positive]].set(
-        -2 * harmonics.imag[positive]
-    )
-    base = base.at[packed_imag[positive]].set(
-        -pixel_area * harmonics.imag[positive]
-    )
-
-    analysis = base
-    gram = base @ synthesis.T
-    for _ in range(niter):
-        analysis = analysis + base - gram @ analysis
-
-    matrix = analysis[packed_real].astype(complex_dtype)
-    positive = packed_imag >= 0
-    matrix = matrix.at[positive].add(1j * analysis[packed_imag[positive]])
-    return matrix
-
-
-def _build_dense_matrix_from_pixels(
-    spatial_shape,
-    lmax,
-    sampling,
-    nside,
-    niter,
-    chunk_size=None,
-):
-    """Materialize a general s2fft analysis operator from pixel bases."""
-    npix = int(np.prod(spatial_shape))
-    real_dtype, _ = _dense_dtypes()
-    itemsize = np.dtype(real_dtype).itemsize
-    if chunk_size is None:
-        # Keep each identity-map chunk below 64 MiB. A ceiling of 256 gives
-        # enough batch parallelism on a GPU without making s2fft's vmapped
-        # intermediate arrays uncomfortably large.
-        chunk_size = min(256, max(1, (64 << 20) // (npix * itemsize)))
-    if chunk_size < 1:
-        raise ValueError("chunk_size must be a positive integer")
-    chunk_size = min(int(chunk_size), npix)
-
-    ell, emm = _positive_lm_indices(lmax)
-    blocks = []
-    for start in range(0, npix, chunk_size):
-        stop = min(start + chunk_size, npix)
-        indices = jnp.arange(start, stop)
-        basis = jax.nn.one_hot(indices, npix, dtype=real_dtype)
-        basis = basis.reshape((stop - start,) + tuple(spatial_shape))
-        dense = _compute_alm_s2fft(
-            basis,
-            lmax,
-            sampling,
-            nside=nside,
-            niter=niter,
-            # The one-hot basis maps are real, and the packing below
-            # keeps only m >= 0, so this matrix is the packed real
-            # operator by construction.
-            reality=True,
-        )
-        packed = dense[:, ell, lmax + emm].T
-        # Bound peak memory by ensuring that s2fft's much larger dense-layout
-        # result can be released before the next chunk is submitted.
-        blocks.append(packed.block_until_ready())
-
-    return jnp.concatenate(blocks, axis=1)
-
-
-def _build_dense_matrix(
-    spatial_shape,
-    lmax,
-    sampling,
-    nside,
-    niter,
-    chunk_size=None,
-):
-    """Materialize the exact s2fft analysis operator in bounded chunks."""
-    if sampling.lower() == "healpix":
-        return _build_dense_matrix_healpix(
-            tuple(spatial_shape),
-            lmax,
-            nside,
-            niter,
-            chunk_size,
-        )
-    return _build_dense_matrix_from_pixels(
-        spatial_shape,
-        lmax,
-        sampling,
-        nside,
-        niter,
-        chunk_size=chunk_size,
-    )
-
-
-def precompute_dense_matrix(
-    spatial_shape,
-    lmax,
-    sampling,
-    nside=None,
-    niter=0,
-    chunk_size=None,
-):
-    """
-    Build and cache a dense spherical harmonic analysis matrix.
-
-    The returned matrix stores only the independent ``m >= 0`` coefficients
-    and has shape ``((lmax + 1) * (lmax + 2) // 2, prod(spatial_shape))``.
-    It exactly represents Croissant's standard ``s2fft`` transform, including
-    the requested iterative-refinement count. Its precision follows JAX's
-    x64 setting, matching the alm dtype that ``s2fft`` produces: complex128
-    when x64 is enabled and complex64 otherwise, independently of the dtype
-    of the maps it is applied to.
-
-    Parameters
-    ----------
-    spatial_shape : tuple of int
-        Shape of one input map, excluding its frequency axis.
-    lmax : int
-        Maximum spherical harmonic degree.
-    sampling : str
-        Spherical sampling scheme understood by s2fft.
-    nside : int or None
-        HEALPix nside, required for HEALPix sampling.
-    niter : int
-        Number of s2fft iterative-refinement steps to fold into the matrix.
-    chunk_size : int or None
-        Number of basis rows generated together while building the matrix.
-        The default bounds each input chunk to roughly 64 MiB, with a ceiling
-        of 256.
-
-    Returns
-    -------
-    matrix : jax.Array
-        Cached dense analysis matrix on the current default JAX device.
-    """
-    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
-    with _DENSE_MATRIX_CACHE_LOCK:
-        matrix = _DENSE_MATRIX_CACHE.get(key)
-        if matrix is None:
-            matrix = _build_dense_matrix(
-                tuple(spatial_shape),
-                lmax,
-                sampling,
-                nside,
-                niter,
-                chunk_size=chunk_size,
-            )
-            _DENSE_MATRIX_CACHE[key] = matrix
-    return matrix
-
-
-def dense_matrix_for(
-    spatial_shape,
-    lmax,
-    sampling,
-    nside=None,
-    niter=0,
-    *,
-    tracing,
-    explicit,
-):
-    """
-    Fetch the packed-real dense operator for one field configuration.
-
-    Outside a trace this is an ordinary cached build. Inside one, an
-    AUTOMATIC choice still builds: the matrix depends only on static
-    geometry, so ``jax.ensure_compile_time_eval`` yields a concrete
-    array rather than a tracer, exactly as
-    :class:`croissant.dense.DenseSphericalTransform` already builds its
-    own operator mid-trace. Refusing here would leave an automatic dense
-    choice with nowhere to go, because dense is selected precisely when
-    the band-limit is below the HEALPix floor and the matrix-free engine
-    cannot serve it at all.
-
-    An EXPLICIT ``engine="dense"`` keeps the documented contract: warm
-    the cache with :func:`precompute_dense_matrix` outside ``jax.jit``,
-    or get a ``RuntimeError``. A caller who pinned the engine is never
-    silently charged for a build inside their own jit.
-
-    Parameters
-    ----------
-    spatial_shape : tuple of int
-        Shape of one input map, excluding all batch axes.
-    lmax : int
-        Maximum spherical harmonic degree.
-    sampling : str
-        Spherical sampling scheme understood by s2fft.
-    nside : int or None
-        HEALPix nside, required for HEALPix sampling.
-    niter : int
-        Number of s2fft iterative-refinement steps folded into the matrix.
-    tracing : bool
-        Whether a jax trace is active.
-    explicit : bool
-        Whether the caller named ``"dense"`` rather than ``"auto"``.
-
-    Returns
-    -------
-    matrix : jax.Array
-        Cached dense analysis matrix.
-
-    Raises
-    ------
-    RuntimeError
-        If an explicit dense request is made inside a trace and no
-        matching matrix has been precomputed.
-
-    """
-    spatial_shape = tuple(spatial_shape)
-    if not tracing:
-        return precompute_dense_matrix(
-            spatial_shape, lmax, sampling, nside=nside, niter=niter
-        )
-    key = _dense_matrix_key(spatial_shape, lmax, sampling, nside, niter)
-    with _DENSE_MATRIX_CACHE_LOCK:
-        matrix = _DENSE_MATRIX_CACHE.get(key)
-    if matrix is not None:
-        return matrix
-    if explicit:
-        raise RuntimeError(
-            "The dense SHT matrix must be precomputed before an explicit "
-            "dense transform runs inside jax.jit. Call "
-            "precompute_dense_matrix(...) once outside jax.jit."
-        )
-    with jax.ensure_compile_time_eval():
-        return precompute_dense_matrix(
-            spatial_shape, lmax, sampling, nside=nside, niter=niter
-        )
-
-
-def clear_dense_matrix_cache():
-    """Remove all in-process dense SHT matrices from Croissant's cache."""
-    with _DENSE_MATRIX_CACHE_LOCK:
-        _DENSE_MATRIX_CACHE.clear()
-
-
-@partial(eqx.filter_jit, inline=True)
-def _apply_dense_matrix(data, matrix, lmax, spatial_ndim=None):
-    """Apply a packed dense analysis matrix and restore s2fft's layout."""
-    if spatial_ndim is None:
-        batch_shape = data.shape[:1]
-    else:
-        batch_shape = data.shape[:-spatial_ndim]
-    flat_data = data.reshape((int(np.prod(batch_shape, dtype=int)), -1))
-    packed = flat_data @ matrix.T
-
-    ell, emm = _positive_lm_indices(lmax)
-    alm = jnp.zeros(
-        (flat_data.shape[0], lmax + 1, 2 * lmax + 1),
-        dtype=packed.dtype,
-    )
-    alm = alm.at[:, ell, lmax + emm].set(packed)
-
-    positive = emm > 0
-    ell_neg = ell[positive]
-    emm_neg = emm[positive]
-    negative = ((-1) ** emm_neg)[None, :] * jnp.conj(packed[:, positive])
-    alm = alm.at[:, ell_neg, lmax - emm_neg].set(negative)
-    return alm.reshape(batch_shape + (lmax + 1, 2 * lmax + 1))
 
 
 def compute_alm(
@@ -590,9 +211,7 @@ def compute_alm(
     if spin != 0 or not reality:
         # Complex and spin-weighted dense analysis uses the full-layout
         # operator from croissant.dense (no packed-real optimization).
-        from . import dense as _dense
-
-        return _dense.dense_compute_alm(
+        return dense.dense_compute_alm(
             data,
             lmax,
             sampling,
@@ -602,7 +221,7 @@ def compute_alm(
         )
 
     if dense_matrix is None:
-        dense_matrix = dense_matrix_for(
+        dense_matrix = dense.dense_matrix_for(
             data.shape[-spatial_ndim:],
             lmax,
             sampling,
@@ -611,7 +230,7 @@ def compute_alm(
             tracing=tracing,
             explicit=explicit_engine,
         )
-    return _apply_dense_matrix(data, dense_matrix, lmax, spatial_ndim)
+    return dense.apply_packed_matrix(data, dense_matrix, lmax, spatial_ndim)
 
 
 class SphBase(eqx.Module):
@@ -799,7 +418,7 @@ class SphBase(eqx.Module):
             )
 
         if self._engine == "dense":
-            self._dense_matrix = dense_matrix_for(
+            self._dense_matrix = dense.dense_matrix_for(
                 self.data.shape[1:],
                 self.lmax,
                 self.sampling,
