@@ -23,6 +23,18 @@ out of this repo because the paths are machine specific::
     env = { JAX_ENABLE_X64 = "True" }  # optional
     base = "origin/main"  # optional; defaults to origin's HEAD
 
+``subdir`` says where the consumer's pyproject is, for a project that
+is not at its repo's root::
+
+    [eigsim]
+    path = "~/Documents/research/eigsep/mock_analysis"
+    subdir = "eigsim"
+    test = ["uv", "run", "--extra", "dev", "pytest", "tests", "-q"]
+
+``test`` and ``uv lock`` run in ``subdir`` (the repo root by default),
+so a uv workspace member like this one is locked through its
+workspace's root ``uv.lock``, which is committed with the pyproject.
+
 A consumer must already pin croissant-sim to a git ref, either as a
 ``croissant-sim @ git+<url>/croissant.git@<ref>`` requirement or as a
 ``[tool.uv.sources]`` entry with a ``tag`` or ``rev``.
@@ -247,7 +259,9 @@ def bump(name, cfg, tag, s2fft, args):
             repo, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"
         ).strip()
 
-    original = git(repo, "show", f"{base}:pyproject.toml")
+    subdir = cfg.get("subdir", ".")
+    pyproject = os.path.normpath(os.path.join(subdir, "pyproject.toml"))
+    original = git(repo, "show", f"{base}:{pyproject}")
     try:
         change = rewrite(original, tag, s2fft)
     except ValueError as err:
@@ -267,8 +281,8 @@ def bump(name, cfg, tag, s2fft, args):
             difflib.unified_diff(
                 original.splitlines(keepends=True),
                 change.text.splitlines(keepends=True),
-                f"{name}/pyproject.toml ({base})",
-                f"{name}/pyproject.toml ({tag})",
+                f"{name}/{pyproject} ({base})",
+                f"{name}/{pyproject} ({tag})",
             )
         )
         return result
@@ -288,7 +302,8 @@ def bump(name, cfg, tag, s2fft, args):
     log.unlink(missing_ok=True)
     say(f"worktree {tree} on new branch {branch}")
     git(repo, "worktree", "add", "--quiet", "-b", branch, str(tree), base)
-    (tree / "pyproject.toml").write_text(change.text)
+    (tree / pyproject).write_text(change.text)
+    project = tree / subdir
 
     env = {k: v for k, v in os.environ.items() if k not in SCRUB_ENV}
     env.update({k: str(v) for k, v in cfg.get("env", {}).items()})
@@ -300,22 +315,23 @@ def bump(name, cfg, tag, s2fft, args):
     if change.s2fft_changed:
         lock += ["--upgrade-package", "s2fft"]
     say("resolving the new pin")
-    if not run_logged(lock, tree, env, log):
+    if not run_logged(lock, project, env, log):
         result.status = "failed"
         result.detail = f"uv lock failed; see {log}"
         result.next_steps.append(f"discard: {cleanup}")
         return result
     say(f"testing (log: {log})")
-    if not run_logged(cfg["test"], tree, env, log):
+    if not run_logged(cfg["test"], project, env, log):
         result.status = "failed"
         result.detail = f"tests failed, left uncommitted; see {log}"
         result.next_steps.append(f"discard: {cleanup}")
         return result
 
-    files = ["pyproject.toml"]
-    if git_ok(tree, "ls-files", "--error-unmatch", "uv.lock"):
-        files.append("uv.lock")
-    git(tree, "add", *files)
+    # The lock sits beside the pyproject or, for a workspace member, at
+    # the workspace root; stage whichever tracked uv.lock the relock hit.
+    modified = git(tree, "ls-files", "--modified").splitlines()
+    locks = [f for f in modified if os.path.basename(f) == "uv.lock"]
+    git(tree, "add", pyproject, *locks)
     message = commit_message(tag, change, result.breaking, cfg["test"])
     git(tree, "commit", "--quiet", "-m", message)
     result.status = "committed"
