@@ -729,7 +729,12 @@ class PolarizedSky(eqx.Module):
         )
 
     def compute_alm_eq(self, world="moon", et=None):
-        """Return the contraction dual in the requested equatorial frame."""
+        """Return the contraction dual in the simulation frame.
+
+        ``et`` is the frame's reference epoch, as in
+        ``Sky.compute_alm_eq``: MEPA at ``et`` on the Moon, CIRS at
+        ``et`` on Earth, and J2000 when it is None.
+        """
         if world not in {"moon", "earth"}:
             raise ValueError("world must be either 'moon' or 'earth'.")
         if self.coord == "topo":
@@ -746,16 +751,15 @@ class PolarizedSky(eqx.Module):
                     f"Unsupported coordinate transformation: "
                     f"{self.coord} to {world}."
                 )
+            if world == "earth" and et is not None:
+                return rotations.eq2cirs(alm, et)
             return alm
         if world == "moon":
             euler, dl_array = rotations.generate_euler_dl(
                 self.lmax, "galactic", "mepa", et=et
             )
-        else:
-            euler, dl_array = rotations.generate_euler_dl(
-                self.lmax, "galactic", "fk5"
-            )
-        return rotations.rotate_alm(alm, euler, dl_array=dl_array)
+            return rotations.rotate_alm(alm, euler, dl_array=dl_array)
+        return rotations.gal2eq(alm, et=et)
 
 
 class PairStokesBeam(eqx.Module):

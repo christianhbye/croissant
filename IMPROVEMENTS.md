@@ -15,9 +15,11 @@ The sky is rotated in spherical-harmonic space by applying a phase
 rotation axis is the same as the *z*-axis of the simulation frame (i.e. the
 Earth's/Moon's spin axis is aligned with the equatorial frame pole).
 
-On the Moon this is fine: MCMF already has its *z*-axis along the lunar spin
-pole.  On Earth the simulator uses FK5 (mean equatorial of J2000), which also
-has *z* along the celestial pole, so the approximation holds for Earth too.
+Both worlds now define the simulation frame at `times_jd[0]` with its *z*-axis
+along the body's spin axis at that epoch: MEPA on the Moon, and CIRS on Earth.
+Earth used FK5 (mean equatorial of J2000) until #147, but the J2000 pole sits
+~9' from the 2026 spin axis, so turning about it walked the pointing off by up
+to ~17' within a single sidereal day.
 
 The subtle problem is that the Euler angles used to rotate the *beam* from
 topocentric to equatorial frame (`eul_topo`) are computed at **a single
@@ -107,7 +109,7 @@ instrument, varying sky model parameters only in alm space), the inner
 
 ```python
 beam_alm = sim.compute_beam_eq()
-sky_alm = sim.sky.compute_alm_eq(world=sim.world, et=sim._et_ref)
+sky_alm = sim.sky.compute_alm_eq(world=sim.world, et=sim.et_ref)
 beam_alm = utils.reduce_lmax(beam_alm, sim.lmax)
 sky_alm = utils.reduce_lmax(sky_alm, sim.lmax)
 vis = convolve(beam_alm, sky_alm, sim.phases)

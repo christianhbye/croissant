@@ -3,8 +3,9 @@ import warnings
 import numpy as np
 
 # sidereal days in seconds
-# https://nssdc.gsfc.nasa.gov/planetary/factsheet/earthfact.html
-sidereal_day_earth = 23.9345 * 3600
+# Earth: one turn of the Earth Rotation Angle (IAU 2000), the rotation
+# about the CIRS pole that the Earth simulation frame is built on
+sidereal_day_earth = 86400 / 1.00273781191135448
 # https://nssdc.gsfc.nasa.gov/planetary/factsheet/moonfact.html
 sidereal_day_moon = 655.720 * 3600
 

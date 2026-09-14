@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- **Bug fix (changes results):** Earth simulations rotate the sky about
+  the Earth's rotation axis at the start time, not the J2000 pole (#147).
+  `Simulator(world="earth")` now puts the beam and the sky in CIRS at
+  `times_jd[0]`, as the Moon branch already does with MEPA, so the
+  `rot_alm_z` time evolution no longer turns about an axis ~9' off. In
+  2026 the resulting pointing error was ~9' after 4 h and ~17' after
+  12 h, returning to zero only after a full sidereal day; it is now
+  bounded by annual aberration, at ~40''. Visibilities at `times_jd[0]`
+  are unchanged. `Sky.compute_alm_eq` and `PolarizedSky.compute_alm_eq`
+  honor `et` on Earth for galactic and equatorial skies, still returning
+  FK5/J2000 without it, and `rotations` gains `get_cirs_rotation_matrix`,
+  `eq2cirs` and an `et` argument to `gal2eq`. **Consumers that combine
+  `Simulator.eul_topo`/`dl_topo`/`compute_beam_eq()`/`phases` with sky
+  alm from `compute_alm_eq(world="earth")` must pass `et=sim.et_ref`, the
+  new public reference epoch of the simulation frame, or use
+  `Simulator.precompute_sky_alm()`; otherwise the sky stays in J2000, ~9'
+  from the beam.**
+- **Changes results:** `constants.sidereal_day["earth"]` is now one turn
+  of the Earth Rotation Angle, 86164.0989 s, instead of the rounded
+  23.9345 h (86164.2 s), which turned the sky 1.5'' too little per day
+  about the CIRS pole. `sidereal_day["moon"]` is unchanged; it matches
+  the sidereal month to 0.5 s.
 - Add the full-Stokes polarization layer (merged from
   `codex/full-stokes-pair-response-topo`): `PolarizedSky` and
   `PairStokesBeam` containers, the component-aware `polarized_convolve`
