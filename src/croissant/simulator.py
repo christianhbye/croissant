@@ -377,8 +377,8 @@ class Simulator(eqx.Module):
             Earth, MEPA on the Moon, both at ``times_jd[0]``). When
             provided, the sky's forward SHT and coordinate rotation are
             skipped. Use ``precompute_sky_alm`` to obtain this. When
-            ``None`` (default), the sky ALM is computed internally and
-            behaviour is identical to previous versions.
+            ``None`` (default), the sky ALM is computed internally, as
+            ``precompute_sky_alm`` computes it.
 
         Returns
         -------
