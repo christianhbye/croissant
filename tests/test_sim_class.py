@@ -10,9 +10,10 @@ from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time as AstroTime
 from lunarsky import Time as LunarTime
 
+from croissant import rotations, utils
 from croissant.beam import Beam
 from croissant.constants import sidereal_day
-from croissant.simulator import Simulator, correct_ground_loss
+from croissant.simulator import Simulator, convolve, correct_ground_loss
 from croissant.sky import Sky
 
 rng = np.random.default_rng(seed=3)
@@ -543,4 +544,67 @@ def test_et_ref_puts_a_sky_in_the_simulation_frame(world):
         np.asarray(sim.precompute_sky_alm()),
         rtol=1e-12,
         atol=1e-12,
+    )
+
+
+def test_earth_frame_change_leaves_the_first_sample_unchanged():
+    """At ``times_jd[0]`` no rotation has happened yet, so the
+    visibility cannot depend on which equatorial frame beam and sky
+    share.
+
+    Regression test for #147: moving the Earth frame from FK5/J2000 to
+    CIRS at ``times_jd[0]`` may change only later samples. Here the
+    first sample is rebuilt with beam and sky both in J2000. Pairing the
+    CIRS beam with a J2000 sky instead shifts it by ~3e-3 of the
+    visibility scale; the Euler fit to astropy's slightly non-orthogonal
+    topocentric matrix leaves ~2e-7.
+
+    Later samples do change, but not monotonically: the frame error
+    angle grows, while its effect follows the sky gradient under the
+    beam. ``test_earth_zenith_tracks_the_sky_through_a_long_call``
+    covers them.
+    """
+    sky = Sky(
+        jnp.asarray(rng.standard_normal((_N_FREQS, _NPIX))),
+        _FREQS,
+        coord="galactic",
+        niter=0,
+    )
+    beam = Beam(
+        jnp.asarray(np.abs(rng.standard_normal((_N_FREQS, _NPIX)))),
+        _FREQS,
+        sampling="healpix",
+        niter=0,
+    )
+    lon, lat = 0.0, 40.0
+    times_jd = _TIMES_JD["earth"]
+    sim = Simulator(
+        beam, sky, times_jd, _FREQS, lon, lat, world="earth", Tgnd=0.0
+    )
+    vis = np.asarray(sim.sim())
+
+    topo = AltAz(
+        location=EarthLocation(lon=lon * u.deg, lat=lat * u.deg),
+        obstime=AstroTime(times_jd[0], format="jd"),
+    )
+    eul, dl = rotations.generate_euler_dl_from_rotmat(
+        beam.lmax, rotations._rot_mat_to_earth_sim_frame(topo, et=None)
+    )
+    beam_j2000 = rotations.rotate_alm(beam.compute_alm(), eul, dl_array=dl)
+    sky_j2000 = sky.compute_alm_eq(world="earth", et=None)
+    no_rotation = jnp.ones((1, 2 * sim.lmax + 1))
+    vis_j2000 = (
+        convolve(
+            utils.reduce_lmax(beam_j2000, sim.lmax),
+            utils.reduce_lmax(sky_j2000, sim.lmax),
+            no_rotation,
+        )[0]
+        / beam.compute_norm()
+    )
+
+    np.testing.assert_allclose(
+        np.asarray(vis_j2000.real),
+        vis[0],
+        rtol=0,
+        atol=1e-5 * np.abs(vis).max(),
     )
