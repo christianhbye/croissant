@@ -32,6 +32,17 @@ Python 3.11–3.13 (`requires-python = ">=3.11, <3.14"`; CI tests all three). Te
 
 Engine benchmarks live in `benchmarks/` (nothing imports them); run via `uv run python benchmarks/benchmark_engines.py --help`, results land in `benchmarks/results/`.
 
+## Dev Tags and Downstream Consumers
+
+PyPI publishing is frozen while croissant pins an s2fft fork (PyPI rejects direct-URL dependencies), so downstream projects pin annotated `vX.Y.Z.devN` git tags instead. **After pushing a dev tag, run:**
+
+```bash
+uv run python scripts/bump_consumers.py <tag> --dry-run   # review pin diffs
+uv run python scripts/bump_consumers.py <tag>
+```
+
+For each consumer in `~/.config/croissant/consumers.toml` (machine-specific, not in the repo) it prepares a `deps/croissant-<tag>` branch in a separate worktree: pin moved, relocked, the consumer's croissant tests run against the resolved tag, committed only if they pass, with commits marked breaking since the old pin listed. It **never pushes** — publishing each bump is a separate, per-consumer decision. A consumer is onboarded once its `pyproject.toml` pins croissant to a git ref.
+
 ## Architecture
 
 All core classes inherit from `eqx.Module` (Equinox/JAX) and are JIT-compilable.
