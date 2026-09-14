@@ -34,7 +34,13 @@ Engine benchmarks live in `benchmarks/` (nothing imports them); run via `uv run 
 
 ## Dev Tags and Downstream Consumers
 
-PyPI publishing is frozen while croissant pins an s2fft fork (PyPI rejects direct-URL dependencies), so downstream projects pin annotated `vX.Y.Z.devN` git tags instead. **After pushing a dev tag, run:**
+PyPI publishing is frozen while croissant pins an s2fft fork (PyPI rejects direct-URL dependencies), so downstream projects pin annotated `vX.Y.Z.devN` git tags instead. To cut one:
+
+1. Bring `CHANGELOG.md`'s `Unreleased` section current and merge that first; it is the only record of what a tag contains.
+2. `git tag -a vX.Y.Z.devN -F <annotation> <commit>` on a commit with green CI, then push the tag. Annotation: one summary line, what landed and what it breaks for consumers, and a closing note that PyPI stays frozen on astro-informatics/s2fft#387.
+3. Do **not** bump `pyproject.toml`'s `version` or `.release-please-manifest.json`, and do **not** create a GitHub Release (it would take "Latest" from the release-please releases). The pending release-please PR stays unmerged.
+
+**After pushing a dev tag, run:**
 
 ```bash
 uv run python scripts/bump_consumers.py <tag> --dry-run   # review pin diffs
