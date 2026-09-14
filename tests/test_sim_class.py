@@ -5,6 +5,7 @@ import healpy as hp
 import jax.numpy as jnp
 import numpy as np
 import pytest
+import s2fft
 from astropy.coordinates import AltAz, EarthLocation, SkyCoord
 from astropy.time import Time as AstroTime
 from lunarsky import Time as LunarTime
@@ -453,3 +454,93 @@ def test_simulator_freqs_accepts_any_array_like():
     assert isinstance(sim.freqs, jnp.ndarray)
     np.testing.assert_allclose(np.asarray(sim.freqs), np.asarray(_FREQS))
     assert sim.sim().shape == (_N_TIMES, _N_FREQS)
+
+
+@pytest.mark.parametrize(
+    "coord,astropy_frame", [("equatorial", "fk5"), ("galactic", "galactic")]
+)
+def test_earth_zenith_tracks_the_sky_through_a_long_call(coord, astropy_frame):
+    """The zenith an Earth sim sees must stay where astropy puts it.
+
+    Regression test for #147. The beam is ``1 + cos(theta)`` about
+    zenith with no horizon cut, so against a pure dipole sky along
+    unit vector ``e`` the visibility is proportional to ``zenith . e``.
+    Three dipoles along the sky's own x, y and z axes read off the
+    zenith direction the simulator actually uses, in the sky's
+    coordinates, at every time sample; the common normalization
+    cancels when that vector is made unit length.
+
+    Rotating time about the J2000 pole instead of the Earth's spin
+    axis walks that zenith away from the truth, by ~17' twelve hours
+    in. Putting the beam and the sky in different frames offsets it
+    by up to ~9' from the first sample. Annual aberration, which a
+    rigid rotation cannot follow, bounds what is left at ~40''.
+    """
+    L = 4
+    freqs = jnp.array([75.0])
+    lon, lat = 20.0, 60.0
+    t0 = AstroTime("2026-03-20 00:00:00")
+    times = t0 + np.array([0.0, 4.0, 12.0]) * u.hour
+
+    theta = s2fft.sampling.s2_samples.thetas(L=L, sampling="mwss")
+    phi = s2fft.sampling.s2_samples.phis_equiang(L=L, sampling="mwss")
+    tt, pp = np.meshgrid(theta, phi, indexing="ij")
+    beam = Beam(
+        (1.0 + np.cos(tt))[None],
+        freqs,
+        sampling="mwss",
+        horizon=np.ones((theta.size, 1), dtype=bool),
+    )
+    dipoles = [np.sin(tt) * np.cos(pp), np.sin(tt) * np.sin(pp), np.cos(tt)]
+    vis = []
+    for dipole in dipoles:
+        sky = Sky(dipole[None], freqs, sampling="mwss", coord=coord)
+        sim = Simulator(
+            beam,
+            sky,
+            jnp.asarray(times.jd),
+            freqs,
+            lon,
+            lat,
+            world="earth",
+            Tgnd=0.0,
+        )
+        vis.append(np.asarray(sim.sim()[:, 0]))
+    zenith_sim = np.stack(vis, axis=-1)
+    zenith_sim /= np.linalg.norm(zenith_sim, axis=-1, keepdims=True)
+
+    loc = EarthLocation(lon=lon * u.deg, lat=lat * u.deg)
+    zenith = SkyCoord(
+        alt=np.full(times.size, 90.0) * u.deg,
+        az=np.zeros(times.size) * u.deg,
+        frame=AltAz(obstime=times, location=loc),
+    ).transform_to(astropy_frame)
+    zenith_true = zenith.cartesian.xyz.value.T
+
+    cosang = np.clip(np.sum(zenith_sim * zenith_true, axis=-1), -1.0, 1.0)
+    err_arcmin = np.degrees(np.arccos(cosang)) * 60
+    assert np.all(err_arcmin < 1.0), f"zenith error (arcmin): {err_arcmin}"
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+def test_et_ref_puts_a_sky_in_the_simulation_frame(world):
+    """``Sky.compute_alm_eq(world, et=sim.et_ref)`` must be the sky
+    ``sim`` itself uses, so code that pairs ``compute_beam_eq`` or
+    ``phases`` with its own sky alm can land in the beam's frame.
+
+    The sky is structured: a monopole is rotation invariant and would
+    agree for any epoch."""
+    sky_data = jnp.asarray(rng.standard_normal((_N_FREQS, _NPIX)))
+    sky = Sky(sky_data, _FREQS, coord="galactic", niter=0)
+    beam = Beam(
+        jnp.ones((_N_FREQS, _NPIX)), _FREQS, sampling="healpix", niter=0
+    )
+    sim = Simulator(
+        beam, sky, _TIMES_JD[world], _FREQS, 0.0, 40.0, world=world
+    )
+    np.testing.assert_allclose(
+        np.asarray(sky.compute_alm_eq(world=world, et=sim.et_ref)),
+        np.asarray(sim.precompute_sky_alm()),
+        rtol=1e-12,
+        atol=1e-12,
+    )

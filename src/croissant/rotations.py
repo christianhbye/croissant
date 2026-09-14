@@ -1,5 +1,6 @@
 from functools import lru_cache, partial
 
+import erfa
 import jax
 import numpy as np
 import s2fft
@@ -367,6 +368,65 @@ def _rot_mat_to_mepa(from_frame, et=None):
         return R_j2000_mepa @ R_from_j2000
 
 
+@lru_cache(maxsize=1024)
+def get_cirs_rotation_matrix(et=0.0):
+    """
+    Get the rotation matrix from J2000 to the Celestial Intermediate
+    Reference System (CIRS) at a reference epoch. The CIRS Z-axis is
+    the Earth's rotation axis (the Celestial Intermediate Pole) at that
+    epoch, and its X-axis stays within arcseconds of the J2000 X-axis.
+
+    Parameters
+    ----------
+    et : float
+        The reference epoch as ephemeris time (seconds past J2000).
+        Default is 0.0 (J2000). Using the observation epoch aligns the
+        Z-axis with the Earth's current rotation axis, which the
+        ``rot_alm_z`` time evolution turns about. The epoch is read as
+        TT, which differs from TDB by under 2 ms.
+
+    Returns
+    -------
+    R : np.ndarray
+        The 3x3 rotation matrix from J2000 to CIRS.
+
+    Notes
+    -----
+    The matrix is IAU 2006/2000A GCRS to CIRS. FK5/J2000 is treated as
+    GCRS; the 23 mas frame bias between them is negligible here.
+
+    """
+    return np.array(erfa.c2i06a(2451545.0, et / 86400.0))
+
+
+def _rot_mat_to_earth_sim_frame(from_frame, et=None):
+    """
+    Compute the rotation matrix from ``from_frame`` to the Earth
+    simulation frame.
+
+    Parameters
+    ----------
+    from_frame : str or astropy frame
+        The source coordinate frame.
+    et : float or None
+        The reference epoch as SPICE ephemeris time (seconds past
+        J2000). If given, the simulation frame is CIRS at that epoch,
+        composed as frame -> FK5/J2000 -> CIRS. If None, it is
+        FK5/J2000.
+
+    Returns
+    -------
+    rmat : np.ndarray
+        The 3x3 rotation matrix from ``from_frame`` to the simulation
+        frame.
+
+    """
+    rmat = get_rot_mat(from_frame, "fk5")
+    if et is not None:
+        rmat = get_cirs_rotation_matrix(et) @ rmat
+    return rmat
+
+
 def generate_euler_dl_from_rotmat(lmax, rotmat):
     """
     Generate Euler angles and reduced Wigner d-function values from
@@ -422,9 +482,11 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon", et=None):
     """
     Rotate alm from galactic to the simulation frame.
 
-    For Earth, the simulation frame is FK5 (equatorial).
-    For the Moon, the simulation frame is MEPA (Mean Earth / Polar
-    Axis), an inertial frame with Z-axis along the Moon's polar axis.
+    For Earth, the simulation frame is CIRS at the reference epoch,
+    whose Z-axis is the Earth's rotation axis, or FK5/J2000 when no
+    epoch is given. For the Moon, the simulation frame is MEPA (Mean
+    Earth / Polar Axis), an inertial frame with Z-axis along the Moon's
+    polar axis.
 
     Parameters
     ----------
@@ -441,9 +503,9 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon", et=None):
         Which simulation frame to use. This is ignored if eul and
         dl_array are provided.
     et : float or None
-        The reference epoch for the MEPA frame as SPICE ephemeris time
-        (seconds past J2000). Only used when ``world`` is "moon" and
-        eul/dl_array are not provided. Default is None (J2000).
+        The reference epoch of the simulation frame as SPICE ephemeris
+        time (seconds past J2000). Only used when eul/dl_array are not
+        provided. Default is None (J2000).
 
     Returns
     -------
@@ -456,13 +518,14 @@ def _gal_to_sim_frame(alm, eul=None, dl_array=None, world="moon", et=None):
         if world == "moon":
             eul, dl_array = generate_euler_dl(lmax, "galactic", "mepa", et=et)
         elif world == "earth":
-            eul, dl_array = generate_euler_dl(lmax, "galactic", "fk5")
+            rmat = _rot_mat_to_earth_sim_frame("galactic", et=et)
+            eul, dl_array = generate_euler_dl_from_rotmat(lmax, rmat)
         else:
             raise ValueError("Invalid world. Must be 'moon' or 'earth'.")
     return rotate_alm(alm, eul, dl_array=dl_array)
 
 
-def gal2eq(alm, eul=None, dl_array=None):
+def gal2eq(alm, eul=None, dl_array=None, et=None):
     """
     Rotate alm from galactic to equatorial coordinates.
 
@@ -477,6 +540,11 @@ def gal2eq(alm, eul=None, dl_array=None):
         Precomputed reduced Wigner d-function values for the galactic
         to equatorial transformation. If not provided, it will be
         computed on the fly.
+    et : float or None
+        The reference epoch as SPICE ephemeris time (seconds past
+        J2000). If given, the output is in CIRS at that epoch, the
+        Earth simulation frame. Only used when eul/dl_array are not
+        provided. Default is None (FK5/J2000).
 
     Returns
     -------
@@ -484,7 +552,36 @@ def gal2eq(alm, eul=None, dl_array=None):
         The output alm in equatorial coordinates.
 
     """
-    return _gal_to_sim_frame(alm, eul=eul, dl_array=dl_array, world="earth")
+    return _gal_to_sim_frame(
+        alm, eul=eul, dl_array=dl_array, world="earth", et=et
+    )
+
+
+def eq2cirs(alm, et):
+    """
+    Rotate alm from FK5/J2000 equatorial coordinates to CIRS at a
+    reference epoch, the Earth simulation frame.
+
+    Parameters
+    ----------
+    alm : array_like
+        The input alm in FK5/J2000 equatorial coordinates. Last two
+        axes should be the (l, m) indices. Preceding are batch
+        dimensions.
+    et : float
+        The reference epoch as SPICE ephemeris time (seconds past
+        J2000).
+
+    Returns
+    -------
+    alm_cirs : jnp.ndarray
+        The output alm in CIRS at the reference epoch.
+
+    """
+    eul, dl_array = generate_euler_dl_from_rotmat(
+        lmax_from_shape(alm.shape), get_cirs_rotation_matrix(et)
+    )
+    return rotate_alm(alm, eul, dl_array=dl_array)
 
 
 def gal2mepa(alm, eul=None, dl_array=None, et=None):

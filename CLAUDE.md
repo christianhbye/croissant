@@ -63,7 +63,7 @@ alm arrays have shape `(N_freqs, lmax+1, 2*lmax+1)` indexed as `(freq, ell, m)` 
 ### Coordinate Conventions
 
 - Theta: colatitude [0, π], Phi: longitude [0, 2π). Euler angles use ZYZ convention.
-- Supports Earth (FK5/AltAz) and Moon (MEPA/LunarTopo) observations.
+- Supports Earth (CIRS/AltAz) and Moon (MEPA/LunarTopo) observations. Both simulation frames are fixed at `times_jd[0]` so their z axis is the body's current spin axis, which `rot_alm_z` turns about; `compute_alm_eq(..., et=None)` still means J2000.
 
 ## Physics Tests
 

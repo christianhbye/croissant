@@ -135,12 +135,12 @@ class Simulator(eqx.Module):
     alt: jax.Array  # altitude in meters
     lmax: int = eqx.field(static=True)
     _L: int = eqx.field(static=True)
-    eul_topo: tuple = eqx.field(static=True)  # euler angles for topo to eq
-    dl_topo: jax.Array  # dl array for topocentric to eq frame
+    eul_topo: tuple = eqx.field(static=True)  # euler angles, topo to sim
+    dl_topo: jax.Array  # dl array for topocentric to simulation frame
     Tgnd: jax.Array  # ground temperature in K
     world: str = eqx.field(static=True)  # "earth" or "moon"
     phases: jax.Array  # precomputed phases for sky rotation
-    _et_ref: float = eqx.field(static=True)  # MEPA reference epoch
+    _et_ref: float = eqx.field(static=True)  # sim frame reference epoch
 
     def __init__(
         self,
@@ -231,10 +231,13 @@ class Simulator(eqx.Module):
             loc = EarthLocation(lon, lat, height=alt)
             t0 = EarthTime(times_jd[0], format="jd")
             topo = AltAz(location=loc, obstime=t0)
-            eul_topo, dl_topo = rotations.generate_euler_dl(
-                self.beam.lmax, topo, "fk5"
+            # CIRS at t0 puts z on the Earth's rotation axis, so the
+            # rot_alm_z time evolution turns about the right pole.
+            self._et_ref = float(rotations.jd_to_et(t0.tdb.jd))
+            eul_topo, dl_topo = rotations.generate_euler_dl_from_rotmat(
+                self.beam.lmax,
+                rotations._rot_mat_to_earth_sim_frame(topo, et=self._et_ref),
             )
-            self._et_ref = 0.0
         elif world == "moon":
             loc = MoonLocation(lon, lat, height=alt)
             t0 = LunarTime(times_jd[0], format="jd")
@@ -253,18 +256,39 @@ class Simulator(eqx.Module):
         dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
         self.phases = rot_alm_z(self.lmax, times=dt_sec, world=self.world)
 
+    @property
+    def et_ref(self):
+        """
+        The reference epoch of the simulation frame, as SPICE ephemeris
+        time (seconds past J2000). The frame is CIRS at this epoch on
+        Earth and MEPA at this epoch on the Moon, both at
+        ``times_jd[0]``. Pass it as ``et`` to ``Sky.compute_alm_eq`` or
+        ``PolarizedSky.compute_alm_eq`` to put a sky in the frame of
+        ``compute_beam_eq`` and ``phases``.
+
+        """
+        return self._et_ref
+
     @jax.jit
     def compute_beam_eq(self):
         """
-        Compute the beam alm in equatorial coordinates. This uses the
-        pre-computed Euler angles and dl array for the topocentric to
-        equatorial transformation.
+        Compute the beam alm in the simulation frame: CIRS at
+        ``times_jd[0]`` on Earth, MEPA at ``times_jd[0]`` on the Moon.
+        This uses the pre-computed Euler angles and dl array for the
+        topocentric to simulation frame transformation.
 
         Returns
         -------
         beam_eq_alm : jax.Array
-            The beam alm in equatorial coordinates. Shape is
+            The beam alm in the simulation frame. Shape is
             (Nfreqs, lmax+1, 2*lmax+1).
+
+        Notes
+        -----
+        A sky paired with this beam, e.g. in ``convolve`` with
+        ``phases``, must be in the same frame. Use
+        ``precompute_sky_alm``; ``Sky.compute_alm_eq`` gives that frame
+        only when passed ``et=self.et_ref``.
 
         """
         beam_alm = self.beam.compute_alm()
@@ -297,10 +321,10 @@ class Simulator(eqx.Module):
 
     def precompute_sky_alm(self):
         """
-        Compute the sky ALM in the simulation frame (equatorial or
-        MEPA coordinates). Use this to avoid redundant spherical
-        harmonic transforms when calling ``sim`` in a loop with
-        different beam orientations but the same sky.
+        Compute the sky ALM in the simulation frame (CIRS on Earth,
+        MEPA on the Moon, both at ``times_jd[0]``). Use this to avoid
+        redundant spherical harmonic transforms when calling ``sim`` in
+        a loop with different beam orientations but the same sky.
 
         Returns
         -------
@@ -314,10 +338,10 @@ class Simulator(eqx.Module):
         -----
         The returned array is suitable for passing to
         ``sim(sky_alm=...)``.  It is tied to this simulator's
-        ``world`` and, for lunar observations with a galactic sky,
-        the reference epoch derived from the start time. Only reuse
-        it with simulators that share the same ``world`` and start
-        time.
+        ``world`` and to the reference epoch derived from the start
+        time: CIRS at that epoch on Earth, and MEPA at that epoch on
+        the Moon for a galactic sky. Only reuse it with simulators that
+        share the same ``world`` and start time.
 
         If you need gradients with respect to ``sky.data``, compute
         ``sky_alm`` **inside** the ``jax.grad``-traced function
@@ -349,11 +373,11 @@ class Simulator(eqx.Module):
         Parameters
         ----------
         sky_alm : jax.Array or None
-            Pre-computed sky ALM in the simulation frame (equatorial
-            or MEPA). When provided, the sky's forward SHT and
-            coordinate rotation are skipped. Use
-            ``precompute_sky_alm`` to obtain this. When ``None``
-            (default), the sky ALM is computed internally and
+            Pre-computed sky ALM in the simulation frame (CIRS on
+            Earth, MEPA on the Moon, both at ``times_jd[0]``). When
+            provided, the sky's forward SHT and coordinate rotation are
+            skipped. Use ``precompute_sky_alm`` to obtain this. When
+            ``None`` (default), the sky ALM is computed internally and
             behaviour is identical to previous versions.
 
         Returns

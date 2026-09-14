@@ -1,3 +1,4 @@
+import erfa
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -43,6 +44,24 @@ def test_rot_alm_z(lmax, world, N_times):
                 current_alm, lmax + 1, eul_dphi, dl_beta
             )
         assert jnp.allclose(current_alm, alm_rot[i])
+
+
+def test_earth_rotation_follows_the_earth_rotation_angle():
+    """On Earth, rot_alm_z must turn at the rate of the Earth Rotation
+    Angle, the Earth's rotation about the CIRS pole that the Earth
+    simulation frame is built on. A day length off by 0.1 s puts the
+    sky ~150'' off after 100 days."""
+    lmax = 1
+    days = 100.0
+    start = 26 * 365.25  # early 2026, in days past J2000
+    phases = simulator.rot_alm_z(
+        lmax, times=[0.0, days * 86400.0], world="earth"
+    )
+    # the m = +1 phase is exp(-i * phi)
+    phi = -float(jnp.angle(phases[1, lmax + 1]))
+    era = erfa.era00(2451545.0, start + days) - erfa.era00(2451545.0, start)
+    err = (phi - era + np.pi) % (2 * np.pi) - np.pi
+    assert abs(np.degrees(err) * 3600) < 0.1, f"error: {err} rad"
 
 
 def test_convolve():

@@ -293,6 +293,44 @@ def test_polarized_mepa_rotation_matches_scalar_sky():
     )
 
 
+@pytest.mark.parametrize("coord", ["galactic", "equatorial"])
+def test_polarized_earth_rotation_matches_scalar_sky(coord):
+    """With a reference epoch, a polarized sky must land in the same
+    Earth frame (CIRS at that epoch) as a scalar sky. Its pole sits
+    ~9' from the J2000 pole in 2026, so a sky left in J2000 misses by
+    ~1e-3 in the dipole coefficients."""
+    lmax = 4
+    L = lmax + 1
+    theta = s2fft.sampling.s2_samples.thetas(L=L, sampling="mwss")
+    phi = s2fft.sampling.s2_samples.phis_equiang(L=L, sampling="mwss")
+    tt, pp = np.meshgrid(theta, phi, indexing="ij")
+    intensity = 2.0 + 0.2 * np.sin(tt) * np.cos(pp)
+    polarized_data = np.zeros((1, 4) + intensity.shape)
+    polarized_data[0, 0] = intensity
+
+    polarized = PolarizedSky(
+        polarized_data,
+        [10.0],
+        sampling="mwss",
+        coord=coord,
+    )
+    scalar = Sky(
+        intensity[None],
+        jnp.asarray([10.0]),
+        sampling="mwss",
+        coord=coord,
+    )
+    et = 26 * 365.25 * 86400.0  # early 2026
+    polarized_eq = polarized.compute_alm_eq(world="earth", et=et)
+    scalar_eq = scalar.compute_alm_eq(world="earth", et=et)
+    np.testing.assert_allclose(
+        polarized_eq[0, 0],
+        scalar_eq[0],
+        rtol=2e-6,
+        atol=2e-6,
+    )
+
+
 def test_pair_beam_rotation_matches_scalar_beam_convention():
     lmax = 4
     L = lmax + 1

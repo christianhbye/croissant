@@ -102,13 +102,15 @@ class Sky(sphere.SphBase):
             Which simulation frame to use. If ``world`` is "moon", the
             alm's will be computed in the MEPA (Mean Earth / Polar Axis)
             coordinate system. If "earth", the alm's will be computed
-            in FK5 equatorial coordinates.
+            in CIRS at the reference epoch ``et``, or in FK5/J2000
+            equatorial coordinates if ``et`` is None.
         et : float or None
-            The reference epoch for the MEPA frame as SPICE ephemeris
-            time (seconds past J2000). Only used when ``world`` is
-            "moon" and the sky is in galactic coordinates. Using the
-            observation epoch aligns the MEPA Z-axis with the Moon's
-            current rotation axis. Default is None (J2000).
+            The reference epoch of the simulation frame as SPICE
+            ephemeris time (seconds past J2000). Using the observation
+            epoch aligns the frame's Z-axis with the current rotation
+            axis of the Moon or the Earth. On the Moon it is only used
+            for a galactic sky; on Earth it applies to galactic and
+            equatorial (FK5/J2000) skies. Default is None (J2000).
 
         Notes
         -----
@@ -134,11 +136,10 @@ class Sky(sphere.SphBase):
                 f"{world}. "
             )
         alm = self.compute_alm()
-        if self.coord != "galactic":
-            return alm
-
-        if world == "earth":
-            alm = rotations.gal2eq(alm)
-        else:
-            alm = rotations.gal2mepa(alm, et=et)
+        if self.coord == "galactic":
+            if world == "earth":
+                return rotations.gal2eq(alm, et=et)
+            return rotations.gal2mepa(alm, et=et)
+        if self.coord == "equatorial" and et is not None:
+            return rotations.eq2cirs(alm, et)
         return alm
