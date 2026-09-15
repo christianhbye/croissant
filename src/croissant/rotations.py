@@ -153,6 +153,18 @@ def get_rot_mat(from_frame, to_frame, et=None):
     return rmat
 
 
+def _nearest_rotation(mat):
+    """
+    Return the rotation matrix nearest to ``mat`` in the Frobenius norm.
+
+    Euler angles can only describe a rotation. Astropy's topocentric
+    matrices carry ~1e-4 of aberration, which is not one, and both Euler
+    splits amplify it near their gimbal lock (#152).
+    """
+    u, _, vt = np.linalg.svd(mat)
+    return u @ vt
+
+
 def rotmat_to_euler(mat, eulertype="ZYZ"):
     """
     Convert a rotation matrix to Euler angles in the specified convention.
@@ -199,7 +211,8 @@ def rotmat_to_eulerZYX(mat):
     Parameters
     ----------
     mat : np.ndarray
-        The rotation matrix.
+        The rotation matrix. A matrix that is only approximately
+        orthogonal is replaced by the nearest rotation first.
 
     Returns
     --------
@@ -208,8 +221,11 @@ def rotmat_to_eulerZYX(mat):
         healpy.rotator.Rotator expects when ``eulertype'' is ZYX.
 
     """
-    beta = -np.arcsin(mat[0, 2])  # pitch
-    cb = np.cos(beta)
+    mat = _nearest_rotation(mat)
+    # cos(pitch) from the rest of the row rather than cos(arcsin(m[0, 2])),
+    # which turns rounding at gimbal lock into ~1e-8, past the check below
+    cb = np.hypot(mat[0, 0], mat[0, 1])
+    beta = -np.arctan2(mat[0, 2], cb)  # pitch
     if np.abs(cb) > 1e-10:  # can divide by cos(beta)
         gamma = np.arctan2(mat[1, 2] / cb, mat[2, 2] / cb)  # roll
         alpha = np.arctan2(mat[0, 1] / cb, mat[0, 0] / cb)  # yaw
@@ -241,15 +257,11 @@ def rotmat_to_eulerZYZ(mat):
         s2fft.utils.rotation.rotate_flms expects.
 
     """
-    # Euler angles can only describe a rotation. Astropy's topocentric
-    # matrices carry ~1e-4 of aberration, which is not one, and the ZYZ
-    # split amplifies it by 1/sin(beta) near beta=0 and beta=pi (#152).
-    # The SVD gives the nearest rotation in the Frobenius norm.
-    u, _, vt = np.linalg.svd(mat)
-    mat = u @ vt
-    cos_beta = np.clip(mat[2, 2], -1.0, 1.0)
-    sin_beta = np.sqrt(1 - cos_beta**2)
-    beta = np.arctan2(sin_beta, cos_beta)
+    mat = _nearest_rotation(mat)
+    # sin(beta) from the rest of the column rather than sqrt(1 - m[2, 2]**2),
+    # which turns rounding at gimbal lock into ~1e-8, past the checks below
+    sin_beta = np.hypot(mat[0, 2], mat[1, 2])
+    beta = np.arctan2(sin_beta, mat[2, 2])
     if np.isclose(beta, 0.0):
         # Gimbal lock at beta=0: R = Rz(alpha + gamma).
         # Set gamma = 0 and absorb the full rotation into alpha.
