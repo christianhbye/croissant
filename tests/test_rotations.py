@@ -224,6 +224,64 @@ def test_rotmat_to_eulerZYZ_ignores_non_rotation_part():
         )
 
 
+def test_rotmat_to_eulerZYX_ignores_non_rotation_part():
+    """
+    As for ZYZ, but with healpy's ZYX angles, whose split divides by
+    cos(pitch): a 1e-4 stretch must not leak in near pitch=+-pi/2.
+    """
+    for pitch in [np.pi / 2 - 4e-5, 0.7, -np.pi / 2 + 4e-5]:
+        rot_mat = hp.rotator.get_rotation_matrix((0.4, pitch, -1.1))[0]
+        sheared = rot_mat @ (np.eye(3) + _SHEAR)
+        eul = rotations.rotmat_to_eulerZYX(sheared)
+        np.testing.assert_allclose(
+            hp.rotator.get_rotation_matrix(eul)[0],
+            rot_mat,
+            rtol=0,
+            atol=1e-10,
+            err_msg=f"pitch={pitch}",
+        )
+
+
+def test_rotmat_to_eulerZYX_gimbal_lock():
+    """
+    At pitch=+-pi/2 only one combination of yaw and roll is determined.
+    healpy's matrices there carry ~1e-17 of rounding off the locked
+    entries, which must not turn into a NaN pitch or a wrong yaw.
+    """
+    rng = np.random.default_rng(0)
+    for pitch in [np.pi / 2, -np.pi / 2]:
+        for yaw, roll in rng.uniform(-np.pi, np.pi, (50, 2)):
+            rot_mat = hp.rotator.get_rotation_matrix((yaw, pitch, roll))[0]
+            eul = rotations.rotmat_to_eulerZYX(rot_mat)
+            np.testing.assert_allclose(
+                hp.rotator.get_rotation_matrix(eul)[0],
+                rot_mat,
+                rtol=0,
+                atol=1e-12,
+                err_msg=f"pitch={pitch}, yaw={yaw}, roll={roll}",
+            )
+
+
+def test_rotmat_to_eulerZYZ_gimbal_lock_with_rounding():
+    """
+    A z-rotation built from products can have m[2, 2] = 1 - 1e-16.
+    Reading sin(beta) as sqrt(1 - cos(beta)**2) turns that into
+    beta ~ 1.5e-8, past the gimbal-lock tolerance, and alpha and gamma
+    then come from rounding in entries that should be zero.
+    """
+    rng = np.random.default_rng(0)
+    for tilt, angle in rng.uniform(-np.pi, np.pi, (200, 2)):
+        rot_mat = _ry(tilt) @ _ry(-tilt) @ _rz(angle)
+        eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+        np.testing.assert_allclose(
+            _euler_to_rotmat(*eul),
+            rot_mat,
+            rtol=0,
+            atol=1e-12,
+            err_msg=f"tilt={tilt}, angle={angle}",
+        )
+
+
 def test_earth_pole_topo_euler_angles_reproduce_frame_rotation():
     """
     At the geographic poles the topocentric z axis is the CIRS pole, so
