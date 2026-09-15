@@ -195,6 +195,58 @@ def test_rotmat_to_eulerZYZ_gimbal_lock():
     assert np.allclose(rmat, np.eye(3), atol=1e-14)
 
 
+# A symmetric stretch shaped like the aberration astropy bakes into the
+# topocentric matrix: ~1e-4 off the diagonal, and zero on it because
+# SkyCoord returns unit columns. R @ (I + S) is already a polar
+# decomposition, so the rotation nearest to it is exactly R.
+_SHEAR = 1e-4 * np.array(
+    [[0.0, -0.5, -0.5], [-0.5, 0.0, 0.1], [-0.5, 0.1, 0.0]]
+)
+
+
+def test_rotmat_to_eulerZYZ_ignores_non_rotation_part():
+    """
+    A small stretch must not leak into the Euler angles. The ZYZ split
+    divides by sin(beta) in effect, so near beta=0 or beta=pi a 1e-4
+    stretch would otherwise scramble alpha and gamma (#152). The two
+    extreme betas are those of the geographic poles in CIRS.
+    """
+    for beta in [4e-5, 0.7, np.pi - 5.9e-5]:
+        rot_mat = _euler_to_rotmat(0.4, beta, -1.1)
+        sheared = rot_mat @ (np.eye(3) + _SHEAR)
+        eul = rotations.rotmat_to_eulerZYZ(sheared)
+        np.testing.assert_allclose(
+            _euler_to_rotmat(*eul),
+            rot_mat,
+            rtol=0,
+            atol=1e-10,
+            err_msg=f"beta={beta}",
+        )
+
+
+def test_earth_pole_topo_euler_angles_reproduce_frame_rotation():
+    """
+    At the geographic poles the topocentric z axis is the CIRS pole, so
+    beta is ~20 arcsec. The Euler angles must still reproduce the
+    topocentric matrix to within its ~1e-4 aberration stretch; they were
+    133 degrees off at the North Pole (#152).
+    """
+    t0 = Time("2022-07-17 00:00:00")
+    et = rotations.jd_to_et(t0.tdb.jd)
+    for lat in [89.9, 90.0, -90.0]:
+        loc = EarthLocation(lon=0, lat=lat)
+        topo = AltAz(obstime=t0, location=loc)
+        rot_mat = rotations._rot_mat_to_earth_sim_frame(topo, et=et)
+        eul, _ = rotations.generate_euler_dl_from_rotmat(4, rot_mat)
+        np.testing.assert_allclose(
+            _euler_to_rotmat(*eul),
+            rot_mat,
+            rtol=0,
+            atol=3e-4,
+            err_msg=f"lat={lat}",
+        )
+
+
 def test_mepa_rotation_matrix():
     """MEPA rotation matrix should be a proper rotation (det=+1)."""
     R = rotations.get_mepa_rotation_matrix()

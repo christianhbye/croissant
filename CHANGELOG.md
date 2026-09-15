@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Bug fix (changes results):** Earth simulations at and near the
+  geographic poles orient the beam correctly (#152).
+  `rotations.rotmat_to_eulerZYZ` now takes the Euler angles of the
+  rotation nearest to its input. Astropy's topocentric matrix carries
+  ~1e-4 of annual aberration, which is not a rotation, and the ZYZ split
+  amplified it by 1/sin(beta): the beam's azimuth was 0.37 deg off at
+  latitude 89, 3.7 deg at 89.9 and 133 deg at the North Pole (38 deg at
+  the South Pole). The J2000 pole offset had masked this until #147 put
+  the CIRS pole on the local zenith there. Other Earth sites were off by
+  0.004-0.04 deg and shift by that much. Moon simulations are unchanged,
+  since their matrices are already orthogonal.
 - **Bug fix (changes results):** Earth simulations rotate the sky about
   the Earth's rotation axis at the start time, not the J2000 pole (#147).
   `Simulator(world="earth")` now puts the beam and the sky in CIRS at
