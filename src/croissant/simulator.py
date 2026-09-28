@@ -14,7 +14,9 @@ from .beam import Beam
 from .sky import Sky
 
 
-def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
+def rot_alm_z(
+    lmax, N_times=None, delta_t=None, times=None, world="moon", times_end=None
+):
     """
     Compute the complex phases that rotate the sky for a range of times.
     The first time is the reference time and the phases are computed
@@ -37,14 +39,25 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
         ignored.
     world : str
         ``earth'' or ``moon''. Default is ``moon''.
+    times_end : array_like or None
+        The end of each sample's integration window in seconds, on the
+        same clock as ``times``, which then holds the window starts.
+        Each phase is averaged over ``[times[i], times_end[i]]``
+        instead of taken at ``times[i]``. Requires ``times``. None
+        (default) gives snapshots, and so does ``times_end = times``.
 
     Returns
     -------
     phases : jnp.ndarray
         The phases that rotate the sky, of the form exp(-i*m*phi(t)).
-        Shape (N_times, 2*lmax+1).
+        Shape (N_times, 2*lmax+1). With ``times_end``, each is the mean
+        of exp(-i*m*phi(t)) over its window, exp(-i*m*phi_mid) *
+        sinc(m*dphi/2), where phi_mid is the rotation angle at the
+        window midpoint and dphi the rotation across the window.
 
     """
+    if times_end is not None and times is None:
+        raise ValueError("`times_end` requires `times`, the window starts.")
     if times is not None:
         times = jnp.atleast_1d(jnp.asarray(times))
         if times.size == 0:
@@ -59,7 +72,32 @@ def rot_alm_z(lmax, N_times=None, delta_t=None, times=None, world="moon"):
     day = constants.sidereal_day[world]
     phi = 2 * jnp.pi * dt / day  # rotation angle
     emms = jnp.arange(-lmax, lmax + 1)  # m values
-    phases = jnp.exp(-1j * emms[None] * phi[:, None])
+    if times_end is None:
+        phases = jnp.exp(-1j * emms[None] * phi[:, None])
+        return phases
+
+    times_end = jnp.atleast_1d(jnp.asarray(times_end))
+    if times_end.shape != times.shape:
+        raise ValueError(
+            "`times_end` must have one entry per time in `times`: "
+            f"expected shape {times.shape}, got {times_end.shape}."
+        )
+    concrete = not any(
+        isinstance(t, jax.core.Tracer) for t in (times, times_end)
+    )
+    if concrete and jnp.any(times_end < times):
+        raise ValueError(
+            "An integration window ends before it starts: `times_end` < "
+            "`times`."
+        )
+    dphi = 2 * jnp.pi * (times_end - times) / day  # rotation per window
+    phi_mid = phi + dphi / 2
+    # The sky turns at a constant rate within a window, so the mean of
+    # exp(-i*m*phi) over it is its midpoint value times sin(x)/x with
+    # x = m*dphi/2. jnp.sinc is sin(pi*x)/(pi*x), and is exactly 1, with
+    # a finite gradient, at zero width.
+    taper = jnp.sinc(emms[None] * dphi[:, None] / (2 * jnp.pi))
+    phases = jnp.exp(-1j * emms[None] * phi_mid[:, None]) * taper
     return phases
 
 
@@ -129,6 +167,7 @@ class Simulator(eqx.Module):
     beam: Beam
     sky: Sky
     times_jd: jax.Array  # times in Julian day
+    times_end_jd: jax.Array | None  # integration window ends in Julian day
     freqs: jax.Array  # in MHz
     lon: jax.Array  # longitude of in degrees
     lat: jax.Array  # latitude in degrees
@@ -154,6 +193,7 @@ class Simulator(eqx.Module):
         lmax=None,
         world="moon",
         Tgnd=300.0,
+        times_end_jd=None,
     ):
         """
         Configure a simulation. This class holds all the relevant
@@ -171,7 +211,8 @@ class Simulator(eqx.Module):
             The sky model to use for the simulation.
         times_jd : jax.Array
             The times in Julian day at which to simulate the
-            observations.
+            observations: snapshot times, or with ``times_end_jd`` the
+            start of each sample's integration window.
         freqs : jax.Array
             The frequencies in MHz for the simulation. Must be
             consistent with the frequencies used for the beam and the
@@ -192,6 +233,17 @@ class Simulator(eqx.Module):
         Tgnd : float
             The ground temperature in Kelvin. Only a constant
             temperature is supported for now.
+        times_end_jd : jax.Array or None
+            The end of each sample's integration window in Julian day,
+            one per entry in ``times_jd``. Each sample is then the mean
+            over ``[times_jd[i], times_end_jd[i]]`` instead of a
+            snapshot at ``times_jd[i]``, which models the sky turning
+            while a spectrometer integrates. Windows may leave gaps
+            between them, such as the time a Dicke-switched receiver
+            spends on its calibrators; a record that sums several
+            windows is their duration-weighted mean. None (default)
+            simulates snapshots, and so does ``times_end_jd`` equal to
+            ``times_jd``.
 
         """
         # Coerce before comparing: jnp.allclose rejects a plain list,
@@ -210,6 +262,20 @@ class Simulator(eqx.Module):
         self.beam = beam
         self.sky = sky
         self.times_jd = times_jd
+        if times_end_jd is not None:
+            times_end_jd = jnp.atleast_1d(jnp.asarray(times_end_jd))
+            if times_end_jd.shape != jnp.shape(times_jd):
+                raise ValueError(
+                    "times_end_jd must have one entry per time in "
+                    f"times_jd: expected shape {jnp.shape(times_jd)}, got "
+                    f"{times_end_jd.shape}."
+                )
+            if jnp.any(times_end_jd < times_jd):
+                raise ValueError(
+                    "An integration window ends before it starts: "
+                    "times_end_jd < times_jd."
+                )
+        self.times_end_jd = times_end_jd
 
         if lmax is None:
             lmax = min(beam.lmax, sky.lmax)
@@ -254,7 +320,12 @@ class Simulator(eqx.Module):
 
         # precompute the phases
         dt_sec = (self.times_jd - self.times_jd[0]) * 24 * 3600
-        self.phases = rot_alm_z(self.lmax, times=dt_sec, world=self.world)
+        dt_end_sec = None
+        if times_end_jd is not None:
+            dt_end_sec = (times_end_jd - self.times_jd[0]) * 24 * 3600
+        self.phases = rot_alm_z(
+            self.lmax, times=dt_sec, times_end=dt_end_sec, world=self.world
+        )
 
     @property
     def et_ref(self):
@@ -384,7 +455,8 @@ class Simulator(eqx.Module):
         -------
         vis : jax.Array
             The simulated antenna temperature as a function of time and
-            frequency. Shape is (N_times, N_freqs).
+            frequency, averaged over each integration window when
+            ``times_end_jd`` is set. Shape is (N_times, N_freqs).
 
         Notes
         -----
