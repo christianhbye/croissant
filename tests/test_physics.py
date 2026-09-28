@@ -545,6 +545,104 @@ class TestTimeDomain:
 
 
 # -----------------------------------------------------------------------
+# B2. Integration Windows
+# -----------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def structured_beam(freqs):
+    """cos^2(theta) * (1 + 0.5 cos(phi)) above the horizon, zero below,
+    so that the visibility varies in time."""
+    dummy = Beam(
+        jnp.ones((1, _NPIX)),
+        jnp.array([100.0]),
+        sampling="healpix",
+        niter=0,
+    )
+    theta = jnp.array(dummy.theta)
+    phi = jnp.array(dummy.phi)
+    pattern = jnp.cos(theta) ** 2 * (1.0 + 0.5 * jnp.cos(phi))
+    pattern = jnp.where(theta <= jnp.pi / 2, pattern, 0.0)
+    data = jnp.broadcast_to(pattern[None, :], (len(freqs), _NPIX))
+    return Beam(data, freqs, sampling="healpix", niter=0)
+
+
+def _make_window_sim(beam, sky, times_jd, times_end_jd, freqs, world):
+    return Simulator(
+        beam,
+        sky,
+        times_jd,
+        freqs,
+        0.0,
+        0.0,
+        world=world,
+        Tgnd=0.0,
+        times_end_jd=times_end_jd,
+    )
+
+
+class TestIntegrationWindows:
+    @pytest.mark.parametrize("world", ["earth", "moon"])
+    def test_full_day_window_is_daily_mean(
+        self,
+        freqs,
+        times_jd_earth,
+        times_jd_moon,
+        structured_beam,
+        gsm_sky,
+        world,
+    ):
+        """Integrating over one full sidereal day leaves only the m = 0
+        modes, which is the daily mean of the snapshots."""
+        times = times_jd_earth if world == "earth" else times_jd_moon
+        day_jd = sidereal_day[world] / 86400.0
+        # 24 equally spaced snapshots average every mode with
+        # 0 < |m| <= lmax < 24 to zero: their mean is the daily mean
+        snaps = _make_sim(structured_beam, gsm_sky, times, freqs, world)
+        daily_mean = snaps.sim().mean(axis=0)
+        win = _make_window_sim(
+            structured_beam,
+            gsm_sky,
+            times[:1],
+            times[:1] + day_jd,
+            freqs,
+            world,
+        )
+        np.testing.assert_allclose(win.sim()[0], daily_mean, rtol=1e-6)
+
+    @pytest.mark.parametrize("world", ["earth", "moon"])
+    def test_window_is_weighted_mean_of_its_parts(
+        self,
+        freqs,
+        times_jd_earth,
+        times_jd_moon,
+        structured_beam,
+        gsm_sky,
+        world,
+    ):
+        """Integrating over a window equals the duration-weighted mean
+        of integrating over the pieces it splits into. This is what
+        lets a record that sums several on-sky segments be built from
+        one sample per segment."""
+        times = times_jd_earth if world == "earth" else times_jd_moon
+        day_jd = sidereal_day[world] / 86400.0
+        a = times[0]
+        b = a + 0.1 * day_jd
+        c = a + 0.35 * day_jd
+        sim = _make_window_sim(
+            structured_beam,
+            gsm_sky,
+            jnp.array([a, a, b]),
+            jnp.array([c, b, c]),
+            freqs,
+            world,
+        )
+        vis = sim.sim()
+        parts = ((b - a) * vis[1] + (c - b) * vis[2]) / (c - a)
+        np.testing.assert_allclose(vis[0], parts, rtol=1e-9)
+
+
+# -----------------------------------------------------------------------
 # C. Spectral Behavior
 # -----------------------------------------------------------------------
 

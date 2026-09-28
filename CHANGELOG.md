@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Add integration windows (#90). `Simulator(..., times_end_jd=...)`
+  averages each sample over `[times_jd[i], times_end_jd[i]]` instead of
+  taking a snapshot at `times_jd[i]`, modeling the sky turning while a
+  spectrometer integrates. `rot_alm_z(..., times_end=...)` does the same
+  for phases built directly, so `polarized_convolve` and `multipair` get
+  it through the `phases` they take. The average is analytic, and exact
+  for a sky turning at a constant rate: each phase becomes its value at
+  the window midpoint times `sinc(m * dphi / 2)`, where `dphi` is the
+  rotation across the window. Windows may leave gaps between them, such
+  as the time a Dicke-switched receiver spends on its calibrators; a
+  record that sums several windows is their duration-weighted mean. With
+  windows, `times_jd` holds the window starts, so each sample's effective
+  time moves forward by half its window. The default `None` keeps
+  snapshots, and so does a zero-width window, so existing results are
+  unchanged.
 - **Bug fix (changes results):** Earth simulations at and near the
   geographic poles orient the beam correctly (#152).
   `rotations.rotmat_to_eulerZYZ` and `rotmat_to_eulerZYX` now take the

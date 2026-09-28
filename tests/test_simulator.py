@@ -229,3 +229,137 @@ def test_sim_dense_engine_matches_s2fft():
     grad_s2fft = jax.grad(loss)(sky_data, "s2fft")
     grad_dense = jax.grad(loss)(sky_data, "dense")
     np.testing.assert_allclose(grad_dense, grad_s2fft, rtol=1e-9, atol=1e-12)
+
+
+def test_rot_alm_z_zero_width_windows_are_snapshots():
+    """A window that ends where it starts integrates over no time, so it
+    must give the snapshot phases of ``times_end=None`` exactly."""
+    lmax = 8
+    times = jnp.array([500.0, 1100.0, 4100.0, 7700.0])
+    snap = simulator.rot_alm_z(lmax, times=times, world="earth")
+    win = simulator.rot_alm_z(
+        lmax, times=times, times_end=times, world="earth"
+    )
+    np.testing.assert_array_equal(win, snap)
+
+
+@pytest.mark.parametrize("world", ["earth", "moon"])
+def test_rot_alm_z_window_is_average_of_snapshots(world):
+    """Each windowed phase is the mean of the snapshot phases across its
+    window. The windows differ in width and have gaps between them, as
+    with Dicke switching."""
+    lmax = 16
+    day = sidereal_day[world]
+    start = 1000.0 + day * jnp.array([0.0, 0.1, 0.12, 0.4])
+    end = start + day * jnp.array([0.05, 0.01, 0.1, 0.08])
+    phases = simulator.rot_alm_z(lmax, times=start, times_end=end, world=world)
+
+    # brute force: midpoint rule over n snapshots per window
+    n = 4000
+    frac = (jnp.arange(n) + 0.5) / n
+    sub = start[:, None] + frac[None] * (end - start)[:, None]
+    phi = 2 * jnp.pi * (sub - start[0]) / day
+    emm = jnp.arange(-lmax, lmax + 1)
+    expected = jnp.exp(-1j * emm * phi[..., None]).mean(axis=1)
+    np.testing.assert_allclose(phases, expected, atol=1e-6)
+
+
+@pytest.mark.parametrize(
+    "kwargs, match",
+    [
+        # times_end needs explicit window starts
+        ({"N_times": 2, "delta_t": 60.0, "times_end": [60.0, 120.0]}, "times"),
+        # one end per start
+        ({"times": [0.0, 60.0], "times_end": [60.0]}, "shape"),
+        # windows cannot end before they start
+        ({"times": [0.0, 60.0], "times_end": [10.0, 50.0]}, "before"),
+    ],
+)
+def test_rot_alm_z_rejects_bad_windows(kwargs, match):
+    with pytest.raises(ValueError, match=match):
+        simulator.rot_alm_z(4, world="earth", **kwargs)
+
+
+def test_rot_alm_z_window_gradient_at_zero_width():
+    """At zero width, moving a window's end moves its centre at half the
+    rate, so d/d(end) of Re(phase) is -(m * pi / day) * sin(m * phi).
+    A naive sin(x) / x taper would give NaN here instead."""
+    lmax = 4
+    day = sidereal_day["earth"]
+    times = jnp.array([0.0, 3600.0])
+
+    def total(end):
+        phases = simulator.rot_alm_z(
+            lmax, times=times, times_end=end, world="earth"
+        )
+        return jnp.sum(phases.real)
+
+    grad = jax.grad(total)(times)
+    emm = np.arange(-lmax, lmax + 1)
+    phi1 = 2 * np.pi * 3600.0 / day
+    expected = [0.0, np.sum(-emm * np.pi / day * np.sin(emm * phi1))]
+    np.testing.assert_allclose(grad, expected, rtol=1e-12, atol=1e-20)
+
+
+def _healpix_moon_sim(times_jd, **kwargs):
+    """A small Moon simulator with a random beam and galactic sky."""
+    nside = 2
+    npix = 12 * nside**2
+    freqs = jnp.array([50.0, 100.0])
+    local = np.random.default_rng(1)
+    beam_data = jnp.asarray(local.standard_normal((freqs.size, npix))) ** 2
+    sky_data = jnp.asarray(local.standard_normal((freqs.size, npix))) ** 2
+    beam = Beam(beam_data, freqs, sampling="healpix", niter=1)
+    sky = Sky(sky_data, freqs, sampling="healpix", coord="galactic", niter=1)
+    return simulator.Simulator(
+        beam,
+        sky,
+        times_jd,
+        freqs,
+        0.0,
+        0.0,
+        world="moon",
+        Tgnd=0.0,
+        **kwargs,
+    )
+
+
+def test_simulator_zero_width_windows_are_snapshots():
+    """``times_end_jd == times_jd`` gives the output of
+    ``times_end_jd=None`` exactly."""
+    times_jd = jnp.linspace(2459580.5, 2459581.5, 4)
+    snap = _healpix_moon_sim(times_jd).sim()
+    win = _healpix_moon_sim(times_jd, times_end_jd=times_jd).sim()
+    np.testing.assert_array_equal(win, snap)
+
+
+def test_simulator_window_is_average_of_snapshots():
+    """Each windowed sample is the mean of snapshots across its window.
+    The windows have gaps between them, as with Dicke switching."""
+    start = 2459580.5 + jnp.array([0.0, 3.0, 4.0])  # JD
+    end = start + jnp.array([2.0, 0.5, 1.5])
+    win = _healpix_moon_sim(start, times_end_jd=end).sim()
+
+    # brute force: midpoint rule over n snapshots per window. The first
+    # window start leads the snapshots so both share a frame epoch.
+    n = 400
+    frac = (jnp.arange(n) + 0.5) / n
+    sub = start[:, None] + frac[None] * (end - start)[:, None]
+    snap = _healpix_moon_sim(jnp.concatenate([start[:1], sub.ravel()])).sim()
+    expected = snap[1:].reshape(start.size, n, -1).mean(axis=1)
+    np.testing.assert_allclose(win, expected, rtol=1e-5)
+
+
+@pytest.mark.parametrize(
+    "offset, match",
+    [
+        (jnp.array([0.1]), "shape"),  # one end per start
+        (jnp.array([0.1, -0.1]), "before"),  # ends before it starts
+    ],
+)
+def test_simulator_rejects_bad_windows(offset, match):
+    times_jd = jnp.array([2459580.5, 2459581.5])
+    with pytest.raises(ValueError, match=match):
+        _healpix_moon_sim(
+            times_jd, times_end_jd=times_jd[: offset.size] + offset
+        )
