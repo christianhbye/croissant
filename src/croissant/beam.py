@@ -1,13 +1,15 @@
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import s2fft
 
 from . import sphere
-from .horizon import _default_horizon
+from .horizon import _default_horizon, _horizon_in_beam_frame
 
 
 class Beam(sphere.SphBase):
     horizon: jax.Array  # visible fraction in [0, 1] per spatial sample
+    horizon_frame: str = eqx.field(static=True)
     beam_rot: jax.Array  # in degrees
     beam_tilt: jax.Array  # in degrees
 
@@ -22,11 +24,18 @@ class Beam(sphere.SphBase):
         niter=0,
         engine="auto",
         lmax=None,
+        horizon_frame="beam",
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
         coordinates and associated metadata. The beam must be defined
         on the grid specified by the `sampling` scheme.
+
+        Theta is colatitude from zenith. Phi is right-handed about the
+        zenith, from the beam's x axis towards its y axis. At zero
+        ``beam_rot`` the axes are East and North; positive ``beam_rot``
+        rotates clockwise as seen from above. A beam-grid direction has
+        compass azimuth ``A = 90 + beam_rot - degrees(phi)`` (mod 360).
 
         Parameters
         ----------
@@ -50,6 +59,9 @@ class Beam(sphere.SphBase):
             weight partially visible cells. Boolean masks are accepted
             unchanged. The weights apply to both the harmonic transform
             and the above-horizon integral used for the ground fraction.
+            For terrain, use ``horizon_frame="topocentric"`` so these
+            weights stay fixed to the ground. The compatibility default
+            keeps them in the beam frame, rotating with the antenna.
             If None, the horizon is at theta = 90 degrees with
             fractional boundary cells (half weight on an equatorial
             row or HEALPix pixel). See ``horizon_weights`` for custom
@@ -78,8 +90,27 @@ class Beam(sphere.SphBase):
         lmax : int or None
             Maximum spherical harmonic degree. For HEALPix data this may be
             lower than the default ``2 * nside``. Default is None.
+        horizon_frame : {"beam", "topocentric"}
+            Use ``"topocentric"`` for terrain. It keeps weights on the
+            fixed ground grid, whose phi=0 is East and phi=pi/2 is North.
+            Build terrain
+            heights from compass azimuth ``A = pi/2 - phi`` on that
+            grid, independent of ``beam_rot``. We counter-rotate the
+            mask into the beam frame using periodic linear longitude
+            interpolation (within latitude rings for HEALPix). This
+            preserves weights in [0, 1] but can soften sharp edges for
+            rotations between grid columns. ``horizon`` retains the
+            input weights; ``horizon_in_beam_frame`` gives the weights
+            actually applied. Tilt remains unsupported; a future tilt
+            must transform a ground-fixed mask in both theta and phi.
+            Default ``"beam"`` preserves existing behavior: blockage
+            rotates with the antenna. Use it for antenna-attached
+            obstructions or masks already counter-rotated by the caller.
 
         """
+        if horizon_frame not in {"beam", "topocentric"}:
+            raise ValueError("horizon_frame must be 'beam' or 'topocentric'.")
+        self.horizon_frame = horizon_frame
         super().__init__(
             data,
             freqs,
@@ -95,9 +126,23 @@ class Beam(sphere.SphBase):
         if horizon is None:
             horizon = _default_horizon(self.theta, self.sampling)
         self.horizon = jnp.asarray(horizon)
+        if horizon_frame == "topocentric":
+            jnp.broadcast_to(self.horizon, self.data.shape[1:])
 
         self.beam_rot = jnp.asarray(beam_rot)
         self.beam_tilt = jnp.asarray(beam_tilt)
+
+    @property
+    def horizon_in_beam_frame(self):
+        """Visibility weights applied at the current ``beam_rot``."""
+        return _horizon_in_beam_frame(
+            self.horizon,
+            self.horizon_frame,
+            self.beam_rot,
+            self.sampling,
+            self.data.shape[1:],
+            self.nside,
+        )
 
     def _compute_norm(self, use_horizon=True):
         """
@@ -127,7 +172,7 @@ class Beam(sphere.SphBase):
             )
 
         if use_horizon:
-            data = self.data * self.horizon[None]
+            data = self.data * self.horizon_in_beam_frame[None]
         else:
             data = self.data
 
@@ -183,7 +228,7 @@ class Beam(sphere.SphBase):
             pattern.
 
         """
-        data = self.data * self.horizon[None]  # mask out below-horizon part
+        data = self.data * self.horizon_in_beam_frame[None]
         alm = sphere.compute_alm(
             data,
             self.lmax,

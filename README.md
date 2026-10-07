@@ -23,6 +23,31 @@ Moreover, the time evolution of the simulation is very natural in this represent
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of proposed designs before choosing an antenna for an experiment.
 
+### Terrain horizons
+
+For a horizon fixed to the ground, **use `horizon_frame="topocentric"`**:
+
+```python
+beam = croissant.Beam(
+    data, frequencies, horizon=terrain_weights,
+    horizon_frame="topocentric", beam_rot=30,
+)
+```
+
+Supply boolean or fractional visibility weights on the ground's East/North
+grid (phi=0 is East, phi=pi/2 is North). For regular grids,
+`croissant.horizon_weights(theta, phi, theta_h)` builds fractional weights;
+terrain elevation against compass azimuth `A` corresponds to
+`theta_h = pi/2 - elevation(A)`, with `A = pi/2 - phi`, all in radians.
+The same frame option works on `PairStokesBeam` and supports supplied
+HEALPix weights. Longitude interpolation can soften sharp boundaries
+when the beam rotation falls between columns.
+
+The compatibility default, `horizon_frame="beam"`, rotates the mask with
+the antenna. Use it for antenna-attached blockage or masks you have
+already counter-rotated. See the [horizon example and frame conventions](
+docs/polarization.md#calibration-and-ground) for details.
+
 ### Dense low-band-limit transforms
 
 For repeated transforms at low spherical-harmonic band-limits, `Beam` and

@@ -261,6 +261,12 @@ from local North towards East, and is given in degrees (matching the
 scalar `Beam`). It acts on every response component through the same
 `exp(+i m beam_rot)` harmonic phase.
 
+The beam grid's phi is right-handed about zenith, from x towards y.
+At zero `beam_rot`, x is East and y is North. A beam-grid direction has
+compass azimuth `A = 90 + beam_rot - degrees(phi)` modulo 360. Thus phi
+and compass azimuth have opposite handedness; at `beam_rot=-90`, the
+beam's x axis points North and phi=90 degrees points West.
+
 ## Calibration and ground
 
 `PairStokesBeam` multiplies its response by horizon visibility weights
@@ -273,6 +279,46 @@ For regular grids, `croissant.horizon_weights(theta, phi, theta_h)` builds
 weights for a scalar horizon or a callable of longitude, in radians. It
 uses a linear-in-theta cell-edge approximation, not exact terrain pixel
 coverage; HEALPix terrain weights must be supplied by the caller.
+
+For terrain, **set `horizon_frame="topocentric"`** on `Beam` or
+`PairStokesBeam`. Supply the mask on the fixed East/North ground grid,
+independent of the antenna's `beam_rot`. For example, given a function
+`terrain_elevation(A)` of compass azimuth in radians:
+
+```python
+A = (jnp.pi / 2 - phi) % (2 * jnp.pi)  # North=0, East=pi/2
+weights = croissant.horizon_weights(
+    theta, phi, theta_h=jnp.pi / 2 - terrain_elevation(A)
+)
+beam = croissant.Beam(
+    data, freqs, horizon=weights,
+    horizon_frame="topocentric", beam_rot=30,
+)
+```
+
+The same keyword works on `PairStokesBeam`. The compatibility default
+`horizon_frame="beam"` keeps blockage attached to the antenna. Use that
+mode for antenna structures or masks already counter-rotated by the
+caller. Changing the default would alter existing simulations with
+azimuth-dependent masks and nonzero beam rotation; flat horizons are
+unaffected by this frame choice.
+
+For topocentric masks, Croissant samples the ground weights at
+`phi_ground = phi_beam - radians(beam_rot)`, interpolating periodically
+between longitude samples. For HEALPix it interpolates within each RING
+latitude; this resamples supplied weights without calculating terrain
+coverage of the true HEALPix pixel shapes. Interpolation keeps weights
+bounded but can soften sharp edges for rotations between grid columns.
+The input weights remain in `beam.horizon`, while
+`beam.horizon_in_beam_frame` exposes the weights used by the transform
+and by `Beam.compute_fgnd()`. These weights track changes to `beam_rot`,
+including JAX differentiation. Harmonic truncation does not remove the
+interpolation approximation; it can affect ground fractions and retained
+low-order coefficients too.
+
+Tilt remains unsupported. When tilt is added, a ground-fixed mask must
+be transformed in both theta and phi, or applied after rotating the beam
+into the topocentric frame. An attached mask would tilt with the antenna.
 
 `PairStokesBeam` applies no physical scale of its own. Its first luseepy
 consumer supplies open-circuit effective-length products in `m^2`, then applies

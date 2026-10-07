@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Add `horizon_frame="topocentric"` to `Beam` and `PairStokesBeam`
+  for ground-fixed terrain masks (#156). The recommended terrain mode
+  counter-rotates weights using the current `beam_rot`, with periodic
+  linear longitude interpolation (within each HEALPix latitude ring).
+  Both the scalar ground fraction and harmonic transforms use the
+  same weights. The compatibility default `"beam"` preserves existing
+  antenna-attached masking behavior. `horizon` retains the input-frame
+  weights; `horizon_in_beam_frame` exposes the weights actually applied.
+  Compass azimuth and phi handedness are documented. Off-grid rotations
+  can soften sharp mask boundaries; tilt is still unsupported.
 - **Bug fix (changes results):** `Beam` and `PairStokesBeam` now use
   fractional visibility at the default horizon (#155), including half
   weight on an equatorial row or HEALPix pixel instead of keeping it
