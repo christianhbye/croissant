@@ -14,7 +14,7 @@ import numpy as np
 
 from . import dense, rotations, sphere, utils
 from .constants import Y00
-from .horizon import _default_horizon
+from .horizon import _default_horizon, _horizon_in_beam_frame
 
 STOKES_IQUV = ("I", "Q", "U", "V")
 POLARIZATION_COMPONENTS = ("I", "V", "P_MINUS", "P_PLUS")
@@ -773,6 +773,20 @@ class PairStokesBeam(eqx.Module):
     equatorial rows or HEALPix pixels. Use ``horizon_weights`` for custom
     horizons on regular grids. All four response components receive the
     same weights before harmonic analysis.
+
+    For terrain, use ``horizon_frame="topocentric"``. This keeps
+    the supplied weights on the ground grid: phi=0 is East, phi=pi/2 is
+    North, and compass azimuth is ``A = pi/2 - phi`` in radians. The mask
+    is counter-rotated by ``beam_rot`` using periodic linear longitude
+    interpolation, within rings for HEALPix. Off-grid rotations can
+    soften sharp boundaries. ``horizon`` stores the supplied weights;
+    ``horizon_in_beam_frame`` gives those applied at the current rotation.
+    The beam grid itself has compass azimuth
+    ``A = pi/2 + radians(beam_rot) - phi``. Tilt is not implemented;
+    future tilt support must transform ground-fixed masks in theta too.
+    The compatibility default ``"beam"`` keeps blockage rotating with
+    the antenna; use it for attached obstructions or masks the caller
+    has already counter-rotated.
     """
 
     data: jax.Array
@@ -788,6 +802,7 @@ class PairStokesBeam(eqx.Module):
     visibility_definition: str = eqx.field(static=True)
     beam_rot: jax.Array
     horizon: jax.Array  # visible fraction in [0, 1] per spatial sample
+    horizon_frame: str = eqx.field(static=True)
     lmax: int = eqx.field(static=True)
     _L: int = eqx.field(static=True)
     _niter: int = eqx.field(static=True)
@@ -827,7 +842,11 @@ class PairStokesBeam(eqx.Module):
         beam_rot=0.0,
         niter=0,
         engine="auto",
+        horizon_frame="beam",
     ):
+        if horizon_frame not in {"beam", "topocentric"}:
+            raise ValueError("horizon_frame must be 'beam' or 'topocentric'.")
+        self.horizon_frame = horizon_frame
         convention = _normalize_convention(convention)
         self.stokes = _validate_stokes(stokes)
         data = jnp.asarray(data)
@@ -866,6 +885,8 @@ class PairStokesBeam(eqx.Module):
         if horizon is None:
             horizon = _default_horizon(self.theta, sampling)
         self.horizon = jnp.asarray(horizon)
+        if horizon_frame == "topocentric":
+            jnp.broadcast_to(self.horizon, self.data.shape[3:])
         nmap = int(self.data.shape[0]) * int(self.data.shape[1])
         (
             self._engines,
@@ -888,6 +909,18 @@ class PairStokesBeam(eqx.Module):
             requested=engine,
         )
 
+    @property
+    def horizon_in_beam_frame(self):
+        """Visibility weights applied at the current ``beam_rot``."""
+        return _horizon_in_beam_frame(
+            self.horizon,
+            self.horizon_frame,
+            self.beam_rot,
+            self.sampling,
+            self.data.shape[3:],
+            self.nside,
+        )
+
     @partial(jax.jit, static_argnames=("lmax",))
     def compute_alm(self, lmax=None):
         """Return calibrated pair-response alms up to ``lmax``."""
@@ -896,7 +929,7 @@ class PairStokesBeam(eqx.Module):
             raise ValueError(
                 f"lmax must lie in [0, {self.lmax}]; got {target_lmax}."
             )
-        data = self.data * self.horizon
+        data = self.data * self.horizon_in_beam_frame
         alm = _compute_response_dual_alm(
             data,
             target_lmax,

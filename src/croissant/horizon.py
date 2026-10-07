@@ -1,8 +1,11 @@
 """Fractional visibility at horizon boundaries."""
 
+from functools import lru_cache
+
 import jax
 import jax.numpy as jnp
 import numpy as np
+import s2fft
 
 
 def horizon_weights(theta, phi=None, theta_h=jnp.pi / 2):
@@ -88,3 +91,56 @@ def _default_horizon(theta, sampling):
     # Equatorial HEALPix pixels are symmetric about the equator. No
     # rectangular theta/phi cell model is assumed for other pixels.
     return jnp.where(theta == jnp.pi / 2, 0.5, (theta < jnp.pi / 2) * 1.0)
+
+
+@lru_cache(maxsize=32)
+def _healpix_ring_metadata(nside):
+    """Host constants for RING ordering; never cache JAX tracers."""
+    counts = np.array(
+        [
+            s2fft.sampling.s2_samples.nphi_ring(t, nside)
+            for t in range(4 * nside - 1)
+        ]
+    )
+    starts = np.concatenate(([0], np.cumsum(counts[:-1])))
+    return starts, counts
+
+
+def _horizon_in_beam_frame(
+    horizon, horizon_frame, beam_rot, sampling, spatial_shape, nside=None
+):
+    """Sample a ground-fixed mask at phi_ground = phi_beam - beam_rot.
+
+    Periodic linear interpolation preserves bounded visibility weights.
+    HEALPix interpolation stays within each RING latitude. This shifts
+    existing weights; it does not estimate terrain's true pixel coverage.
+    """
+    if horizon_frame == "beam":
+        return horizon
+    # Scalars and theta-only masks are invariant under azimuth rotation.
+    if horizon.ndim == 0 or horizon.shape[-1] == 1:
+        return horizon
+    horizon = jnp.broadcast_to(horizon, spatial_shape)
+    rotation = jnp.mod(beam_rot, 360.0)
+    if sampling == "healpix":
+        starts, counts = _healpix_ring_metadata(nside)
+        # Cache only O(nside) host metadata, not O(npix) index arrays.
+        starts = jnp.asarray(starts, dtype=jnp.int32)
+        counts = jnp.asarray(counts, dtype=jnp.int32)
+        pixels = jnp.arange(spatial_shape[0])
+        ring = jnp.searchsorted(starts, pixels, side="right") - 1
+        starts, counts = starts[ring], counts[ring]
+        position = pixels - starts
+        position = position - rotation * counts / 360.0
+        lower = jnp.floor(position).astype(jnp.int32)
+        fraction = position - jnp.floor(position)
+        left = starts + jnp.mod(lower, counts)
+        right = starts + jnp.mod(lower + 1, counts)
+        return (1 - fraction) * horizon[left] + fraction * horizon[right]
+    nphi = spatial_shape[-1]
+    position = jnp.arange(nphi) - rotation * nphi / 360.0
+    lower = jnp.floor(position).astype(jnp.int32)
+    fraction = position - jnp.floor(position)
+    left = jnp.mod(lower, nphi)
+    right = jnp.mod(lower + 1, nphi)
+    return (1 - fraction) * horizon[:, left] + fraction * horizon[:, right]
