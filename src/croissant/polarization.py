@@ -14,6 +14,7 @@ import numpy as np
 
 from . import dense, rotations, sphere, utils
 from .constants import Y00
+from .horizon import _default_horizon
 
 STOKES_IQUV = ("I", "Q", "U", "V")
 POLARIZATION_COMPONENTS = ("I", "V", "P_MINUS", "P_PLUS")
@@ -765,7 +766,13 @@ class PolarizedSky(eqx.Module):
 class PairStokesBeam(eqx.Module):
     """Complex pair-response maps.
 
-    Layout is pair, frequency, IQUV, spatial.
+    Layout is pair, frequency, IQUV, spatial. ``horizon`` contains visible
+    fractions in [0, 1], broadcastable to the spatial axes; explicit
+    boolean masks are accepted unchanged. The default is the upper
+    hemisphere with fractional boundary cells, including half weight on
+    equatorial rows or HEALPix pixels. Use ``horizon_weights`` for custom
+    horizons on regular grids. All four response components receive the
+    same weights before harmonic analysis.
     """
 
     data: jax.Array
@@ -780,7 +787,7 @@ class PairStokesBeam(eqx.Module):
     baseline_direction: str = eqx.field(static=True)
     visibility_definition: str = eqx.field(static=True)
     beam_rot: jax.Array
-    horizon: jax.Array
+    horizon: jax.Array  # visible fraction in [0, 1] per spatial sample
     lmax: int = eqx.field(static=True)
     _L: int = eqx.field(static=True)
     _niter: int = eqx.field(static=True)
@@ -857,9 +864,7 @@ class PairStokesBeam(eqx.Module):
         self.beam_rot = jnp.asarray(beam_rot)
         self._L = self.lmax + 1
         if horizon is None:
-            horizon = self.theta <= jnp.pi / 2
-            if sampling != "healpix":
-                horizon = horizon[:, None]
+            horizon = _default_horizon(self.theta, sampling)
         self.horizon = jnp.asarray(horizon)
         nmap = int(self.data.shape[0]) * int(self.data.shape[1])
         (
