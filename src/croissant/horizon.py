@@ -106,6 +106,50 @@ def _healpix_ring_metadata(nside):
     return starts, counts
 
 
+def rotate_horizon(horizon, delta_phi_deg, sampling, nside=None):
+    """Shift horizon visibility weights periodically in azimuth.
+
+    The shift is exact when ``delta_phi_deg`` lands on whole grid columns
+    (including every HEALPix ring quarter turn). Otherwise linear
+    interpolation is used and can soften sharp mask edges.
+
+    Scalars and theta-only masks (last axis length 1) are unchanged.
+    """
+    horizon = jnp.asarray(horizon)
+    # Scalars and theta-only masks are invariant under azimuth rotation.
+    if horizon.ndim == 0 or horizon.shape[-1] == 1:
+        return horizon
+    rotation = jnp.mod(jnp.asarray(delta_phi_deg), 360.0)
+    if sampling == "healpix":
+        if nside is None:
+            raise ValueError("nside is required for healpix horizon rotation.")
+        starts, counts = _healpix_ring_metadata(int(nside))
+        if horizon.shape[-1] != int(np.sum(counts)):
+            raise ValueError(
+                "healpix horizon length must match nside ring pixel count."
+            )
+        starts = jnp.asarray(starts, dtype=jnp.int32)
+        counts = jnp.asarray(counts, dtype=jnp.int32)
+        npix = horizon.shape[-1]
+        pixels = jnp.arange(npix)
+        ring = jnp.searchsorted(starts, pixels, side="right") - 1
+        starts, counts = starts[ring], counts[ring]
+        position = pixels - starts
+        position = position - rotation * counts / 360.0
+        lower = jnp.floor(position).astype(jnp.int32)
+        fraction = position - jnp.floor(position)
+        left = starts + jnp.mod(lower, counts)
+        right = starts + jnp.mod(lower + 1, counts)
+        return (1 - fraction) * horizon[..., left] + fraction * horizon[..., right]
+    nphi = horizon.shape[-1]
+    position = jnp.arange(nphi) - rotation * nphi / 360.0
+    lower = jnp.floor(position).astype(jnp.int32)
+    fraction = position - jnp.floor(position)
+    left = jnp.mod(lower, nphi)
+    right = jnp.mod(lower + 1, nphi)
+    return (1 - fraction) * horizon[..., left] + fraction * horizon[..., right]
+
+
 def _horizon_in_beam_frame(
     horizon, horizon_frame, beam_rot, sampling, spatial_shape, nside=None
 ):
@@ -121,26 +165,4 @@ def _horizon_in_beam_frame(
     if horizon.ndim == 0 or horizon.shape[-1] == 1:
         return horizon
     horizon = jnp.broadcast_to(horizon, spatial_shape)
-    rotation = jnp.mod(beam_rot, 360.0)
-    if sampling == "healpix":
-        starts, counts = _healpix_ring_metadata(nside)
-        # Cache only O(nside) host metadata, not O(npix) index arrays.
-        starts = jnp.asarray(starts, dtype=jnp.int32)
-        counts = jnp.asarray(counts, dtype=jnp.int32)
-        pixels = jnp.arange(spatial_shape[0])
-        ring = jnp.searchsorted(starts, pixels, side="right") - 1
-        starts, counts = starts[ring], counts[ring]
-        position = pixels - starts
-        position = position - rotation * counts / 360.0
-        lower = jnp.floor(position).astype(jnp.int32)
-        fraction = position - jnp.floor(position)
-        left = starts + jnp.mod(lower, counts)
-        right = starts + jnp.mod(lower + 1, counts)
-        return (1 - fraction) * horizon[left] + fraction * horizon[right]
-    nphi = spatial_shape[-1]
-    position = jnp.arange(nphi) - rotation * nphi / 360.0
-    lower = jnp.floor(position).astype(jnp.int32)
-    fraction = position - jnp.floor(position)
-    left = jnp.mod(lower, nphi)
-    right = jnp.mod(lower + 1, nphi)
-    return (1 - fraction) * horizon[:, left] + fraction * horizon[:, right]
+    return rotate_horizon(horizon, beam_rot, sampling, nside=nside)

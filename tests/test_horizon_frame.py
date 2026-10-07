@@ -6,7 +6,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from croissant import Beam, PairStokesBeam, horizon_weights, utils
+from croissant import Beam, PairStokesBeam, horizon_weights, rotate_horizon, utils
 
 
 def _fixture(sampling="mwss"):
@@ -105,8 +105,35 @@ def test_fractional_rotation_interpolates_periodically_within_rows(sampling):
                 period=2 * np.pi,
             )
     weights = beam.horizon_in_beam_frame
+    helper = rotate_horizon(mask, 13.0, sampling, nside=beam.nside)
     np.testing.assert_allclose(weights, expected, atol=1e-13)
+    np.testing.assert_allclose(helper, expected, atol=1e-13)
     assert jnp.all((weights >= 0) & (weights <= 1))
+
+
+@pytest.mark.parametrize("sampling", ["mwss", "healpix"])
+def test_quarter_turn_shift_is_exact_on_supported_grids(sampling):
+    _, mask, theta, _ = _fixture(sampling)
+    nside = 2 if sampling == "healpix" else None
+    rotated = rotate_horizon(mask, 90.0, sampling, nside=nside)
+    source = np.asarray(mask)
+    if sampling != "healpix":
+        expected = np.roll(source, source.shape[-1] // 4, axis=-1)
+    else:
+        expected = np.empty_like(source)
+        for t in np.unique(theta):
+            ring = theta == t
+            expected[ring] = np.roll(source[ring], np.count_nonzero(ring) // 4)
+    np.testing.assert_array_equal(rotated, expected)
+
+
+def test_rotate_horizon_keeps_scalar_and_theta_only_masks():
+    scalar = jnp.asarray(0.5)
+    theta_only = jnp.linspace(0, 1, 5)[:, None]
+    np.testing.assert_array_equal(rotate_horizon(scalar, 13.0, "mwss"), scalar)
+    np.testing.assert_array_equal(
+        rotate_horizon(theta_only, -47.0, "mwss"), theta_only
+    )
 
 
 def test_compass_handedness_keeps_north_obstruction_fixed():
