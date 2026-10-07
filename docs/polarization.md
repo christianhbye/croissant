@@ -291,8 +291,11 @@ weights = croissant.horizon_weights(
     theta, phi, theta_h=jnp.pi / 2 - terrain_elevation(A)
 )
 beam = croissant.Beam(
-    data, freqs, horizon=weights,
-    horizon_frame="topocentric", beam_rot=30,
+    data,
+    freqs,
+    horizon=weights,
+    horizon_frame="topocentric",
+    beam_rot=30,
 )
 ```
 

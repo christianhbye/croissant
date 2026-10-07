@@ -29,8 +29,11 @@ For a horizon fixed to the ground, **use `horizon_frame="topocentric"`**:
 
 ```python
 beam = croissant.Beam(
-    data, frequencies, horizon=terrain_weights,
-    horizon_frame="topocentric", beam_rot=30,
+    data,
+    frequencies,
+    horizon=terrain_weights,
+    horizon_frame="topocentric",
+    beam_rot=30,
 )
 ```
 
