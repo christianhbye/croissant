@@ -263,10 +263,16 @@ scalar `Beam`). It acts on every response component through the same
 
 ## Calibration and ground
 
-`PairStokesBeam` multiplies its response by a horizon mask before every
-analysis (default: the upper hemisphere, `theta <= pi/2`; pass `horizon=`
-to override), so below-horizon response is excluded from all four
-components' coefficients alike.
+`PairStokesBeam` multiplies its response by horizon visibility weights
+before every analysis. The default is the upper hemisphere with fractional
+boundary cells, including half weight on an equatorial row or HEALPix
+pixel, matching `Beam`. Pass `horizon=` to override: values in [0, 1]
+represent visible fractions, and explicit boolean masks keep their hard
+boundary. These weights apply to all four components' coefficients alike.
+For regular grids, `croissant.horizon_weights(theta, phi, theta_h)` builds
+weights for a scalar horizon or a callable of longitude, in radians. It
+uses a linear-in-theta cell-edge approximation, not exact terrain pixel
+coverage; HEALPix terrain weights must be supplied by the caller.
 
 `PairStokesBeam` applies no physical scale of its own. Its first luseepy
 consumer supplies open-circuit effective-length products in `m^2`, then applies

@@ -3,10 +3,11 @@ import jax.numpy as jnp
 import s2fft
 
 from . import sphere
+from .horizon import _default_horizon
 
 
 class Beam(sphere.SphBase):
-    horizon: jax.Array  # boolean mask for above/below horizon
+    horizon: jax.Array  # visible fraction in [0, 1] per spatial sample
     beam_rot: jax.Array  # in degrees
     beam_tilt: jax.Array  # in degrees
 
@@ -43,13 +44,16 @@ class Beam(sphere.SphBase):
             "mwss", which is a 1 deg equiangular sampling in theta and
             phi and includes the poles.
         horizon : array_like or None
-            The horizon mask: a boolean array specified for each
-            (theta, phi) direction (or pixel), with the same shape as
-            the last two (one for healpix) axes of data. It is an array
-            with True values for directions that are above the horizon
-            and False for directions that are below the horizon.
-            If None, it is assumed that the horizon is at
-            theta = 90 degrees.
+            Visible fractions in [0, 1] for each (theta, phi) direction
+            (or pixel), broadcastable to the spatial axes of data.
+            Zero blocks a sample, one keeps it, and fractional values
+            weight partially visible cells. Boolean masks are accepted
+            unchanged. The weights apply to both the harmonic transform
+            and the above-horizon integral used for the ground fraction.
+            If None, the horizon is at theta = 90 degrees with
+            fractional boundary cells (half weight on an equatorial
+            row or HEALPix pixel). See ``horizon_weights`` for custom
+            horizons on regular grids.
         beam_rot : float
             Azimuthal rotation of the beam in degrees. The rotation
             follows the astronomical azimuth convention: it is
@@ -89,9 +93,7 @@ class Beam(sphere.SphBase):
             raise NotImplementedError("Beam tilt is not yet implemented.")
 
         if horizon is None:
-            horizon = self.theta <= jnp.pi / 2
-            if self.sampling != "healpix":
-                horizon = jnp.expand_dims(horizon, axis=-1)  # add phi axis
+            horizon = _default_horizon(self.theta, self.sampling)
         self.horizon = jnp.asarray(horizon)
 
         self.beam_rot = jnp.asarray(beam_rot)

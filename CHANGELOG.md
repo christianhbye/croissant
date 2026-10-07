@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Bug fix (changes results):** `Beam` and `PairStokesBeam` now use
+  fractional visibility at the default horizon (#155), including half
+  weight on an equatorial row or HEALPix pixel instead of keeping it
+  entirely. This removes the downward boundary bias; ground fractions
+  and visibilities change for beams with response at the horizon.
+  Explicit boolean or fractional `horizon` arrays are unchanged. Pass
+  `horizon=theta <= pi/2` (with a trailing singleton phi axis on regular
+  grids) to reproduce the old default. New `croissant.horizon_weights`
+  builds linear-in-theta boundary weights on regular grids for scalar
+  or azimuth-dependent horizons in radians. Downstream code that builds
+  its own boolean mask must opt into this helper to get the correction.
 - Add integration windows (#90). `Simulator(..., times_end_jd=...)`
   averages each sample over `[times_jd[i], times_end_jd[i]]` instead of
   taking a snapshot at `times_jd[i]`, modeling the sky turning while a

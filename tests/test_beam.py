@@ -8,6 +8,7 @@ import s2fft
 
 from croissant import utils
 from croissant.beam import Beam
+from croissant.sphere import compute_alm
 
 rng = np.random.default_rng(seed=1)
 
@@ -82,6 +83,37 @@ def test_beam_custom_horizon(sampling):
     horizon = jnp.zeros(_NPIX, dtype=bool)  # no sky visible
     beam = _make_beam(sampling, _LMAX, horizon=horizon)
     assert jnp.all(beam.horizon == 0)
+
+
+@pytest.mark.parametrize("sampling", ["mwss", "healpix"])
+def test_fractional_horizon_weights_transform_and_ground_fraction(sampling):
+    """Fractional visibility acts on alms and ground pickup consistently."""
+    beam = _make_beam(sampling, 4, N_freqs=1)
+    weights = jnp.linspace(0.1, 0.9, beam.data.shape[1])
+    if sampling != "healpix":
+        weights = weights[:, None]
+    beam = Beam(beam.data, beam.freqs, sampling=sampling, horizon=weights)
+    weighted = Beam(
+        beam.data * weights,
+        beam.freqs,
+        sampling=sampling,
+        horizon=jnp.ones_like(weights),
+    )
+    np.testing.assert_array_equal(beam.horizon, weights)
+    np.testing.assert_allclose(
+        beam.compute_fgnd(),
+        1 - weighted.compute_norm() / beam.compute_norm(),
+        atol=1e-12,
+    )
+    expected = compute_alm(
+        beam.data * weights,
+        beam.lmax,
+        sampling,
+        nside=beam.nside,
+        reality=True,
+        engine="s2fft",
+    )
+    np.testing.assert_allclose(beam.compute_alm(), expected, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
