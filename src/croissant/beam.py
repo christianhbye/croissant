@@ -102,8 +102,9 @@ class Beam(sphere.SphBase):
             interpolation (within latitude rings for HEALPix). This
             preserves weights in [0, 1] but can soften sharp edges for
             rotations between grid columns. ``horizon`` retains the
-            input weights; ``horizon_in_beam_frame`` gives the weights
-            actually applied. Tilt remains unsupported; a future tilt
+            input weights (or those built from `horizon_theta`);
+            ``horizon_in_beam_frame`` gives the weights actually
+            applied. Tilt remains unsupported; a future tilt
             must transform a ground-fixed mask in both theta and phi.
             Default ``"beam"`` preserves existing behavior: blockage
             rotates with the antenna. Use it for antenna-attached

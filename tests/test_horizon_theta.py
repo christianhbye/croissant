@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from croissant import Beam, PairStokesBeam, horizon_weights, utils
+from croissant.horizon import _horizon_from_theta
 
 REGULAR = ["mw", "mwss", "dh", "gl"]
 
@@ -295,3 +296,14 @@ def test_numpy_profile_works_when_beam_built_under_jit():
 
     data = _data("mwss")
     np.testing.assert_allclose(jax.jit(ground)(data), ground(data), rtol=1e-12)
+
+
+def test_healpix_rings_must_repeat_exactly():
+    # Ring bands come from the distinct pixel colatitudes; a colatitude
+    # computed per pixel that differs in the last bit would add a ring.
+    theta = utils.generate_theta(4, "healpix", 2)
+    phi = utils.generate_phi(4, "healpix", 2)
+    theta = theta.copy()
+    theta[5] = np.nextafter(theta[5], np.pi)
+    with pytest.raises(ValueError, match="4 \\* nside - 1 rings"):
+        _horizon_from_theta(1.3, theta, phi, "healpix")

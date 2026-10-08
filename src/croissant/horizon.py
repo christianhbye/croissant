@@ -116,6 +116,13 @@ def _horizon_from_theta(theta_h, theta, phi, sampling):
     theta = np.asarray(theta)
     if sampling == "healpix":
         rings, ring = np.unique(theta, return_inverse=True)
+        nside = math.isqrt(theta.size // 12)
+        if rings.size != 4 * nside - 1:
+            raise ValueError(
+                f"Expected 4 * nside - 1 rings of equal colatitude for "
+                f"{theta.size} HEALPix pixels; found {rings.size} distinct "
+                "colatitudes."
+            )
         lower, upper = _band_edges(jnp.asarray(rings))
         lower, upper = lower[ring], upper[ring]
     else:

@@ -782,8 +782,9 @@ class PairStokesBeam(eqx.Module):
     North, and compass azimuth is ``A = pi/2 - phi`` in radians. The mask
     is counter-rotated by ``beam_rot`` using periodic linear longitude
     interpolation, within rings for HEALPix. Off-grid rotations can
-    soften sharp boundaries. ``horizon`` stores the supplied weights;
-    ``horizon_in_beam_frame`` gives those applied at the current rotation.
+    soften sharp boundaries. ``horizon`` stores the supplied weights (or
+    those built from ``horizon_theta``); ``horizon_in_beam_frame`` gives
+    those applied at the current rotation.
     The beam grid itself has compass azimuth
     ``A = pi/2 + radians(beam_rot) - phi``. Tilt is not implemented;
     future tilt support must transform ground-fixed masks in theta too.
