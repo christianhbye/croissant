@@ -5,7 +5,7 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from croissant import Beam, horizon_weights, utils
+from croissant import Beam, PairStokesBeam, horizon_weights, utils
 
 REGULAR = ["mw", "mwss", "dh", "gl"]
 
@@ -202,3 +202,37 @@ def test_eighty_degree_horizon_on_one_degree_grid():
 def test_invalid_horizon_theta_rejected(kwargs, match):
     with pytest.raises(ValueError, match=match):
         _beam("mwss", **kwargs)
+
+
+def _pair(sampling, **kwargs):
+    data = _data(sampling)
+    response = jnp.broadcast_to(data, (1, 1, 4) + data.shape[1:]) * (1 + 0.2j)
+    return PairStokesBeam(
+        response,
+        [50.0],
+        [(0, 0)],
+        sampling=sampling,
+        engine="s2fft",
+        **kwargs,
+    )
+
+
+@pytest.mark.parametrize("sampling", ["mwss", "healpix"])
+@pytest.mark.parametrize("horizon_theta", [1.3, _profile])
+def test_pair_beam_builds_the_same_horizon(sampling, horizon_theta):
+    kwargs = dict(
+        horizon_theta=horizon_theta,
+        horizon_frame="topocentric",
+        beam_rot=13,
+    )
+    pair = _pair(sampling, **kwargs)
+    beam = _beam(sampling, **kwargs)
+    np.testing.assert_array_equal(pair.horizon, beam.horizon)
+    np.testing.assert_array_equal(
+        pair.horizon_in_beam_frame, beam.horizon_in_beam_frame
+    )
+
+
+def test_pair_beam_rejects_both_horizons():
+    with pytest.raises(ValueError, match="not both"):
+        _pair("mwss", horizon=1.0, horizon_theta=1.3)

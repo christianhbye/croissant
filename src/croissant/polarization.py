@@ -14,7 +14,7 @@ import numpy as np
 
 from . import dense, rotations, sphere, utils
 from .constants import Y00
-from .horizon import _default_horizon, _horizon_in_beam_frame
+from .horizon import _horizon_in_beam_frame, _resolve_horizon
 
 STOKES_IQUV = ("I", "Q", "U", "V")
 POLARIZATION_COMPONENTS = ("I", "V", "P_MINUS", "P_PLUS")
@@ -770,8 +770,11 @@ class PairStokesBeam(eqx.Module):
     fractions in [0, 1], broadcastable to the spatial axes; explicit
     boolean masks are accepted unchanged. The default is the upper
     hemisphere with fractional boundary cells, including half weight on
-    equatorial rows or HEALPix pixels. Use ``horizon_weights`` for custom
-    horizons on regular grids. All four response components receive the
+    equatorial rows or HEALPix pixels. For a horizon given as an angle,
+    pass ``horizon_theta`` instead: a colatitude in radians, or a callable
+    of compass azimuth ``A`` (North = 0, clockwise) that needs
+    ``horizon_frame="topocentric"``. It behaves as on ``Beam``, including
+    HEALPix. All four response components receive the
     same weights before harmonic analysis.
 
     For terrain, use ``horizon_frame="topocentric"``. This keeps
@@ -843,6 +846,7 @@ class PairStokesBeam(eqx.Module):
         niter=0,
         engine="auto",
         horizon_frame="beam",
+        horizon_theta=None,
     ):
         if horizon_frame not in {"beam", "topocentric"}:
             raise ValueError("horizon_frame must be 'beam' or 'topocentric'.")
@@ -882,9 +886,14 @@ class PairStokesBeam(eqx.Module):
         self.visibility_definition = str(visibility_definition)
         self.beam_rot = jnp.asarray(beam_rot)
         self._L = self.lmax + 1
-        if horizon is None:
-            horizon = _default_horizon(self.theta, sampling)
-        self.horizon = jnp.asarray(horizon)
+        self.horizon = _resolve_horizon(
+            horizon,
+            horizon_theta,
+            horizon_frame,
+            self.theta,
+            self.phi,
+            sampling,
+        )
         if horizon_frame == "topocentric":
             jnp.broadcast_to(self.horizon, self.data.shape[3:])
         nmap = int(self.data.shape[0]) * int(self.data.shape[1])
