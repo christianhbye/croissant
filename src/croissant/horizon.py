@@ -73,15 +73,94 @@ def horizon_weights(theta, phi=None, theta_h=jnp.pi / 2):
     if theta_h.ndim == 1 and phi is not None:
         if theta_h.shape != phi.shape:
             raise ValueError("theta_h must have one value per phi.")
-    mid = (theta[:-1] + theta[1:]) / 2
+    lower, upper = _band_edges(theta)
+    return _band_weights(
+        lower[:, None], upper[:, None], theta_h.reshape(1, -1)
+    )
+
+
+def _band_edges(centers):
+    """Band edges halfway between increasing centers, 0 and pi at ends."""
+    mid = (centers[:-1] + centers[1:]) / 2
     lower = jnp.concatenate((jnp.zeros(1), mid))
     upper = jnp.concatenate((mid, jnp.full(1, jnp.pi)))
-    weights = jnp.clip(
-        (theta_h.reshape(1, -1) - lower[:, None]) / (upper - lower)[:, None],
-        0.0,
-        1.0,
-    )
-    return weights
+    return lower, upper
+
+
+def _band_weights(lower, upper, theta_h):
+    """Fraction of each [lower, upper] band at colatitudes below theta_h."""
+    return jnp.clip((theta_h - lower) / (upper - lower), 0.0, 1.0)
+
+
+def _check_colatitudes(theta_h):
+    """Reject concrete horizon colatitudes outside [0, pi]."""
+    if isinstance(theta_h, jax.core.Tracer):
+        return
+    values = np.asarray(theta_h)
+    if np.any(~np.isfinite(values)) or np.any((values < 0) | (values > np.pi)):
+        raise ValueError(
+            "horizon_theta must be finite colatitudes in radians within "
+            f"[0, pi]; got values from {values.min()} to {values.max()}. "
+            "Convert degrees with np.deg2rad."
+        )
+
+
+def _horizon_from_theta(theta_h, theta, phi, sampling):
+    """Weights on the ground grid for a scalar or compass-azimuth profile.
+
+    Each sample's band in theta has edges halfway between neighbouring
+    rows (regular grids) or RING colatitudes (HEALPix), as in
+    ``horizon_weights``. A callable is evaluated once at the compass
+    azimuth ``A = (pi/2 - phi) mod 2 pi`` of every column or pixel.
+    """
+    theta = np.asarray(theta)
+    if sampling == "healpix":
+        rings, ring = np.unique(theta, return_inverse=True)
+        lower, upper = _band_edges(jnp.asarray(rings))
+        lower, upper = lower[ring], upper[ring]
+    else:
+        lower, upper = _band_edges(jnp.asarray(theta))
+        lower, upper = lower[:, None], upper[:, None]
+    if callable(theta_h):
+        azimuth = jnp.mod(jnp.pi / 2 - jnp.asarray(phi), 2 * jnp.pi)
+        values = jnp.asarray(theta_h(azimuth))
+        if values.ndim > 0 and values.shape != azimuth.shape:
+            raise ValueError(
+                "A callable horizon_theta must return a scalar or one "
+                f"colatitude per azimuth, shape {azimuth.shape}; got "
+                f"shape {values.shape}."
+            )
+        theta_h = jnp.broadcast_to(values, azimuth.shape)
+    else:
+        theta_h = jnp.asarray(theta_h)
+    _check_colatitudes(theta_h)
+    return _band_weights(lower, upper, theta_h)
+
+
+def _resolve_horizon(
+    horizon, horizon_theta, horizon_frame, theta, phi, sampling
+):
+    """Initial horizon weights for Beam and PairStokesBeam."""
+    if horizon_theta is None:
+        if horizon is None:
+            return _default_horizon(theta, sampling)
+        return jnp.asarray(horizon)
+    if horizon is not None:
+        raise ValueError("Pass either horizon or horizon_theta, not both.")
+    if callable(horizon_theta):
+        if horizon_frame != "topocentric":
+            raise ValueError(
+                "A callable horizon_theta is a function of compass "
+                "azimuth, which is fixed to the ground; pass "
+                "horizon_frame='topocentric'."
+            )
+    elif np.ndim(horizon_theta) != 0:
+        raise ValueError(
+            "horizon_theta must be a scalar colatitude or a callable of "
+            "compass azimuth A, e.g. lambda A: np.interp(A, az, theta_h, "
+            "period=2 * np.pi)."
+        )
+    return _horizon_from_theta(horizon_theta, theta, phi, sampling)
 
 
 def _default_horizon(theta, sampling):
