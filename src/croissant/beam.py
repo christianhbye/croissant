@@ -1,7 +1,6 @@
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-import numpy as np
 import s2fft
 
 from . import sphere
@@ -142,7 +141,10 @@ class Beam(sphere.SphBase):
             lmax=lmax,
         )
 
-        if not np.isclose(beam_tilt, 0.0):
+        # Concrete under jit, so a Beam can be built inside a trace.
+        with jax.ensure_compile_time_eval():
+            tilted = not jnp.isclose(beam_tilt, 0.0)
+        if tilted:
             raise NotImplementedError("Beam tilt is not yet implemented.")
 
         self.horizon = _resolve_horizon(

@@ -65,6 +65,17 @@ def test_beam_tilt_raises(sampling):
         Beam(data, 1.0, sampling=sampling, beam_tilt=5.0)
 
 
+def test_beam_differentiable_through_zero_tilt():
+    """A zero beam_tilt traced by grad passes the tilt check."""
+    data = jnp.ones((1, _NPIX))
+
+    def total(tilt):
+        beam = Beam(data, 1.0, sampling="healpix", beam_tilt=tilt)
+        return beam.compute_norm()[0]
+
+    assert jnp.isfinite(jax.grad(total)(0.0))
+
+
 @pytest.mark.parametrize("sampling", ["mwss", "mw", "gl", "dh", "healpix"])
 def test_beam_default_horizon_shape(sampling):
     """Default horizon should match the beam data spatial shape."""

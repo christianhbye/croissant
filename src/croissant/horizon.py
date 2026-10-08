@@ -121,18 +121,24 @@ def _horizon_from_theta(theta_h, theta, phi, sampling):
     else:
         lower, upper = _band_edges(jnp.asarray(theta))
         lower, upper = lower[:, None], upper[:, None]
-    if callable(theta_h):
-        azimuth = jnp.mod(jnp.pi / 2 - jnp.asarray(phi), 2 * jnp.pi)
-        values = jnp.asarray(theta_h(azimuth))
-        if values.ndim > 0 and values.shape != azimuth.shape:
-            raise ValueError(
-                "A callable horizon_theta must return a scalar or one "
-                f"colatitude per azimuth, shape {azimuth.shape}; got "
-                f"shape {values.shape}."
-            )
-        theta_h = jnp.broadcast_to(values, azimuth.shape)
-    else:
-        theta_h = jnp.asarray(theta_h)
+    # Keep concrete values concrete when a beam is built inside jit, so
+    # NumPy callables work and the range check still runs; a traced
+    # horizon_theta stays traced.
+    with jax.ensure_compile_time_eval():
+        if callable(theta_h):
+            azimuth = jnp.mod(jnp.pi / 2 - jnp.asarray(phi), 2 * jnp.pi)
+            # A phi one ulp above pi/2 would otherwise give A = 2 pi.
+            azimuth = jnp.where(azimuth >= 2 * jnp.pi, 0.0, azimuth)
+            values = jnp.asarray(theta_h(azimuth))
+            if values.ndim > 0 and values.shape != azimuth.shape:
+                raise ValueError(
+                    "A callable horizon_theta must return a scalar or one "
+                    f"colatitude per azimuth, shape {azimuth.shape}; got "
+                    f"shape {values.shape}."
+                )
+            theta_h = jnp.broadcast_to(values, azimuth.shape)
+        else:
+            theta_h = jnp.asarray(theta_h)
     _check_colatitudes(theta_h)
     return _band_weights(lower, upper, theta_h)
 

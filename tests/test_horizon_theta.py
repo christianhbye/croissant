@@ -236,3 +236,62 @@ def test_pair_beam_builds_the_same_horizon(sampling, horizon_theta):
 def test_pair_beam_rejects_both_horizons():
     with pytest.raises(ValueError, match="not both"):
         _pair("mwss", horizon=1.0, horizon_theta=1.3)
+
+
+def test_azimuths_stay_below_one_turn_on_mwss_lmax_25():
+    # On this grid the North column's phi rounds one ulp above pi/2, so a
+    # bare mod gives A = 2 pi.
+    lmax = 25
+    theta = utils.generate_theta(lmax, "mwss")
+    phi = utils.generate_phi(lmax, "mwss")
+    data = jnp.ones((1, theta.size, phi.size))
+    seen = []
+
+    def profile(A):
+        seen.append(np.asarray(A))
+        return jnp.full_like(A, 1.3)
+
+    Beam(
+        data,
+        [50.0],
+        sampling="mwss",
+        engine="s2fft",
+        horizon_theta=profile,
+        horizon_frame="topocentric",
+    )
+    assert seen[0].min() >= 0 and seen[0].max() < 2 * np.pi
+
+
+def test_degrees_rejected_when_beam_built_under_jit():
+    data = _data("mwss")
+
+    def ground():
+        beam = Beam(
+            data, [50.0], sampling="mwss", engine="s2fft", horizon_theta=80.0
+        )
+        return beam.compute_fgnd()
+
+    with pytest.raises(ValueError, match=r"\[0, pi\]"):
+        jax.jit(ground)()
+
+
+def test_numpy_profile_works_when_beam_built_under_jit():
+    az = np.linspace(0, 2 * np.pi, 256, endpoint=False)
+    elev = 0.15 + 0.1 * np.sin(3 * az)
+
+    def profile(A):
+        return np.pi / 2 - np.interp(A, az, elev, period=2 * np.pi)
+
+    def ground(data):
+        beam = Beam(
+            data,
+            [50.0],
+            sampling="mwss",
+            engine="s2fft",
+            horizon_theta=profile,
+            horizon_frame="topocentric",
+        )
+        return beam.compute_fgnd()
+
+    data = _data("mwss")
+    np.testing.assert_allclose(jax.jit(ground)(data), ground(data), rtol=1e-12)
