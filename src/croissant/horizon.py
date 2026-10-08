@@ -1,5 +1,6 @@
 """Fractional visibility at horizon boundaries."""
 
+import math
 from functools import lru_cache
 
 import jax
@@ -107,30 +108,84 @@ def _healpix_ring_metadata(nside):
 
 
 def rotate_horizon(horizon, delta_phi_deg, sampling, nside=None):
-    """Shift horizon visibility weights periodically in azimuth.
+    """Shift horizon visibility weights periodically in longitude.
 
-    The shift is exact when ``delta_phi_deg`` lands on whole grid columns
-    (including every HEALPix ring quarter turn). Otherwise linear
-    interpolation is used and can soften sharp mask edges.
+    The output at longitude phi is the input at ``phi - delta_phi_deg``,
+    so every feature of the mask moves to larger phi by
+    ``delta_phi_deg``. Phi is the grid longitude of ``utils.generate_phi``
+    for the same sampling. On the ground grid of
+    ``horizon_frame="topocentric"``, phi = 0 is East and phi = 90 deg is
+    North, so compass azimuth is ``A = 90 deg - phi``. A mask written on
+    a grid with ``A = A0 - phi`` (the same handedness, phi = 0 pointing
+    to ``A0``) moves onto that grid with ``delta_phi_deg = 90 - A0``.
+    For example, a North-zero grid with phi = 90 deg West (``A = -phi``)
+    needs ``delta_phi_deg = 90``. A grid of opposite handedness must be
+    mirrored in phi first.
 
-    Scalars and theta-only masks (last axis length 1) are unchanged.
+    Parameters
+    ----------
+    horizon : array_like
+        Visibility weights with longitude (or, for HEALPix, the RING
+        pixel index) on the last axis. Leading axes are shifted
+        independently. A scalar, or an array whose last axis has length
+        one (a theta-only mask), is returned unchanged.
+    delta_phi_deg : float or jax.Array
+        Shift in degrees; positive moves features to larger phi. It may
+        be traced, and the result is differentiable with respect to it
+        between grid columns.
+    sampling : {"mw", "mwss", "dh", "gl", "healpix"}
+        Sampling scheme of the grid. Every scheme except HEALPix shifts
+        along a uniform longitude axis that starts at phi = 0.
+    nside : int or None
+        HEALPix resolution. Inferred from the last axis's length when
+        None; when given, it must match that length. Ignored for other
+        samplings.
+
+    Returns
+    -------
+    rotated : jax.Array
+        Shifted weights, same shape as ``horizon``. Values stay within
+        the input's range, so weights in [0, 1] stay in [0, 1].
+
+    Raises
+    ------
+    ValueError
+        For HEALPix, if the last axis is not a valid pixel count or does
+        not match ``nside``.
+
+    Notes
+    -----
+    Each sample takes the periodic linear interpolation of its two
+    neighbours along its longitude row (along its latitude ring for
+    HEALPix). The shift is exact when ``delta_phi_deg`` is a whole number
+    of columns: 90 deg is exact on the 1-degree MWSS grid (360 columns)
+    and on every HEALPix ring, but never on MW, DH or GL grids, whose
+    column count is odd. Otherwise it softens sharp edges, and the
+    effect accumulates when shifts are chained. This moves existing
+    weights; it does not estimate terrain's true pixel coverage.
     """
     horizon = jnp.asarray(horizon)
     # Scalars and theta-only masks are invariant under azimuth rotation.
     if horizon.ndim == 0 or horizon.shape[-1] == 1:
         return horizon
     rotation = jnp.mod(jnp.asarray(delta_phi_deg), 360.0)
+    npix = horizon.shape[-1]
     if sampling == "healpix":
-        if nside is None:
-            raise ValueError("nside is required for healpix horizon rotation.")
-        starts, counts = _healpix_ring_metadata(int(nside))
-        if horizon.shape[-1] != int(np.sum(counts)):
+        inferred = math.isqrt(npix // 12)
+        if 12 * inferred**2 != npix:
             raise ValueError(
-                "healpix horizon length must match nside ring pixel count."
+                f"A HEALPix horizon of {npix} pixels does not match "
+                "any nside (npix = 12 * nside**2)."
             )
+        if nside is not None and int(nside) != inferred:
+            raise ValueError(
+                f"A HEALPix horizon of {npix} pixels has nside "
+                f"{inferred}, not {nside}."
+            )
+        starts, counts = _healpix_ring_metadata(inferred)
+        # Cache only O(nside) host metadata, not O(npix) index arrays.
         starts = jnp.asarray(starts, dtype=jnp.int32)
         counts = jnp.asarray(counts, dtype=jnp.int32)
-        npix = horizon.shape[-1]
         pixels = jnp.arange(npix)
         ring = jnp.searchsorted(starts, pixels, side="right") - 1
         starts, counts = starts[ring], counts[ring]
@@ -140,14 +195,14 @@ def rotate_horizon(horizon, delta_phi_deg, sampling, nside=None):
         fraction = position - jnp.floor(position)
         left = starts + jnp.mod(lower, counts)
         right = starts + jnp.mod(lower + 1, counts)
-        return (1 - fraction) * horizon[..., left] + fraction * horizon[..., right]
-    nphi = horizon.shape[-1]
-    position = jnp.arange(nphi) - rotation * nphi / 360.0
-    lower = jnp.floor(position).astype(jnp.int32)
-    fraction = position - jnp.floor(position)
-    left = jnp.mod(lower, nphi)
-    right = jnp.mod(lower + 1, nphi)
-    return (1 - fraction) * horizon[..., left] + fraction * horizon[..., right]
+    else:
+        position = jnp.arange(npix) - rotation * npix / 360.0
+        lower = jnp.floor(position).astype(jnp.int32)
+        fraction = position - jnp.floor(position)
+        left = jnp.mod(lower, npix)
+        right = jnp.mod(lower + 1, npix)
+    rotated = (1 - fraction) * horizon[..., left]
+    return rotated + fraction * horizon[..., right]
 
 
 def _horizon_in_beam_frame(
