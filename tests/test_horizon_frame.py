@@ -6,7 +6,13 @@ import jax.numpy as jnp
 import numpy as np
 import pytest
 
-from croissant import Beam, PairStokesBeam, horizon_weights, utils
+from croissant import (
+    Beam,
+    PairStokesBeam,
+    horizon_weights,
+    rotate_horizon,
+    utils,
+)
 
 
 def _fixture(sampling="mwss"):
@@ -105,8 +111,68 @@ def test_fractional_rotation_interpolates_periodically_within_rows(sampling):
                 period=2 * np.pi,
             )
     weights = beam.horizon_in_beam_frame
+    helper = rotate_horizon(mask, 13.0, sampling, nside=beam.nside)
     np.testing.assert_allclose(weights, expected, atol=1e-13)
+    np.testing.assert_allclose(helper, expected, atol=1e-13)
     assert jnp.all((weights >= 0) & (weights <= 1))
+
+
+@pytest.mark.parametrize("sampling", ["mwss", "healpix"])
+def test_quarter_turn_shift_is_exact_on_supported_grids(sampling):
+    _, mask, theta, _ = _fixture(sampling)
+    # HEALPix nside is inferred from the pixel count.
+    rotated = rotate_horizon(mask, 90.0, sampling)
+    source = np.asarray(mask)
+    if sampling != "healpix":
+        expected = np.roll(source, source.shape[-1] // 4, axis=-1)
+    else:
+        expected = np.empty_like(source)
+        for t in np.unique(theta):
+            ring = theta == t
+            expected[ring] = np.roll(source[ring], np.count_nonzero(ring) // 4)
+    np.testing.assert_array_equal(rotated, expected)
+
+
+def test_rotate_horizon_keeps_scalar_and_theta_only_masks():
+    scalar = jnp.asarray(0.5)
+    theta_only = jnp.linspace(0, 1, 5)[:, None]
+    np.testing.assert_array_equal(rotate_horizon(scalar, 13.0, "mwss"), scalar)
+    np.testing.assert_array_equal(
+        rotate_horizon(theta_only, -47.0, "mwss"), theta_only
+    )
+
+
+def test_rotate_horizon_moves_north_zero_grid_onto_ground_grid():
+    # The docstring's example: on a North-zero grid (A = -phi), North
+    # is phi = 0; on croissant's ground grid (A = 90 - phi) it is 90.
+    _, _, theta, phi = _fixture()
+    north_zero = np.ones((theta.size, phi.size))
+    north_zero[:, 0] = 0.0
+    ground = rotate_horizon(north_zero, 90.0, "mwss")
+    blocked = phi[np.flatnonzero(np.asarray(ground)[0] == 0.0)]
+    np.testing.assert_allclose(blocked, [np.pi / 2])
+
+
+def test_rotate_horizon_shifts_leading_axes_independently():
+    _, mask, _, _ = _fixture()
+    stacked = jnp.stack((mask, 1 - mask))
+    rotated = rotate_horizon(stacked, 13.0, "mwss")
+    np.testing.assert_allclose(rotated[0], rotate_horizon(mask, 13.0, "mwss"))
+    np.testing.assert_allclose(
+        rotated[1], rotate_horizon(1 - mask, 13.0, "mwss")
+    )
+
+
+def test_rotate_horizon_checks_healpix_nside():
+    _, mask, _, _ = _fixture("healpix")
+    np.testing.assert_array_equal(
+        rotate_horizon(mask, 90.0, "healpix", nside=2),
+        rotate_horizon(mask, 90.0, "healpix"),
+    )
+    with pytest.raises(ValueError, match="has nside 2, not 4"):
+        rotate_horizon(mask, 90.0, "healpix", nside=4)
+    with pytest.raises(ValueError, match="does not match any nside"):
+        rotate_horizon(mask[:-1], 90.0, "healpix")
 
 
 def test_compass_handedness_keeps_north_obstruction_fixed():

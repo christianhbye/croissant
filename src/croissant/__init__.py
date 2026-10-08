@@ -21,7 +21,7 @@ from .dense import (
     precompute_dense_matrix,
 )
 from .engine_select import resolve_engine
-from .horizon import horizon_weights
+from .horizon import horizon_weights, rotate_horizon
 from .kernel import (
     clear_kernel_cache,
     kernel_cache_nbytes,

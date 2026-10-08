@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add `croissant.rotate_horizon(horizon, delta_phi_deg, sampling,
+  nside=None)`, the periodic longitude shift behind
+  `horizon_frame="topocentric"`, as public API (#159). Use it to move a
+  mask from another ground-grid convention onto croissant's (phi = 0
+  East); a North-zero grid with `A = -phi` needs `delta_phi_deg=90`.
+  Positive shifts move features to larger phi. It interpolates linearly
+  between columns (within rings for HEALPix), so it is exact only for
+  whole-column shifts. HEALPix `nside` is inferred from the pixel count.
+
 - Add `horizon_frame="topocentric"` to `Beam` and `PairStokesBeam`
   for ground-fixed terrain masks (#156). The recommended terrain mode
   counter-rotates weights using the current `beam_rot`, with periodic
