@@ -1,8 +1,12 @@
+import astropy.units as u
+import erfa
 import healpy as hp
 import jax.numpy as jnp
 import numpy as np
+import pytest
 import s2fft
 from astropy.coordinates import AltAz, EarthLocation
+from astropy.utils import iers
 from lunarsky import LunarTopo, MoonLocation, SkyCoord, Time
 
 from croissant import rotations
@@ -306,9 +310,9 @@ def test_rotmat_to_eulerZYZ_gimbal_lock_with_rounding():
 
 def test_earth_pole_topo_euler_angles_reproduce_frame_rotation():
     """
-    At the geographic poles the topocentric z axis is the CIRS pole, so
-    beta is ~20 arcsec. The Euler angles must still reproduce the
-    topocentric matrix to within its ~1e-4 aberration stretch; they were
+    At the geographic poles the topocentric z axis is within polar
+    motion (~0.5 arcsec) of the CIRS pole, so beta is ~0 or ~pi. The
+    Euler angles must still reproduce the topocentric matrix; they were
     133 degrees off at the North Pole (#152).
     """
     t0 = Time("2022-07-17 00:00:00")
@@ -322,9 +326,58 @@ def test_earth_pole_topo_euler_angles_reproduce_frame_rotation():
             _euler_to_rotmat(*eul),
             rot_mat,
             rtol=0,
-            atol=3e-4,
+            atol=1e-9,
             err_msg=f"lat={lat}",
         )
+
+
+@pytest.mark.parametrize("lat", [90.0, 79.41833, 45.0, 0.0, -90.0])
+def test_earth_topo_frame_is_the_earth_orientation_rotation(lat):
+    """
+    The topocentric -> simulation frame matrix is ENU -> ITRS -> CIRS
+    at t0: geodetic site axes, polar motion and the Earth rotation
+    angle, built here from erfa directly. It has no aberration.
+
+    Regression test for #163: astropy's AltAz -> FK5 transform
+    aberrates the basis vectors it is built from, and the rotation
+    nearest to that matrix was tilted 8-18 arcsec from this one.
+    """
+    t0 = Time("2022-07-17 00:00:00")
+    et = rotations.jd_to_et(t0.tdb.jd)
+    loc = EarthLocation(lon=-90.7475, lat=lat)
+    lon_r, lat_r = loc.lon.rad, loc.lat.rad
+    east = [-np.sin(lon_r), np.cos(lon_r), 0.0]
+    north = [
+        -np.sin(lat_r) * np.cos(lon_r),
+        -np.sin(lat_r) * np.sin(lon_r),
+        np.cos(lat_r),
+    ]
+    up = [
+        np.cos(lat_r) * np.cos(lon_r),
+        np.cos(lat_r) * np.sin(lon_r),
+        np.sin(lat_r),
+    ]
+    enu_to_itrs = np.column_stack([east, north, up])
+    xp, yp = iers.earth_orientation_table.get().pm_xy(t0)
+    gcrs_to_itrs = erfa.c2t06a(
+        t0.tt.jd1,
+        t0.tt.jd2,
+        t0.ut1.jd1,
+        t0.ut1.jd2,
+        xp.to_value(u.rad),
+        yp.to_value(u.rad),
+    )
+    expected = (
+        rotations.get_cirs_rotation_matrix(et) @ gcrs_to_itrs.T @ enu_to_itrs
+    )
+
+    topo = AltAz(obstime=t0, location=loc)
+    np.testing.assert_allclose(
+        rotations._rot_mat_to_earth_sim_frame(topo, et=et),
+        expected,
+        rtol=0,
+        atol=1e-12,
+    )
 
 
 def test_mepa_rotation_matrix():
