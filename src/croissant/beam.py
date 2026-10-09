@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import s2fft
 
 from . import sphere
-from .horizon import _default_horizon, _horizon_in_beam_frame
+from .horizon import _horizon_in_beam_frame, _resolve_horizon
 
 
 class Beam(sphere.SphBase):
@@ -25,6 +25,7 @@ class Beam(sphere.SphBase):
         engine="auto",
         lmax=None,
         horizon_frame="beam",
+        horizon_theta=None,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -64,8 +65,9 @@ class Beam(sphere.SphBase):
             keeps them in the beam frame, rotating with the antenna.
             If None, the horizon is at theta = 90 degrees with
             fractional boundary cells (half weight on an equatorial
-            row or HEALPix pixel). See ``horizon_weights`` for custom
-            horizons on regular grids.
+            row or HEALPix pixel). For a horizon given as an angle,
+            use `horizon_theta` instead; a ``theta <= theta_h`` mask
+            puts the edge up to half a row off.
         beam_rot : float
             Azimuthal rotation of the beam in degrees. The rotation
             follows the astronomical azimuth convention: it is
@@ -100,12 +102,32 @@ class Beam(sphere.SphBase):
             interpolation (within latitude rings for HEALPix). This
             preserves weights in [0, 1] but can soften sharp edges for
             rotations between grid columns. ``horizon`` retains the
-            input weights; ``horizon_in_beam_frame`` gives the weights
-            actually applied. Tilt remains unsupported; a future tilt
+            input weights (or those built from `horizon_theta`);
+            ``horizon_in_beam_frame`` gives the weights actually
+            applied. Tilt remains unsupported; a future tilt
             must transform a ground-fixed mask in both theta and phi.
             Default ``"beam"`` preserves existing behavior: blockage
             rotates with the antenna. Use it for antenna-attached
             obstructions or masks already counter-rotated by the caller.
+        horizon_theta : float, callable, or None
+            Horizon colatitude in radians, from which the beam builds
+            fractional visibility weights on its own grid, with the cell
+            model of ``horizon_weights``. A scalar applies at every
+            azimuth and works in either `horizon_frame`. A callable
+            ``theta_h(A)`` gives the horizon against compass azimuth
+            ``A`` in radians (North = 0, East = pi/2, clockwise seen from
+            above); it needs ``horizon_frame="topocentric"`` and is
+            called once, with a JAX array of ``A`` in [0, 2 pi) for each
+            ground-grid column or HEALPix pixel. Terrain elevation
+            ``elev(A)`` corresponds to ``theta_h = pi/2 - elev(A)``, e.g.
+            ``lambda A: np.pi / 2 - np.interp(A, az, elev,
+            period=2 * np.pi)``. On HEALPix each ring is treated as a
+            band in theta, an approximation confined to the boundary
+            rings; for exact pixel coverage, pass `horizon` weights
+            averaged down from a finer boolean mask (e.g. with
+            ``healpy.ud_grade``). The beam's band-limit smooths any edge
+            regardless. Mutually exclusive with `horizon`, which then
+            holds the built weights.
 
         """
         if horizon_frame not in {"beam", "topocentric"}:
@@ -120,12 +142,20 @@ class Beam(sphere.SphBase):
             lmax=lmax,
         )
 
-        if not jnp.isclose(beam_tilt, 0.0):
+        # Concrete under jit, so a Beam can be built inside a trace.
+        with jax.ensure_compile_time_eval():
+            tilted = not jnp.isclose(beam_tilt, 0.0)
+        if tilted:
             raise NotImplementedError("Beam tilt is not yet implemented.")
 
-        if horizon is None:
-            horizon = _default_horizon(self.theta, self.sampling)
-        self.horizon = jnp.asarray(horizon)
+        self.horizon = _resolve_horizon(
+            horizon,
+            horizon_theta,
+            horizon_frame,
+            self.theta,
+            self.phi,
+            self.sampling,
+        )
         if horizon_frame == "topocentric":
             jnp.broadcast_to(self.horizon, self.data.shape[1:])
 

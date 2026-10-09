@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Add `horizon_theta` to `Beam` and `PairStokesBeam` (#161): give the
+  horizon as a colatitude in radians, scalar or a callable of compass
+  azimuth `A` (North = 0, clockwise; needs `horizon_frame="topocentric"`),
+  and the beam builds fractional boundary weights on its own grid,
+  HEALPix included (ring bands, a cell-edge approximation). This replaces
+  hand-built `theta <= theta_h` masks, which keep the half-row edge bias
+  #155 removed from the default. Mutually exclusive with `horizon`;
+  degrees and out-of-range values are rejected. No change for existing
+  calls.
 - Add `croissant.rotate_horizon(horizon, delta_phi_deg, sampling,
   nside=None)`, the periodic longitude shift behind
   `horizon_frame="topocentric"`, as public API (#159). Use it to move a

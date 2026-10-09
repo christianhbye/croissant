@@ -25,26 +25,33 @@ Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can th
 
 ### Terrain horizons
 
-For a horizon fixed to the ground, **use `horizon_frame="topocentric"`**:
+For a horizon fixed to the ground, **use `horizon_frame="topocentric"`**.
+Give the horizon as an angle and let the beam build fractional weights on
+its own grid:
 
 ```python
 beam = croissant.Beam(
     data,
     frequencies,
-    horizon=terrain_weights,
+    # terrain elevation per compass azimuth (radians, North = 0, clockwise)
+    horizon_theta=lambda A: (
+        np.pi / 2 - np.interp(A, az, elev, period=2 * np.pi)
+    ),
     horizon_frame="topocentric",
     beam_rot=30,
 )
 ```
 
-Supply boolean or fractional visibility weights on the ground's East/North
-grid (phi=0 is East, phi=pi/2 is North). For regular grids,
-`croissant.horizon_weights(theta, phi, theta_h)` builds fractional weights;
-terrain elevation against compass azimuth `A` corresponds to
-`theta_h = pi/2 - elevation(A)`, with `A = pi/2 - phi`, all in radians.
-The same frame option works on `PairStokesBeam` and supports supplied
-HEALPix weights. Longitude interpolation can soften sharp boundaries
-when the beam rotation falls between columns.
+`horizon_theta` is a colatitude in radians: a scalar for a flat horizon
+(any frame), or a callable of compass azimuth `A` (topocentric frame).
+Prefer it to a `theta <= theta_h` mask, which puts the edge up to half a
+row off. It works on regular grids and HEALPix, and on `PairStokesBeam`.
+
+For arbitrary masks, pass `horizon=` weights in [0, 1] on the ground's
+East/North grid (phi=0 is East, phi=pi/2 is North, so `A = pi/2 - phi`).
+`croissant.rotate_horizon` moves a mask from another grid convention onto
+this one. Longitude interpolation can soften sharp boundaries when the
+beam rotation falls between columns.
 
 The compatibility default, `horizon_frame="beam"`, rotates the mask with
 the antenna. Use it for antenna-attached blockage or masks you have

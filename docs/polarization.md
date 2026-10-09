@@ -275,29 +275,31 @@ boundary cells, including half weight on an equatorial row or HEALPix
 pixel, matching `Beam`. Pass `horizon=` to override: values in [0, 1]
 represent visible fractions, and explicit boolean masks keep their hard
 boundary. These weights apply to all four components' coefficients alike.
-For regular grids, `croissant.horizon_weights(theta, phi, theta_h)` builds
-weights for a scalar horizon or a callable of longitude, in radians. It
-uses a linear-in-theta cell-edge approximation, not exact terrain pixel
-coverage; HEALPix terrain weights must be supplied by the caller.
+For a horizon given as an angle, pass `horizon_theta=` instead and the
+beam builds the weights on its own grid, HEALPix included: a colatitude
+in radians, or a callable of compass azimuth. It uses a linear-in-theta
+cell-edge approximation (rings as theta bands on HEALPix), not exact
+terrain pixel coverage. `croissant.horizon_weights(theta, phi, theta_h)`
+builds the same weights by hand on regular grids.
 
 For terrain, **set `horizon_frame="topocentric"`** on `Beam` or
-`PairStokesBeam`. Supply the mask on the fixed East/North ground grid,
-independent of the antenna's `beam_rot`. For example, given a function
-`terrain_elevation(A)` of compass azimuth in radians:
+`PairStokesBeam`. The horizon is then fixed to the East/North ground
+grid, independent of the antenna's `beam_rot`. For example, given a
+function `terrain_elevation(A)` of compass azimuth in radians (North=0,
+East=pi/2):
 
 ```python
-A = (jnp.pi / 2 - phi) % (2 * jnp.pi)  # North=0, East=pi/2
-weights = croissant.horizon_weights(
-    theta, phi, theta_h=jnp.pi / 2 - terrain_elevation(A)
-)
 beam = croissant.Beam(
     data,
     freqs,
-    horizon=weights,
+    horizon_theta=lambda A: jnp.pi / 2 - terrain_elevation(A),
     horizon_frame="topocentric",
     beam_rot=30,
 )
 ```
+
+An array `horizon=` mask goes on the same ground grid, where phi=0 is
+East and `A = pi/2 - phi`.
 
 The same keyword works on `PairStokesBeam`. The compatibility default
 `horizon_frame="beam"` keeps blockage attached to the antenna. Use that
