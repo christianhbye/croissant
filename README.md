@@ -23,6 +23,8 @@ Moreover, the time evolution of the simulation is very natural in this represent
 
 Overall, this makes CROISSANT a very fast visibility simulator. CROISSANT can therefore be used to simulate a large combination of antenna models and sky models - allowing for the exploration of a range of proposed designs before choosing an antenna for an experiment.
 
+What CROISSANT leaves out or approximates (aberration, the ionosphere, frame drift within long simulations and more) is listed with sizes in [`docs/unmodelled_effects.md`](docs/unmodelled_effects.md). Check it when chasing residuals.
+
 ### Terrain horizons
 
 For a horizon fixed to the ground, **use `horizon_frame="topocentric"`**.
