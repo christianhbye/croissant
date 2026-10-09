@@ -14,6 +14,9 @@ A PR that changes what croissant models updates this page.
 | Terms at 4, 8, ... cycles per sidereal day | [HEALPix aliasing](#healpix-azimuthal-aliasing) |
 | Error that grows through a long call | [frozen Earth frame](#earth-frame-frozen-at-the-first-time-sample), [lunar pole drift](#lunar-pole-drift-and-rate-within-a-call) |
 | Pointing or timing off by up to ~15″ or ~1 s for future dates | [IERS fallbacks](#earth-orientation-data) |
+| Residuals that follow the Sun, the Moon or a planet rather than the stars | [moving sources](#sources-that-move-against-the-stars) |
+| Frequency structure that tracks the horizon | [terrain diffraction](#terrain-diffraction) |
+| A bump at a bright compact source's transit | [sky model](#sky-model-content) |
 
 ## Earth frame and kinematics
 
@@ -113,16 +116,64 @@ at 0.13′, 0.52′ or 1.54′ (worst case over start dates in 2026).
 
 Aberration and the Doppler boost (above) apply on the Moon as well.
 
+## Sources that move against the stars
+
+Croissant turns a fixed sky map. The Sun (~1° per day against the stars), the
+Moon (~13° per day) and the planets move, so a sky map cannot carry them
+through a call: a body painted into the map at `times_jd[0]` drifts from its
+true position by that much. Their contribution adds linearly, so it can be
+computed outside croissant from the beam at each body's position at every
+time sample. The sizes below are for a beam of directivity 6 with the body
+near its peak (*estimates*).
+
+- **Sun:** the quiet corona, of order 1e6 K over a disk ~0.6° wide, gives of
+  order 1e4 Jy at 100 MHz, ~15 K. Solar bursts are orders of magnitude
+  brighter.
+- **Moon (Earth sites):** it blocks the sky behind it. Away from the Galactic
+  plane the 40 MHz sky is ~7,000–22,000 K (Haslam scaled with β = −2.55) and
+  the Moon ~230 K, so it removes 0.2–0.7 K. It also reflects terrestrial RFI.
+- **Planets:** Jupiter emits decametric bursts below ~40 MHz.
+- **Earth (lunar sites):** from the near side the Earth is radio-bright (RFI)
+  and stays near one point of the local sky, so it turns with neither the
+  stars nor croissant's sky.
+
 ## Physics outside croissant's scope
+
+### Atmosphere
 
 - **Ionosphere** (Earth): refraction, absorption and emission, each scaling
   roughly as ν⁻² and varying with time. Not modelled; size not measured here.
 - **Tropospheric refraction** (Earth): about 0.5° at the horizon and zero at
   the zenith (*estimate*). Not modelled. Astropy's `AltAz` leaves it out too
   unless given a pressure.
-- **Ground:** a uniform temperature `Tgnd` behind a horizon mask, with
-  fractional weights at the edge (#155) and terrain through `horizon_theta`
-  (#161) or `horizon`. No ground reflection and no emissivity structure.
+
+### Ground
+
+A uniform temperature `Tgnd` behind a horizon mask, with fractional weights
+at the edge (#155) and terrain through `horizon_theta` (#161) or `horizon`.
+No ground reflection and no emissivity structure.
+
+### Terrain diffraction
+
+Croissant's horizon is geometric: sky above it counts fully and sky below it
+not at all, with fractional weights only for cells the horizon crosses. A
+real ridge diffracts. In the knife-edge model (ITU-R P.526), a ridge at
+distance `d` sets the angular scale `θ_F = sqrt(λ / 2d)`: 3.5° at 40 MHz and
+2.2° at 100 MHz for a ridge 1 km away, 1.1° and 0.7° at 10 km (*estimate*).
+At the geometric edge the sky is down 6 dB, and θ_F below it 14 dB. Above the
+edge the sky ripples by up to +1.4 dB out to ~2θ_F.
+
+- **Signature:** frequency structure that tracks the horizon. θ_F scales as
+  ν^(−1/2), so the effective horizon moves with frequency, which a geometric
+  mask cannot do. That matters for global-signal work.
+- **Status:** not modelled.
+
+### Sky model content
+
+Bright compact sources such as Cas A and Cyg A are in maps like Haslam only
+at the map's resolution and with the map's spectral model, which can differ
+from their own spectra; Cas A also fades over time. A residual at such a
+source's transit points at the sky model, not at croissant.
 
 ## Numerical effects that can look physical
 
@@ -132,8 +183,9 @@ HEALPix's polar rings have 4 pixels, so a function of θ alone picks up
 m = 4k modes, which then turn with the sky. A beam symmetric about the zenith,
 at either pole on an nside 8 grid, varied by 1.1e-5 to 3.0e-5 (`1 + cos θ`)
 and 7.7e-5 to 1.1e-4 (`cos⁴ θ`, upper hemisphere) of its visibility over a
-day. The physics test for this case (#164) uses an MWSS grid and sees 3e-8
-to 7e-8, the polar-motion level.
+day. The physics test for this case,
+`TestBeamProperties::test_zenith_symmetric_beam_at_a_pole_sees_a_constant_sky`,
+uses an MWSS grid and sees 3e-8 to 7e-8, the polar-motion level.
 
 - **Signature:** terms at 4, 8, ... cycles per sidereal day.
 - **Avoid:** use MWSS or another equiangular sampling when a result depends
