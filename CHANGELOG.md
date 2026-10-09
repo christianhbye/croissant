@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add `docs/unmodelled_effects.md`, a list of what croissant leaves out or
+  approximates (aberration, Doppler boost, frame bias, frame drift within a
+  call, IERS fallbacks, lunar pole drift #149, ionosphere, ground, HEALPix
+  aliasing), with sizes, for chasing residuals.
 - **Bug fix (changes results):** Earth simulations put the beam in the
   simulation frame with a pure rotation (#163). The topocentric matrix
   came from astropy's AltAz -> FK5 transform, which applies annual
