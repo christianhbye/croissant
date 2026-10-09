@@ -245,6 +245,17 @@ class Simulator(eqx.Module):
             simulates snapshots, and so does ``times_end_jd`` equal to
             ``times_jd``.
 
+        Notes
+        -----
+        On Earth the beam enters the simulation frame through the
+        Earth's orientation alone: the site's axes, polar motion and
+        the Earth rotation angle. croissant models no aberration, so
+        the sky sits at its catalog positions rather than where annual
+        aberration moves it, up to 20.5'' toward the Earth's direction
+        of motion. References built on astropy's AltAz frame include
+        it; in the MIST comparison of #163, at two near-polar sites,
+        that was a 0.5 K offset at 40 MHz, steady over LST.
+
         """
         # Coerce before comparing: jnp.allclose rejects a plain list,
         # so passing one died inside the agreement check rather than

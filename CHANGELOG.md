@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Bug fix (changes results):** Earth simulations put the beam in the
+  simulation frame with a pure rotation (#163). The topocentric matrix
+  came from astropy's AltAz -> FK5 transform, which applies annual
+  aberration (~1e-4, not a rotation), and the nearest rotation that #152
+  took from it kept a tilt of 8-18'' that depends on site and date. At
+  the geographic poles the zenith sat ~10'' off the spin axis, so an
+  azimuthally symmetric beam saw a 24-hour term: 0.32 K at 40 MHz for
+  the MIST dipole on Haslam. The matrix is now built from the Earth's
+  orientation alone (site axes, polar motion and Earth rotation angle
+  from astropy's IERS data, then CIRS), which matches erfa's `c2t06a`
+  to 1e-12. Beam orientations at every Earth site shift by up to ~18''.
+  croissant models no aberration, now documented in `Simulator`;
+  references built on astropy's AltAz frame include it. Moon
+  simulations are unchanged.
 - **Bug fix (changes results):** `rotations.rotmat_to_eulerZYZ` keeps
   the direction of tilts within 6.5'' of `beta = pi`. That gimbal-lock
   check used numpy's default relative tolerance, unlike the absolute

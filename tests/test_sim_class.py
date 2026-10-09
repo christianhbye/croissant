@@ -474,8 +474,9 @@ def test_earth_zenith_tracks_the_sky_through_a_long_call(coord, astropy_frame):
     Rotating time about the J2000 pole instead of the Earth's spin
     axis walks that zenith away from the truth, by ~17' twelve hours
     in. Putting the beam and the sky in different frames offsets it
-    by up to ~9' from the first sample. Annual aberration, which a
-    rigid rotation cannot follow, bounds what is left at ~40''.
+    by up to ~9' from the first sample. What is left is annual
+    aberration, up to 20.5'', which astropy applies and croissant does
+    not model (#163).
     """
     L = 4
     freqs = jnp.array([75.0])
@@ -556,8 +557,7 @@ def test_earth_frame_change_leaves_the_first_sample_unchanged():
     CIRS at ``times_jd[0]`` may change only later samples. Here the
     first sample is rebuilt with beam and sky both in J2000. Pairing the
     CIRS beam with a J2000 sky instead shifts it by ~3e-3 of the
-    visibility scale; the Euler fit to astropy's slightly non-orthogonal
-    topocentric matrix leaves ~2e-7.
+    visibility scale; with both in the same frame it agrees to rounding.
 
     Later samples do change, but not monotonically: the frame error
     angle grows, while its effect follows the sky gradient under the
@@ -606,5 +606,47 @@ def test_earth_frame_change_leaves_the_first_sample_unchanged():
         np.asarray(vis_j2000.real),
         vis[0],
         rtol=0,
-        atol=1e-5 * np.abs(vis).max(),
+        atol=1e-12 * np.abs(vis).max(),
+    )
+
+
+@pytest.mark.parametrize("lat", [90.0, -90.0])
+def test_axisymmetric_beam_at_a_pole_sees_a_constant_sky(lat):
+    """At a geographic pole the sky turns about the zenith, so a beam
+    symmetric about the zenith sees the same sky all day.
+
+    Regression test for #163. The topocentric frame kept a tilt of the
+    order of the 20'' annual aberration that astropy's AltAz transform
+    applies, 8-12'' here, which made this visibility vary by 1.3e-6 to
+    2.1e-6 of itself over the day. What is left is polar motion: the
+    Earth turns about a pole ~0.5'' from the geographic one, which
+    varies it by 3e-8 to 7e-8.
+
+    The beam is sampled on MWSS rings, whose 2L azimuth samples keep a
+    function of theta at m = 0. A HEALPix beam gains m = 4k modes from
+    the four-pixel polar rings, which turn with the sky.
+    """
+    L = 17
+    theta = s2fft.sampling.s2_samples.thetas(L=L, sampling="mwss")
+    phi = s2fft.sampling.s2_samples.phis_equiang(L=L, sampling="mwss")
+    tt, _ = np.meshgrid(theta, phi, indexing="ij")
+    freqs = jnp.array([50.0])
+    sky_rng = np.random.default_rng(163)
+    beam = Beam(
+        jnp.asarray(np.clip(np.cos(tt), 0.0, None) ** 8)[None],
+        freqs,
+        sampling="mwss",
+    )
+    sky = Sky(
+        jnp.asarray(10.0 + sky_rng.standard_normal((1, *tt.shape))),
+        freqs,
+        sampling="mwss",
+        coord="galactic",
+    )
+    sim = Simulator(
+        beam, sky, _TIMES_JD["earth"], freqs, 0.0, lat, world="earth"
+    )
+    vis = np.asarray(sim.sim())[:, 0]
+    np.testing.assert_allclose(
+        vis, vis[0], rtol=0, atol=3e-7 * np.abs(vis).max()
     )

@@ -5,7 +5,7 @@ import jax
 import numpy as np
 import s2fft
 import spiceypy as spice
-from astropy.coordinates import AltAz, SkyCoord
+from astropy.coordinates import CIRS, ITRS, AltAz, SkyCoord
 from lunarsky import LunarTopo
 
 from .spice_utils import furnish_lunar_kernels
@@ -113,6 +113,14 @@ def get_rot_mat(from_frame, to_frame, et=None):
     -------
     rmat : np.ndarray
         The rotation matrix.
+
+    Notes
+    -----
+    The matrix holds the images of the three basis vectors under
+    astropy's transform. For an AltAz frame that transform applies
+    annual aberration, so the matrix is off a rotation by ~1e-4. The
+    Earth ``Simulator`` builds its topocentric frame with
+    ``_rot_mat_altaz_to_gcrs`` instead (#163).
 
     """
     try:
@@ -414,10 +422,52 @@ def get_cirs_rotation_matrix(et=0.0):
     Notes
     -----
     The matrix is IAU 2006/2000A GCRS to CIRS. FK5/J2000 is treated as
-    GCRS; the 23 mas frame bias between them is negligible here.
+    GCRS; astropy's FK5 is 33 mas from it, negligible here.
 
     """
     return np.array(erfa.c2i06a(2451545.0, et / 86400.0))
+
+
+def _rot_mat_altaz_to_gcrs(topo):
+    """
+    Compute the rotation matrix from an AltAz frame to GCRS at the
+    frame's observation time.
+
+    The matrix is Earth orientation only: ENU (x=East, y=North, z=Up
+    along the geodetic vertical, as in ``get_rot_mat``) -> ITRS from the
+    site's longitude and latitude, ITRS -> CIRS from the Earth rotation
+    angle and polar motion in astropy's IERS data, and CIRS -> GCRS.
+    ``get_rot_mat(topo, "fk5")`` instead pushes basis vectors through
+    astropy's observed-frame transform, which applies annual aberration
+    (~1e-4) and is not a rotation (#163).
+
+    Parameters
+    ----------
+    topo : astropy.coordinates.AltAz
+        The topocentric frame, with ``location`` and ``obstime`` set.
+
+    Returns
+    -------
+    rmat : np.ndarray
+        The 3x3 rotation matrix from ``topo`` to GCRS.
+
+    """
+    lon = topo.location.lon.rad
+    lat = topo.location.lat.rad
+    sin_lon, cos_lon = np.sin(lon), np.cos(lon)
+    sin_lat, cos_lat = np.sin(lat), np.cos(lat)
+    # columns: East, North, Up in ITRS
+    enu_to_itrs = np.array(
+        [
+            [-sin_lon, -sin_lat * cos_lon, cos_lat * cos_lon],
+            [cos_lon, -sin_lat * sin_lon, cos_lat * sin_lon],
+            [0.0, cos_lat, sin_lat],
+        ]
+    )
+    t = topo.obstime
+    itrs_to_cirs = get_rot_mat(ITRS(obstime=t), CIRS(obstime=t))
+    gcrs_to_cirs = get_cirs_rotation_matrix(jd_to_et(t.tdb.jd))
+    return gcrs_to_cirs.T @ itrs_to_cirs @ enu_to_itrs
 
 
 def _rot_mat_to_earth_sim_frame(from_frame, et=None):
@@ -428,12 +478,17 @@ def _rot_mat_to_earth_sim_frame(from_frame, et=None):
     Parameters
     ----------
     from_frame : str or astropy frame
-        The source coordinate frame.
+        The source coordinate frame. An AltAz frame goes through
+        ``_rot_mat_altaz_to_gcrs``, so the matrix is a pure rotation
+        without aberration; other frames go through ``get_rot_mat``.
     et : float or None
         The reference epoch as SPICE ephemeris time (seconds past
         J2000). If given, the simulation frame is CIRS at that epoch,
         composed as frame -> FK5/J2000 -> CIRS. If None, it is
-        FK5/J2000.
+        FK5/J2000. GCRS is taken as FK5/J2000, as in
+        ``get_cirs_rotation_matrix``. An AltAz frame lands in GCRS
+        while skies enter through astropy's FK5, so beam and sky are
+        offset by those 33 mas.
 
     Returns
     -------
@@ -442,7 +497,10 @@ def _rot_mat_to_earth_sim_frame(from_frame, et=None):
         frame.
 
     """
-    rmat = get_rot_mat(from_frame, "fk5")
+    if isinstance(from_frame, AltAz):
+        rmat = _rot_mat_altaz_to_gcrs(from_frame)
+    else:
+        rmat = get_rot_mat(from_frame, "fk5")
     if et is not None:
         rmat = get_cirs_rotation_matrix(et) @ rmat
     return rmat
