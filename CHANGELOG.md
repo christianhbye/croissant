@@ -262,6 +262,49 @@
   it outlives the s2fft pin, and is itself pinned against scipy and the
   Goldberg conjugation relation.
 
+## [5.3.0](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.1...croissant-sim-v5.3.0) (2026-10-09)
+
+
+### Features
+
+* add a precomputed-kernel SHT engine and automatic engine selection ([#136](https://github.com/christianhbye/croissant/issues/136)) ([eb392f9](https://github.com/christianhbye/croissant/commit/eb392f9a2f0e6f0eac3658d624ccb6ef78ea0baf))
+* add dense spherical harmonic engine ([#123](https://github.com/christianhbye/croissant/issues/123)) ([4de2852](https://github.com/christianhbye/croissant/commit/4de2852ad8dd391e9725e35cc8e067b610e3cb7c))
+* average samples over integration windows ([30f984c](https://github.com/christianhbye/croissant/commit/30f984c91edf688e5efbc56bee9f5ae607ee80e0)), closes [#90](https://github.com/christianhbye/croissant/issues/90)
+* build horizon weights from horizon_theta ([#161](https://github.com/christianhbye/croissant/issues/161)) ([#162](https://github.com/christianhbye/croissant/issues/162)) ([f0d741b](https://github.com/christianhbye/croissant/commit/f0d741bb371dfd477bc8c0aae524a129dd383a97))
+* expose public `rotate_horizon` API for azimuth mask shifts (incl. HEALPix ring handling) ([#160](https://github.com/christianhbye/croissant/issues/160)) ([771c66b](https://github.com/christianhbye/croissant/commit/771c66bee6f5b18fdb60b84d4d9fe43cff278225))
+* full-Stokes polarization support ([#124](https://github.com/christianhbye/croissant/issues/124)) ([d4736db](https://github.com/christianhbye/croissant/commit/d4736db649176d24b3a97aeccf47bc95518d39bf))
+* report polarized visibilities in sky-temperature units ([#144](https://github.com/christianhbye/croissant/issues/144)) ([ab915fe](https://github.com/christianhbye/croissant/commit/ab915fe411c789f670a52db80959aeb233a95de7))
+* **scripts:** let a consumer's project live in a subdirectory ([3372d51](https://github.com/christianhbye/croissant/commit/3372d5102756eabf824d9d3107a7ef03f90338a8))
+
+
+### Bug Fixes
+
+* analyze polarized duals at their physical spin ([#131](https://github.com/christianhbye/croissant/issues/131)) ([d98ed7d](https://github.com/christianhbye/croissant/commit/d98ed7d2195c4dee7ae9f4e798e675377c0cb545))
+* build the Earth topocentric frame from Earth orientation ([#163](https://github.com/christianhbye/croissant/issues/163)) ([50f5b14](https://github.com/christianhbye/croissant/commit/50f5b14503ac42eb4768a10f730007882690a612))
+* condition both Euler splits at gimbal lock ([58bf56e](https://github.com/christianhbye/croissant/commit/58bf56e8af77a5a07fd0669ec6ba38900549e50c))
+* furnish SPICE lunar kernels explicitly for lunarsky &gt;= 1.0 ([#127](https://github.com/christianhbye/croissant/issues/127)) ([1218a49](https://github.com/christianhbye/croissant/commit/1218a494797c738906810195849a3a0224fe1a38))
+* keep the tilt direction of rotations near beta = pi ([2cb79b8](https://github.com/christianhbye/croissant/commit/2cb79b822bdc0aa37e58a8027504c911619e203c))
+* reject complex input under reality=True and default it off ([529b874](https://github.com/christianhbye/croissant/commit/529b874e914ca049dda7e888150f43c159502a3e))
+* support ground-fixed horizon masks ([432a3cb](https://github.com/christianhbye/croissant/commit/432a3cbcb79a9e4904e05169b089529f28874f8f))
+* take Euler angles from the nearest rotation ([#152](https://github.com/christianhbye/croissant/issues/152)) ([710c59e](https://github.com/christianhbye/croissant/commit/710c59ec8ce3b126d715b9c258862f7d58464cc3))
+* turn Earth skies about the pole of date, not J2000 ([#147](https://github.com/christianhbye/croissant/issues/147)) ([b7ab32b](https://github.com/christianhbye/croissant/commit/b7ab32b8339c85f59504b180bf1e075954671183))
+* use fractional weights at horizon boundaries ([45a94b2](https://github.com/christianhbye/croissant/commit/45a94b2df7e24d871ceac06f994bfb121ac0ab90))
+
+
+### Performance Improvements
+
+* derive sky P+ dual from P- on quadrature samplings ([f636241](https://github.com/christianhbye/croissant/commit/f63624172a8a39d33ec05f2fce4f793575f12945))
+* recalibrate the amortisation threshold from measured crossovers ([#138](https://github.com/christianhbye/croissant/issues/138)) ([537d8eb](https://github.com/christianhbye/croissant/commit/537d8eba88c9c264a048f0c60fa3d104d89c10f3))
+
+
+### Documentation
+
+* bring the changelog current and declare Python 3.13 ([0ac2f86](https://github.com/christianhbye/croissant/commit/0ac2f868cf52a10f54e59af0574fa0e73669d945))
+* document how to cut a dev tag ([6f186f2](https://github.com/christianhbye/croissant/commit/6f186f2930b7deb1a059bce125f8ecef8a76bd0c))
+* list the effects croissant leaves out, with sizes ([#165](https://github.com/christianhbye/croissant/issues/165)) ([e487702](https://github.com/christianhbye/croissant/commit/e487702350ca6afea36abf07c8910c9307271e8c))
+* refresh CLAUDE.md for the engine layer and current Python support ([abe017d](https://github.com/christianhbye/croissant/commit/abe017dcfa3b66def913b88d1e901d4534fc0d10))
+* stop claiming sim() matches previous versions for sky_alm=None ([37dd3a1](https://github.com/christianhbye/croissant/commit/37dd3a1184e31afd4ba81c62f1241fc2e1f0c422))
+
 ## [5.2.1](https://github.com/christianhbye/croissant/compare/croissant-sim-v5.2.0...croissant-sim-v5.2.1) (2026-04-06)
 
 
