@@ -195,6 +195,28 @@ def test_rotmat_to_eulerZYZ_gimbal_lock():
     assert np.allclose(rmat, np.eye(3), atol=1e-14)
 
 
+def test_rotmat_to_eulerZYZ_keeps_small_tilts_near_gimbal_lock():
+    """
+    A rotation that tilts the z axis by a fraction of an arcsecond is
+    not gimbal lock, near beta=0 or beta=pi; its Euler angles must keep
+    the direction of the tilt. Polar motion puts the Earth's spin axis
+    ~0.5'' from the zenith at the geographic poles. The beta=pi check
+    used numpy's default rtol, so it took tilts up to 6.5'' for gimbal
+    lock and kept only their size.
+    """
+    for beta in [2.5e-6, np.pi - 2.5e-6]:
+        for alpha, gamma in [(0.3, 0.7), (-2.0, 1.1)]:
+            rot_mat = _euler_to_rotmat(alpha, beta, gamma)
+            eul = rotations.rotmat_to_eulerZYZ(rot_mat)
+            np.testing.assert_allclose(
+                _euler_to_rotmat(*eul),
+                rot_mat,
+                rtol=0,
+                atol=1e-9,
+                err_msg=f"alpha={alpha}, beta={beta}, gamma={gamma}",
+            )
+
+
 # A symmetric stretch shaped like the aberration astropy bakes into the
 # topocentric matrix: ~1e-4 off the diagonal, and zero on it because
 # SkyCoord returns unit columns. R @ (I + S) is already a polar
