@@ -121,10 +121,9 @@ Aberration and the Doppler boost (above) apply on the Moon as well.
 Croissant turns a fixed sky map. The Sun (~1° per day against the stars), the
 Moon (~13° per day) and the planets move, so a sky map cannot carry them
 through a call: a body painted into the map at `times_jd[0]` drifts from its
-true position by that much. Their contribution adds linearly, so it can be
-computed outside croissant from the beam at each body's position at every
-time sample. The sizes below are for a beam of directivity 6 with the body
-near its peak (*estimates*).
+true position by that much. Add them outside the harmonic convolution
+instead ([Adding point sources](#adding-point-sources)). The sizes below are
+for a beam of directivity 6 with the body near its peak (*estimates*).
 
 - **Sun:** the quiet corona, of order 1e6 K over a disk ~0.6° wide, gives of
   order 1e4 Jy at 100 MHz, ~15 K. Solar bursts are orders of magnitude
@@ -136,6 +135,41 @@ near its peak (*estimates*).
 - **Earth (lunar sites):** from the near side the Earth is radio-bright (RFI)
   and stays near one point of the local sky, so it turns with neither the
   stars nor croissant's sky.
+
+## Adding point sources
+
+Add point sources, moving or fixed, outside the harmonic convolution. A
+source of flux density `S` at apparent topocentric direction `n_s(t)` (from
+astropy's `AltAz`, for example, which includes aberration) adds
+
+```text
+dT_ant(t) = h(n_s) B(n_s) S λ² / (2 k N)
+```
+
+to the antenna temperature. `B` is the beam, `h` its horizon weight at the
+source (0 below the horizon) and `N = Beam.compute_norm()`, the full-sphere
+beam integral that `Simulator` divides by. Add it to `sim.sim()` before any
+`correct_ground_loss`. A disk much smaller than the beam, such as the Sun or
+the Moon, counts as a point. A body that hides brighter sky enters with
+negative flux: for the Moon, `S = 2k (T_moon − T_sky) Ω_moon / λ²`.
+
+Evaluated this way, each source sits at its exact position at every time
+sample, which a sky map cannot offer:
+
+- a map puts a source at a pixel centre, up to about half a pixel off
+  (~0.5° at nside 64);
+- the harmonic sum evaluates the beam truncated at `lmax` at the source,
+  which departs from the beam near sharp features such as the horizon edge;
+- a moving source has no fixed place in a map.
+
+If the diffuse map already contains the source (Cas A and Cyg A are in
+Haslam), remove it from the map first.
+
+Croissant has no helper for this yet. #77 (`alm2points`) evaluates a
+harmonic series at arbitrary points, which removes the pixel and motion
+problems. It keeps the `lmax` truncation, though, since summing the beam's
+alm at a point is what the harmonic convolution already does; near the
+horizon edge, interpolate the beam's own grid instead.
 
 ## Physics outside croissant's scope
 
@@ -173,7 +207,9 @@ edge the sky ripples by up to +1.4 dB out to ~2θ_F.
 Bright compact sources such as Cas A and Cyg A are in maps like Haslam only
 at the map's resolution and with the map's spectral model, which can differ
 from their own spectra; Cas A also fades over time. A residual at such a
-source's transit points at the sky model, not at croissant.
+source's transit points at the sky model, not at croissant. Replacing the
+map's copy with a [point source](#adding-point-sources) fixes the position
+and lets the source carry its own spectrum.
 
 ## Numerical effects that can look physical
 
