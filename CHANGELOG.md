@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Bug fix (changes results):** `rotations.rotmat_to_eulerZYZ` keeps
+  the direction of tilts within 6.5'' of `beta = pi`. That gimbal-lock
+  check used numpy's default relative tolerance, unlike the absolute
+  one at `beta = 0`, and kept only the size of such a tilt. It affects
+  sites whose zenith is that close to the south spin axis: within ~55 m
+  of the Moon's south pole, and the Earth's South Pole once the fix for
+  #163 leaves only polar motion (~0.5'') between them.
 - Add `horizon_theta` to `Beam` and `PairStokesBeam` (#161): give the
   horizon as a colatitude in radians, scalar or a callable of compass
   azimuth `A` (North = 0, clockwise; needs `horizon_frame="topocentric"`),

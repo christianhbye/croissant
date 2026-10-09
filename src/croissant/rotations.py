@@ -267,9 +267,11 @@ def rotmat_to_eulerZYZ(mat):
         # Set gamma = 0 and absorb the full rotation into alpha.
         gamma = 0.0
         alpha = np.arctan2(-mat[0, 1], mat[0, 0])
-    elif np.isclose(beta, np.pi):
+    elif np.isclose(beta, np.pi, rtol=0.0):
         # Gimbal lock at beta=pi: R depends only on alpha - gamma.
-        # Set gamma = 0 and absorb into alpha.
+        # Set gamma = 0 and absorb into alpha. Same absolute tolerance
+        # as beta=0; the default rtol would take tilts up to 6.5''
+        # from pi for gimbal lock and lose their direction.
         gamma = 0.0
         alpha = np.arctan2(-mat[0, 1], mat[1, 1])
     else:
