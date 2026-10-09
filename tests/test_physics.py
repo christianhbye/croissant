@@ -861,6 +861,58 @@ class TestBeamProperties:
         expected = jnp.broadcast_to(vis[0:1], vis.shape)
         np.testing.assert_allclose(vis, expected, rtol=1e-10)
 
+    @pytest.mark.parametrize("lat", [90.0, -90.0])
+    @pytest.mark.parametrize("world", ["earth", "moon"])
+    def test_zenith_symmetric_beam_at_a_pole_sees_a_constant_sky(
+        self,
+        times_jd_earth,
+        times_jd_moon,
+        world,
+        lat,
+    ):
+        """
+        At a geographic pole the sky turns about the zenith, so a beam
+        symmetric about the zenith sees the same sky all day. Unlike
+        the harmonic-space test above, this runs the full Simulator, so
+        it also checks that the topocentric frame puts the zenith on
+        the axis ``rot_alm_z`` turns about.
+
+        On the Moon that holds to rounding: MEPA is fixed to the Moon
+        at ``times_jd[0]``. On Earth the spin axis is ~0.3'' (polar
+        motion) from the geographic pole, which varies this visibility
+        by 3e-8 to 7e-8 of itself; the aberration-tilted frame of #163
+        varied it by 1.3e-6 to 2.1e-6. A site at latitude 89 varies by
+        3e-4 (Earth) and 1.4e-3 (Moon).
+
+        The beam is sampled on MWSS rings, whose 2L azimuth samples keep
+        a function of theta at m = 0. A HEALPix beam gains m = 4k modes
+        from the four-pixel polar rings, which turn with the sky.
+        """
+        times_jd = times_jd_earth if world == "earth" else times_jd_moon
+        L = 17
+        theta = s2fft.sampling.s2_samples.thetas(L=L, sampling="mwss")
+        phi = s2fft.sampling.s2_samples.phis_equiang(L=L, sampling="mwss")
+        tt, _ = np.meshgrid(theta, phi, indexing="ij")
+        freqs = jnp.array([50.0])
+        beam = Beam(
+            jnp.asarray(np.clip(np.cos(tt), 0.0, None) ** 8)[None],
+            freqs,
+            sampling="mwss",
+        )
+        rng = np.random.default_rng(163)
+        sky = Sky(
+            jnp.asarray(10.0 + rng.standard_normal((1, *tt.shape))),
+            freqs,
+            sampling="mwss",
+            coord="galactic",
+        )
+        sim = Simulator(beam, sky, times_jd, freqs, 0.0, lat, world=world)
+        vis = np.asarray(sim.sim())[:, 0]
+        tol = {"earth": 3e-7, "moon": 1e-12}[world]
+        np.testing.assert_allclose(
+            vis, vis[0], rtol=0, atol=tol * np.abs(vis).max()
+        )
+
     def test_beam_360_rotation_identity(
         self,
         freqs,
