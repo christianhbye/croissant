@@ -166,3 +166,18 @@ def test_theta_h_is_a_deprecated_alias():
     )
     with pytest.raises(TypeError):
         horizon_weights(theta, horizon_theta=0.9, theta_h=0.9)
+
+
+@pytest.mark.parametrize("bad", [-0.1, np.pi + 0.1, 80.0, float("nan")])
+def test_out_of_range_horizon_is_rejected_as_in_beam(bad):
+    """Colatitudes outside [0, pi], most often degrees by mistake, raise
+    instead of clipping, as ``Beam(horizon_theta=...)`` does, whether
+    given as a scalar, per column or by a callable."""
+    theta = jnp.linspace(0, jnp.pi, 5)
+    phi = jnp.array([0.0, jnp.pi])
+    with pytest.raises(ValueError, match="radians"):
+        horizon_weights(theta, horizon_theta=bad)
+    with pytest.raises(ValueError, match="radians"):
+        horizon_weights(theta, phi, jnp.array([0.5, bad]))
+    with pytest.raises(ValueError, match="radians"):
+        horizon_weights(theta, phi, lambda A: jnp.full_like(A, bad))

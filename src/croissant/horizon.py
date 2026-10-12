@@ -33,8 +33,8 @@ def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
         Maximum visible colatitude in radians, as a scalar, one value
         per phi, or a callable of compass azimuth ``A`` (radians, North
         = 0, clockwise), evaluated at ``A = (pi/2 - phi) mod 2 pi`` as
-        in ``Beam(horizon_theta=...)``. Values at or below 0 block all
-        cells; at or above pi keep all cells. Default pi/2.
+        in ``Beam(horizon_theta=...)``. Values must lie in [0, pi]: 0
+        blocks every cell and pi keeps every cell. Default pi/2.
     theta_h : float, array_like, or callable
         Deprecated name for ``horizon_theta``.
 
@@ -98,6 +98,7 @@ def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
     if horizon_theta.ndim == 1 and phi is not None:
         if horizon_theta.shape != phi.shape:
             raise ValueError("horizon_theta must have one value per phi.")
+    _check_colatitudes(horizon_theta)
     lower, upper = _band_edges(theta)
     return _band_weights(
         lower[:, None], upper[:, None], horizon_theta.reshape(1, -1)
