@@ -10,14 +10,18 @@ import numpy as np
 import s2fft
 
 
-def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
+def horizon_weights(
+    theta, phi=None, horizon_theta=None, *, horizon_subsamples=1, theta_h=None
+):
     """Approximate visible cell fractions on a separable theta/phi grid.
 
     Cell edges lie halfway between neighboring theta samples, with the
     first and last edges at 0 and pi. Visibility varies linearly in theta
     within a boundary cell: a horizon through its center has weight 1/2
     on an equiangular grid. This is a cell-edge approximation, not exact
-    solid-angle integration or azimuthal averaging of terrain.
+    solid-angle integration. A callable horizon is read at each column's
+    centre azimuth, unless ``horizon_subsamples`` averages it across the
+    column.
 
     Parameters
     ----------
@@ -35,6 +39,13 @@ def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
         = 0, clockwise), evaluated at ``A = (pi/2 - phi) mod 2 pi`` as
         in ``Beam(horizon_theta=...)``. Values must lie in [0, pi]: 0
         blocks every cell and pi keeps every cell. Default pi/2.
+    horizon_subsamples : int
+        Number of azimuths across each column at which a callable
+        horizon is read; the weight is their mean. 1 (default) reads the
+        column centre. More samples follow terrain that changes within a
+        column, such as a cliff, at the cost of that many evaluations
+        per column. Needs a callable horizon and a uniform ``phi`` grid
+        over a full turn.
     theta_h : float, array_like, or callable
         Deprecated name for ``horizon_theta``.
 
@@ -69,6 +80,7 @@ def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
             stacklevel=2,
         )
         horizon_theta = theta_h
+    subsamples = _check_subsamples(horizon_subsamples, horizon_theta)
     if horizon_theta is None:
         horizon_theta = jnp.pi / 2
     theta = jnp.asarray(theta)
@@ -91,7 +103,26 @@ def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
     if callable(horizon_theta):
         if phi is None:
             raise ValueError("A callable horizon_theta requires phi.")
-        horizon_theta = _profile_at_columns(horizon_theta, phi)
+        width = 2 * jnp.pi / phi.size
+        if subsamples > 1 and not isinstance(phi, jax.core.Tracer):
+            steps = np.diff(np.asarray(phi))
+            if not np.allclose(steps, float(width)):
+                raise ValueError(
+                    "horizon_subsamples needs phi to be a uniform grid "
+                    "over a full turn."
+                )
+        horizon_theta = _profile_at_columns(
+            horizon_theta, phi, width, subsamples
+        )
+        if subsamples > 1:
+            _check_colatitudes(horizon_theta)
+            lower, upper = _band_edges(theta)
+            return jnp.mean(
+                _band_weights(
+                    lower[:, None], upper[:, None], horizon_theta[:, None, :]
+                ),
+                axis=0,
+            )
     horizon_theta = jnp.asarray(horizon_theta)
     if horizon_theta.ndim > 1 or horizon_theta.size == 0:
         raise ValueError("horizon_theta must be scalar or one value per phi.")
@@ -112,8 +143,36 @@ def _compass_azimuth(phi):
     return jnp.where(azimuth >= 2 * jnp.pi, 0.0, azimuth)
 
 
-def _profile_at_columns(profile, phi):
-    """Evaluate a callable of compass azimuth at every column or pixel."""
+def _check_subsamples(subsamples, horizon_theta):
+    """Validate the azimuth sub-sample count and return it as an int."""
+    if (
+        isinstance(subsamples, bool)
+        or not isinstance(subsamples, (int, np.integer))
+        or subsamples < 1
+    ):
+        raise ValueError(
+            "horizon_subsamples must be a positive integer; got "
+            f"{subsamples!r}."
+        )
+    if subsamples > 1 and not callable(horizon_theta):
+        raise ValueError(
+            "horizon_subsamples averages a callable horizon_theta across "
+            "each column; a scalar or explicit horizon has nothing to average."
+        )
+    return int(subsamples)
+
+
+def _profile_at_columns(profile, phi, width=None, subsamples=1):
+    """Evaluate a callable of compass azimuth at every column or pixel.
+
+    With ``subsamples > 1`` it is read at that many longitudes spread
+    evenly across each column of the given ``width`` (a scalar, or one per
+    pixel), in one call, and the result gains a leading sub-sample axis.
+    """
+    phi = jnp.asarray(phi)
+    if subsamples > 1:
+        offsets = (jnp.arange(subsamples) + 0.5) / subsamples - 0.5
+        phi = phi[None] + offsets.reshape((-1,) + (1,) * phi.ndim) * width
     azimuth = _compass_azimuth(phi)
     values = jnp.asarray(profile(azimuth))
     if values.ndim > 0 and values.shape != azimuth.shape:
@@ -151,17 +210,23 @@ def _check_colatitudes(theta_h):
         )
 
 
-def _horizon_from_theta(theta_h, theta, phi, sampling):
+def _horizon_from_theta(theta_h, theta, phi, sampling, subsamples=1):
     """Weights on the ground grid for a scalar or compass-azimuth profile.
 
     Each sample's band in theta has edges halfway between neighbouring
     rows (regular grids) or RING colatitudes (HEALPix), as in
-    ``horizon_weights``. A callable is evaluated once at the compass
-    azimuth ``A = (pi/2 - phi) mod 2 pi`` of every column or pixel.
+    ``horizon_weights``. A callable is evaluated once, at the compass
+    azimuth ``A = (pi/2 - phi) mod 2 pi`` of every column or pixel, or
+    at ``subsamples`` azimuths across each, whose weights are averaged.
+    A column spans 2 pi / nphi on regular grids and 2 pi over the ring's
+    pixel count on HEALPix.
     """
     theta = np.asarray(theta)
     if sampling == "healpix":
-        rings, ring = np.unique(theta, return_inverse=True)
+        rings, ring, counts = np.unique(
+            theta, return_inverse=True, return_counts=True
+        )
+        width = jnp.asarray(2 * np.pi / counts[ring])
         nside = math.isqrt(theta.size // 12)
         if rings.size != 4 * nside - 1:
             raise ValueError(
@@ -174,22 +239,34 @@ def _horizon_from_theta(theta_h, theta, phi, sampling):
     else:
         lower, upper = _band_edges(jnp.asarray(theta))
         lower, upper = lower[:, None], upper[:, None]
+        width = 2 * np.pi / np.size(phi)
     # Keep concrete values concrete when a beam is built inside jit, so
     # NumPy callables work and the range check still runs; a traced
     # horizon_theta stays traced.
     with jax.ensure_compile_time_eval():
         if callable(theta_h):
-            theta_h = _profile_at_columns(theta_h, phi)
+            theta_h = _profile_at_columns(theta_h, phi, width, subsamples)
         else:
             theta_h = jnp.asarray(theta_h)
     _check_colatitudes(theta_h)
-    return _band_weights(lower, upper, theta_h)
+    if subsamples == 1:
+        return _band_weights(lower, upper, theta_h)
+    if sampling != "healpix":
+        theta_h = theta_h[:, None, :]
+    return jnp.mean(_band_weights(lower, upper, theta_h), axis=0)
 
 
 def _resolve_horizon(
-    horizon, horizon_theta, horizon_frame, theta, phi, sampling
+    horizon,
+    horizon_theta,
+    horizon_frame,
+    theta,
+    phi,
+    sampling,
+    horizon_subsamples=1,
 ):
     """Initial horizon weights for Beam and PairStokesBeam."""
+    subsamples = _check_subsamples(horizon_subsamples, horizon_theta)
     if horizon_theta is None:
         if horizon is None:
             return _default_horizon(theta, sampling)
@@ -209,7 +286,7 @@ def _resolve_horizon(
             "compass azimuth A, e.g. lambda A: np.interp(A, az, theta_h, "
             "period=2 * np.pi)."
         )
-    return _horizon_from_theta(horizon_theta, theta, phi, sampling)
+    return _horizon_from_theta(horizon_theta, theta, phi, sampling, subsamples)
 
 
 def _default_horizon(theta, sampling):

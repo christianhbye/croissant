@@ -774,7 +774,8 @@ class PairStokesBeam(eqx.Module):
     pass ``horizon_theta`` instead: a colatitude in radians, or a callable
     of compass azimuth ``A`` (North = 0, clockwise) that needs
     ``horizon_frame="topocentric"``. It behaves as on ``Beam``, including
-    HEALPix. All four response components receive the
+    HEALPix and ``horizon_subsamples``, which averages a callable across
+    each column. All four response components receive the
     same weights before harmonic analysis.
 
     For terrain, use ``horizon_frame="topocentric"``. This keeps
@@ -848,6 +849,7 @@ class PairStokesBeam(eqx.Module):
         engine="auto",
         horizon_frame="beam",
         horizon_theta=None,
+        horizon_subsamples=1,
     ):
         if horizon_frame not in {"beam", "topocentric"}:
             raise ValueError("horizon_frame must be 'beam' or 'topocentric'.")
@@ -894,6 +896,7 @@ class PairStokesBeam(eqx.Module):
             self.theta,
             self.phi,
             sampling,
+            horizon_subsamples,
         )
         if horizon_frame == "topocentric":
             jnp.broadcast_to(self.horizon, self.data.shape[3:])
