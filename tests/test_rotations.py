@@ -1,6 +1,7 @@
 import astropy.units as u
 import erfa
 import healpy as hp
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -436,3 +437,55 @@ def test_topo_to_mepa_beta_constant():
     assert np.isclose(eul1[0] % twopi, eul2[0] % twopi)
     assert np.isclose(eul1[1] % twopi, eul2[1] % twopi)
     assert np.isclose(eul1[2] % twopi, eul2[2] % twopi)
+
+
+@pytest.mark.parametrize("L", [1, 5, 17])
+def test_generate_rotate_dls_matches_s2fft(L):
+    for beta in (0.0, 0.3, np.pi / 2, 2.9, np.pi):
+        np.testing.assert_allclose(
+            rotations.generate_rotate_dls(L, beta),
+            s2fft.generate_rotate_dls(L, beta),
+            rtol=0,
+            atol=1e-14,
+            err_msg=f"beta={beta}",
+        )
+
+
+def test_generate_rotate_dls_takes_a_traced_beta():
+    """Unlike s2fft's builder, beta may be traced: vmap and grad work,
+    and a new beta does not recompile."""
+    L = 5
+    betas = jnp.array([0.2, 1.1, 2.5])
+    batched = jax.vmap(lambda b: rotations.generate_rotate_dls(L, b))(betas)
+    for beta, dl in zip(np.asarray(betas), batched):
+        np.testing.assert_allclose(
+            dl, s2fft.generate_rotate_dls(L, float(beta)), rtol=0, atol=1e-14
+        )
+
+    def d1_00(beta):  # d^1_00(beta) = cos(beta)
+        return rotations.generate_rotate_dls(L, beta)[1, L - 1, L - 1]
+
+    np.testing.assert_allclose(jax.grad(d1_00)(0.7), -np.sin(0.7), rtol=1e-12)
+
+
+def test_traced_euler_rotation_matches_static_rotation():
+    """generate_rotate_dls with rotate_alm_batched rotates alm under jit
+    with traced Euler angles, as rotate_alm does with static ones."""
+    L = 9
+    rng = np.random.default_rng(5)
+    alm = jnp.asarray(
+        s2fft.utils.signal_generator.generate_flm(rng, L, reality=True)
+    )[None]
+    euler = (0.4, 1.2, -0.8)
+
+    @jax.jit
+    def traced(angles):
+        dl = rotations.generate_rotate_dls(L, angles[1])
+        return rotations.rotate_alm_batched(alm, angles[None], dl[None])[0]
+
+    np.testing.assert_allclose(
+        traced(jnp.asarray(euler)),
+        rotations.rotate_alm(alm, euler),
+        rtol=0,
+        atol=1e-12,
+    )

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Add `rotations.generate_rotate_dls(L, beta)`, the reduced Wigner
+  d-functions of a rotation by `beta` with `beta` traceable. s2fft's
+  `generate_rotate_dls` marks `beta` static, so it cannot take a JAX
+  tracer and recompiles for every new value. Paired with
+  `rotate_alm_batched`, this rotates alm by Euler angles that are traced,
+  under `jit`, `vmap` or `grad`. It matches s2fft's builder to 1e-14.
+  eigsim carries its own copy for exactly this reason.
 - Add `horizon_subsamples` to `Beam`, `PairStokesBeam` and
   `horizon_weights` (#167). A callable horizon is read at that many
   azimuths spread evenly across each column (or HEALPix pixel, within its
