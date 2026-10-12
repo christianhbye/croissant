@@ -40,7 +40,7 @@ def _north_blocked(A):
 def test_scalar_matches_horizon_weights(sampling):
     beam = _beam(sampling, horizon_theta=1.3)
     np.testing.assert_array_equal(
-        beam.horizon, horizon_weights(beam.theta, theta_h=1.3)
+        beam.horizon, horizon_weights(beam.theta, horizon_theta=1.3)
     )
 
 
@@ -119,6 +119,20 @@ def test_terrain_profile_through_numpy_interp():
     np.testing.assert_allclose(beam.horizon, expected, atol=1e-12)
 
 
+@pytest.mark.parametrize("sampling", REGULAR)
+def test_horizon_weights_reads_a_callable_as_the_beam_does(sampling):
+    """The same profile handed to ``horizon_weights`` or to
+    ``Beam(horizon_theta=...)`` gives the same weights: both read it in
+    compass azimuth."""
+    beam = _beam(sampling, horizon_theta=_profile, horizon_frame="topocentric")
+    np.testing.assert_allclose(
+        horizon_weights(beam.theta, beam.phi, _profile),
+        beam.horizon,
+        rtol=0,
+        atol=1e-12,
+    )
+
+
 @pytest.mark.parametrize("sampling", ["mwss", "healpix"])
 def test_callable_receives_azimuths_in_one_turn(sampling):
     seen = []
@@ -166,7 +180,7 @@ def test_eighty_degree_horizon_on_one_degree_grid():
         return Beam(data, [50.0], sampling="mwss", engine="s2fft", **kwargs)
 
     built = beam(horizon_theta=theta_h)
-    by_hand = beam(horizon=horizon_weights(theta, theta_h=theta_h))
+    by_hand = beam(horizon=horizon_weights(theta, horizon_theta=theta_h))
     boolean = beam(horizon=(theta <= theta_h)[:, None])
     np.testing.assert_array_equal(built.horizon, by_hand.horizon)
     np.testing.assert_array_equal(built.compute_fgnd(), by_hand.compute_fgnd())
