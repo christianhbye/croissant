@@ -26,6 +26,7 @@ class Beam(sphere.SphBase):
         lmax=None,
         horizon_frame="beam",
         horizon_theta=None,
+        horizon_subsamples=1,
     ):
         """
         Beam pattern object. Holds the beam pattern in local antenna
@@ -128,6 +129,15 @@ class Beam(sphere.SphBase):
             ``healpy.ud_grade``). The beam's band-limit smooths any edge
             regardless. Mutually exclusive with `horizon`, which then
             holds the built weights.
+        horizon_subsamples : int
+            For a callable `horizon_theta`: the number of azimuths across
+            each ground-grid column (or HEALPix pixel, within its ring)
+            at which the profile is read, the weights being averaged.
+            Default 1 reads the column centre, so terrain that changes
+            within a column, such as a cliff, counts for the whole cell
+            or not at all. More samples follow it, at the cost of that
+            many evaluations per column; the profile is still called
+            once, with an array of shape ``(horizon_subsamples, ...)``.
 
         """
         if horizon_frame not in {"beam", "topocentric"}:
@@ -155,6 +165,7 @@ class Beam(sphere.SphBase):
             self.theta,
             self.phi,
             self.sampling,
+            horizon_subsamples,
         )
         if horizon_frame == "topocentric":
             jnp.broadcast_to(self.horizon, self.data.shape[1:])

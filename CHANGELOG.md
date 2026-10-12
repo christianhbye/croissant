@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add `horizon_subsamples` to `Beam`, `PairStokesBeam` and
+  `horizon_weights` (#167). A callable horizon is read at that many
+  azimuths spread evenly across each column (or HEALPix pixel, within its
+  ring) and the weights are averaged, so terrain that changes within a
+  column, such as a cliff, is no longer counted for the whole cell or not
+  at all. The profile is still called once, with an array of shape
+  `(S, ...)`, and stays differentiable. The default of 1 keeps the
+  current weights bit for bit.
 - `Simulator(Tgnd=...)` takes one ground temperature per frequency,
   shape `(nfreq,)`, as well as a scalar (#168), for example an
   emissivity times a physical temperature. This already worked by

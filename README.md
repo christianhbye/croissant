@@ -48,6 +48,9 @@ beam = croissant.Beam(
 (any frame), or a callable of compass azimuth `A` (topocentric frame).
 Prefer it to a `theta <= theta_h` mask, which puts the edge up to half a
 row off. It works on regular grids and HEALPix, and on `PairStokesBeam`.
+A callable is read at each column's centre azimuth; for terrain that
+changes within a column, such as a cliff on a coarse grid, pass
+`horizon_subsamples=S` to average it over `S` azimuths across the column.
 
 For arbitrary masks, pass `horizon=` weights in [0, 1] on the ground's
 East/North grid (phi=0 is East, phi=pi/2 is North, so `A = pi/2 - phi`).
