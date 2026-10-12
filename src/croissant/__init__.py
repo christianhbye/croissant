@@ -28,7 +28,7 @@ from .kernel import (
     precompute_kernel,
 )
 from .polarization import PairStokesBeam, PolarizedSky, polarized_convolve
-from .simulator import Simulator
+from .simulator import Simulator, simulation_epoch
 from .sky import Sky
 
 # isort: split

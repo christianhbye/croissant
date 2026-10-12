@@ -13,7 +13,12 @@ from lunarsky import Time as LunarTime
 from croissant import rotations, utils
 from croissant.beam import Beam
 from croissant.constants import sidereal_day
-from croissant.simulator import Simulator, convolve, correct_ground_loss
+from croissant.simulator import (
+    Simulator,
+    convolve,
+    correct_ground_loss,
+    simulation_epoch,
+)
 from croissant.sky import Sky
 
 rng = np.random.default_rng(seed=3)
@@ -546,6 +551,29 @@ def test_et_ref_puts_a_sky_in_the_simulation_frame(world):
         rtol=1e-12,
         atol=1e-12,
     )
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+def test_simulation_epoch_is_the_simulator_epoch(world):
+    """``simulation_epoch(times_jd)`` is ``Simulator.et_ref`` from the
+    times alone, so code that builds sky alm without a Simulator can put
+    them in its frame. A list or a NumPy array of the same times gives
+    the same epoch as the JAX array the Simulator gets."""
+    times_jd = _TIMES_JD[world]
+    expected = _make_sim(world).et_ref
+    for times in (
+        times_jd,
+        np.asarray(times_jd),
+        [float(t) for t in times_jd],
+    ):
+        assert simulation_epoch(times) == expected
+
+
+def test_simulation_epoch_uses_only_the_first_time():
+    times_jd = np.asarray(_TIMES_JD["earth"])
+    assert simulation_epoch(times_jd[:1]) == simulation_epoch(times_jd)
+    assert simulation_epoch(times_jd[0]) == simulation_epoch(times_jd)
+    assert simulation_epoch(times_jd[1:]) != simulation_epoch(times_jd)
 
 
 def test_earth_frame_change_leaves_the_first_sample_unchanged():

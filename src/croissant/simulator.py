@@ -3,6 +3,7 @@ from functools import partial
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+import numpy as np
 import s2fft
 from astropy.coordinates import AltAz, EarthLocation
 from astropy.time import Time as EarthTime
@@ -129,6 +130,34 @@ def convolve(beam_alm, sky_alm, phases):
     """
     res = jnp.einsum("flm,tm,flm->tf", sky_alm.conjugate(), phases, beam_alm)
     return res
+
+
+def simulation_epoch(times_jd):
+    """
+    Compute the reference epoch of the simulation frame for a set of
+    times.
+
+    ``Simulator`` fixes its frame at ``times_jd[0]``, CIRS on Earth and
+    MEPA on the Moon, and reports the epoch as ``Simulator.et_ref``.
+    This function gives the same number from the times alone, without
+    a site, beam or sky, so code that builds sky alm on its own can put
+    them in that frame with ``Sky.compute_alm_eq(world, et=...)``.
+
+    Parameters
+    ----------
+    times_jd : array_like or float
+        Julian days, as passed to ``Simulator``. Only the first one is
+        used.
+
+    Returns
+    -------
+    et_ref : float
+        The epoch as SPICE ephemeris time (seconds past J2000, TDB).
+
+    """
+    # NumPy, not jnp: without 64-bit JAX a Julian day loses hours.
+    first = float(np.ravel(np.asarray(times_jd))[0])
+    return float(rotations.jd_to_et(EarthTime(first, format="jd").tdb.jd))
 
 
 @jax.jit
@@ -310,7 +339,7 @@ class Simulator(eqx.Module):
             topo = AltAz(location=loc, obstime=t0)
             # CIRS at t0 puts z on the Earth's rotation axis, so the
             # rot_alm_z time evolution turns about the right pole.
-            self._et_ref = float(rotations.jd_to_et(t0.tdb.jd))
+            self._et_ref = simulation_epoch(times_jd)
             eul_topo, dl_topo = rotations.generate_euler_dl_from_rotmat(
                 self.beam.lmax,
                 rotations._rot_mat_to_earth_sim_frame(topo, et=self._et_ref),
@@ -319,7 +348,7 @@ class Simulator(eqx.Module):
             loc = MoonLocation(lon, lat, height=alt)
             t0 = LunarTime(times_jd[0], format="jd")
             topo = LunarTopo(location=loc, obstime=t0)
-            self._et_ref = float(rotations.jd_to_et(t0.tdb.jd))
+            self._et_ref = simulation_epoch(times_jd)
             eul_topo, dl_topo = rotations.generate_euler_dl(
                 self.beam.lmax, topo, "mepa"
             )
@@ -346,7 +375,8 @@ class Simulator(eqx.Module):
         Earth and MEPA at this epoch on the Moon, both at
         ``times_jd[0]``. Pass it as ``et`` to ``Sky.compute_alm_eq`` or
         ``PolarizedSky.compute_alm_eq`` to put a sky in the frame of
-        ``compute_beam_eq`` and ``phases``.
+        ``compute_beam_eq`` and ``phases``. ``simulation_epoch(times_jd)``
+        gives the same number without building a Simulator.
 
         """
         return self._et_ref

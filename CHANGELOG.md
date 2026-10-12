@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Add `croissant.simulation_epoch(times_jd)`, the reference epoch of the
+  simulation frame (`Simulator.et_ref`) computed from the times alone.
+  Code that builds sky alm without a `Simulator` can pass it as `et` to
+  `Sky.compute_alm_eq` instead of copying croissant's definition, as
+  eigsim's `precompute_sky_alm` and mistsim's `pipeline._sim_epoch` do
+  now. `Simulator` uses it too, so `et_ref` is unchanged.
 - Add `docs/unmodelled_effects.md`, a list of what croissant leaves out or
   approximates (aberration, Doppler boost, frame bias, frame drift within a
   call, IERS fallbacks, lunar pole drift #149, the Sun and other sources
