@@ -7,6 +7,7 @@ import s2fft
 import spiceypy as spice
 from astropy.coordinates import CIRS, ITRS, AltAz, SkyCoord
 from lunarsky import LunarTopo
+from s2fft.recursions.risbo_jax import compute_full as _risbo_full
 
 from .spice_utils import furnish_lunar_kernels
 from .utils import lmax_from_shape
@@ -56,6 +57,41 @@ def _rotate_alm_with_dl(alm, rotation, dl_array):
         )
         result = result.at[..., ell, indices].set(values)
     return result
+
+
+@partial(jax.jit, static_argnums=(0,))
+def generate_rotate_dls(L, beta):
+    """
+    Compute the reduced Wigner d-functions of a rotation by ``beta``,
+    with ``beta`` traceable.
+
+    This is ``s2fft.generate_rotate_dls``, which marks ``beta`` static:
+    there it cannot be a JAX tracer, and every new value recompiles.
+    Here only ``L`` is static, so ``beta`` may vary under ``jit``,
+    ``vmap`` and ``grad``. Pair it with ``rotate_alm_batched`` to rotate
+    alm by Euler angles that are themselves traced.
+
+    Parameters
+    ----------
+    L : int
+        Harmonic band limit, ``lmax + 1``.
+    beta : float or jax.Array
+        The middle Euler angle in radians (ZYZ convention).
+
+    Returns
+    -------
+    dl_array : jax.Array
+        Shape ``(L, 2 L - 1, 2 L - 1)``, with
+        ``dl_array[ell, m + L - 1, n + L - 1] = d^ell_mn(beta)``.
+
+    """
+    shape = (2 * L - 1, 2 * L - 1)
+    dl = jax.numpy.zeros((L,) + shape).astype(jax.numpy.float64)
+    dl_iter = jax.numpy.zeros(shape).astype(jax.numpy.float64)
+    for ell in range(L):
+        dl_iter = _risbo_full(dl_iter, beta, L, ell)
+        dl = dl.at[ell].add(dl_iter)
+    return dl
 
 
 @jax.jit
