@@ -286,6 +286,47 @@ def test_ground_loss(vis_highres, Tgnd):
     assert jnp.allclose(true_Tsky, _TSKY)
 
 
+_TGND_PER_FREQ = jnp.linspace(150.0, 350.0, _N_FREQS)
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+def test_per_frequency_ground_temperature(world):
+    """``Tgnd`` may give one temperature per frequency, such as an
+    emissivity times a physical temperature. Each frequency then gets
+    its own ground term on top of the sky (#168)."""
+    sim = _make_sim(world=world, Tgnd=_TGND_PER_FREQ)
+    sky_only = _make_sim(world=world, Tgnd=0.0)
+    fgnd = sim.beam.compute_fgnd()
+    np.testing.assert_allclose(
+        sim.compute_ground_contribution(), fgnd * _TGND_PER_FREQ, rtol=1e-12
+    )
+    np.testing.assert_allclose(
+        sim.sim(), sky_only.sim() + fgnd * _TGND_PER_FREQ, rtol=1e-12
+    )
+
+
+def test_ground_loss_with_per_frequency_ground(vis_highres):
+    _vis, fgnd = vis_highres
+    vis = _vis + fgnd * _TGND_PER_FREQ
+    true_Tsky = correct_ground_loss(vis, fgnd, _TGND_PER_FREQ)
+    assert jnp.allclose(true_Tsky, _TSKY)
+
+
+@pytest.mark.parametrize(
+    "Tgnd",
+    [
+        np.ones(_N_FREQS + 1),
+        np.ones((_N_FREQS, 2)),
+        np.ones((1, _N_FREQS)),
+    ],
+)
+def test_ground_temperature_shape_is_checked(Tgnd):
+    """``Tgnd`` is a scalar or one value per frequency; a map of the
+    ground is not supported."""
+    with pytest.raises(ValueError, match="Tgnd"):
+        _make_sim(world="earth", Tgnd=Tgnd)
+
+
 def test_ground_loss_biased(vis_highres):
     Tgnd = 0.0
     _vis, fgnd = vis_highres
