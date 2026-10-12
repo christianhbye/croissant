@@ -8,9 +8,13 @@
   of the grid longitude `phi`. The same function now gives the same
   weights through either entry point, which share one implementation.
   The keyword `theta_h` is renamed `horizon_theta` to match; `theta_h=`
-  still works with a `FutureWarning`. Scalar and array horizons are
-  unchanged, so only callers that pass `horizon_weights` a callable get
-  different weights. mistsim passes a scalar `theta_h=`, which now warns.
+  still works with a `FutureWarning`. Like `horizon_theta`, it now
+  rejects colatitudes outside [0, pi] (most often degrees by mistake)
+  instead of clipping them; a traced horizon is not checked. In-range
+  scalar and array horizons are unchanged, so only callers that pass
+  `horizon_weights` a callable, or an out-of-range value, see a
+  difference. mistsim passes an in-range scalar `theta_h=`, which now
+  warns.
 - Add `croissant.simulation_epoch(times_jd)`, the reference epoch of the
   simulation frame (`Simulator.et_ref`) computed from the times alone.
   Code that builds sky alm without a `Simulator` can pass it as `et` to
