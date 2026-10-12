@@ -279,8 +279,9 @@ For a horizon given as an angle, pass `horizon_theta=` instead and the
 beam builds the weights on its own grid, HEALPix included: a colatitude
 in radians, or a callable of compass azimuth. It uses a linear-in-theta
 cell-edge approximation (rings as theta bands on HEALPix), not exact
-terrain pixel coverage. `croissant.horizon_weights(theta, phi, theta_h)`
-builds the same weights by hand on regular grids.
+terrain pixel coverage. `croissant.horizon_weights(theta, phi,
+horizon_theta)` builds the same weights by hand on regular grids, and
+reads a callable in compass azimuth too.
 
 For terrain, **set `horizon_frame="topocentric"`** on `Beam` or
 `PairStokesBeam`. The horizon is then fixed to the East/North ground

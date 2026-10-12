@@ -25,7 +25,7 @@ def _fixture(sampling="mwss"):
     else:
         data = 1 + 0.5 * np.sin(theta[:, None]) * np.cos(phi)
         horizon = horizon_weights(
-            theta, phi, theta_h=jnp.deg2rad(70 + 10 * np.cos(phi))
+            theta, phi, horizon_theta=jnp.deg2rad(70 + 10 * np.cos(phi))
         )
     return jnp.asarray(data[None]), jnp.asarray(horizon), theta, phi
 

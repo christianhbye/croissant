@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Behavior change:** a callable horizon passed to `horizon_weights` now
+  takes compass azimuth `A` (North = 0, clockwise), evaluated at
+  `A = (pi/2 - phi) mod 2 pi`, as `Beam(horizon_theta=...)` does, instead
+  of the grid longitude `phi`. The same function now gives the same
+  weights through either entry point, which share one implementation.
+  The keyword `theta_h` is renamed `horizon_theta` to match; `theta_h=`
+  still works with a `FutureWarning`. Scalar and array horizons are
+  unchanged, so only callers that pass `horizon_weights` a callable get
+  different weights. mistsim passes a scalar `theta_h=`, which now warns.
 - Add `croissant.simulation_epoch(times_jd)`, the reference epoch of the
   simulation frame (`Simulator.et_ref`) computed from the times alone.
   Code that builds sky alm without a `Simulator` can pass it as `et` to

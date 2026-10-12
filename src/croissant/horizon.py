@@ -1,6 +1,7 @@
 """Fractional visibility at horizon boundaries."""
 
 import math
+import warnings
 from functools import lru_cache
 
 import jax
@@ -9,7 +10,7 @@ import numpy as np
 import s2fft
 
 
-def horizon_weights(theta, phi=None, theta_h=jnp.pi / 2):
+def horizon_weights(theta, phi=None, horizon_theta=None, *, theta_h=None):
     """Approximate visible cell fractions on a separable theta/phi grid.
 
     Cell edges lie halfway between neighboring theta samples, with the
@@ -25,12 +26,17 @@ def horizon_weights(theta, phi=None, theta_h=jnp.pi / 2):
         with at least two samples. Use a regular grid's theta axis,
         not HEALPix's repeated per-pixel colatitudes.
     phi : array_like or None
-        One-dimensional longitude axis in radians. Required for a
-        callable horizon; optional for a scalar or array horizon.
-    theta_h : float, array_like, or callable
+        One-dimensional longitude axis in radians, on croissant's grid:
+        phi = 0 is East and phi = pi/2 is North. Required for a callable
+        horizon; optional for a scalar or array horizon.
+    horizon_theta : float, array_like, or callable
         Maximum visible colatitude in radians, as a scalar, one value
-        per phi, or a callable evaluated as ``theta_h(phi)``. Values
-        at or below 0 block all cells; at or above pi keep all cells.
+        per phi, or a callable of compass azimuth ``A`` (radians, North
+        = 0, clockwise), evaluated at ``A = (pi/2 - phi) mod 2 pi`` as
+        in ``Beam(horizon_theta=...)``. Values at or below 0 block all
+        cells; at or above pi keep all cells. Default pi/2.
+    theta_h : float, array_like, or callable
+        Deprecated name for ``horizon_theta``.
 
     Returns
     -------
@@ -45,7 +51,26 @@ def horizon_weights(theta, phi=None, theta_h=jnp.pi / 2):
     The arithmetic supports JAX tracing and differentiation with respect
     to the horizon height inside a cell. Callers supply valid coordinates;
     HEALPix pixel coverage requires a different geometry.
+
+    A callable gives the same weights here as in
+    ``Beam(horizon_theta=...)``, which suit ``horizon_frame="topocentric"``.
+    For a mask attached to the beam (``horizon_frame="beam"``), ``A`` is
+    the compass azimuth of each beam-grid direction at ``beam_rot = 0``.
     """
+    if theta_h is not None:
+        if horizon_theta is not None:
+            raise TypeError(
+                "Pass horizon_theta, or its deprecated name theta_h, not both."
+            )
+        warnings.warn(
+            "horizon_weights(theta_h=...) is deprecated; use horizon_theta=. "
+            "A callable now takes compass azimuth, as in Beam.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        horizon_theta = theta_h
+    if horizon_theta is None:
+        horizon_theta = jnp.pi / 2
     theta = jnp.asarray(theta)
     if theta.ndim != 1 or theta.size < 2:
         raise ValueError("theta must be a 1-D grid with at least two samples.")
@@ -63,20 +88,40 @@ def horizon_weights(theta, phi=None, theta_h=jnp.pi / 2):
         phi = jnp.asarray(phi)
         if phi.ndim != 1:
             raise ValueError("phi must be a 1-D longitude axis.")
-    if callable(theta_h):
+    if callable(horizon_theta):
         if phi is None:
-            raise ValueError("A callable theta_h requires phi.")
-        theta_h = theta_h(phi)
-    theta_h = jnp.asarray(theta_h)
-    if theta_h.ndim > 1 or theta_h.size == 0:
-        raise ValueError("theta_h must be scalar or one value per phi.")
-    if theta_h.ndim == 1 and phi is not None:
-        if theta_h.shape != phi.shape:
-            raise ValueError("theta_h must have one value per phi.")
+            raise ValueError("A callable horizon_theta requires phi.")
+        horizon_theta = _profile_at_columns(horizon_theta, phi)
+    horizon_theta = jnp.asarray(horizon_theta)
+    if horizon_theta.ndim > 1 or horizon_theta.size == 0:
+        raise ValueError("horizon_theta must be scalar or one value per phi.")
+    if horizon_theta.ndim == 1 and phi is not None:
+        if horizon_theta.shape != phi.shape:
+            raise ValueError("horizon_theta must have one value per phi.")
     lower, upper = _band_edges(theta)
     return _band_weights(
-        lower[:, None], upper[:, None], theta_h.reshape(1, -1)
+        lower[:, None], upper[:, None], horizon_theta.reshape(1, -1)
     )
+
+
+def _compass_azimuth(phi):
+    """Compass azimuth ``A = (pi/2 - phi) mod 2 pi`` of grid longitudes."""
+    azimuth = jnp.mod(jnp.pi / 2 - jnp.asarray(phi), 2 * jnp.pi)
+    # A phi one ulp above pi/2 would otherwise give A = 2 pi.
+    return jnp.where(azimuth >= 2 * jnp.pi, 0.0, azimuth)
+
+
+def _profile_at_columns(profile, phi):
+    """Evaluate a callable of compass azimuth at every column or pixel."""
+    azimuth = _compass_azimuth(phi)
+    values = jnp.asarray(profile(azimuth))
+    if values.ndim > 0 and values.shape != azimuth.shape:
+        raise ValueError(
+            "A callable horizon_theta must return a scalar or one "
+            f"colatitude per azimuth, shape {azimuth.shape}; got "
+            f"shape {values.shape}."
+        )
+    return jnp.broadcast_to(values, azimuth.shape)
 
 
 def _band_edges(centers):
@@ -133,17 +178,7 @@ def _horizon_from_theta(theta_h, theta, phi, sampling):
     # horizon_theta stays traced.
     with jax.ensure_compile_time_eval():
         if callable(theta_h):
-            azimuth = jnp.mod(jnp.pi / 2 - jnp.asarray(phi), 2 * jnp.pi)
-            # A phi one ulp above pi/2 would otherwise give A = 2 pi.
-            azimuth = jnp.where(azimuth >= 2 * jnp.pi, 0.0, azimuth)
-            values = jnp.asarray(theta_h(azimuth))
-            if values.ndim > 0 and values.shape != azimuth.shape:
-                raise ValueError(
-                    "A callable horizon_theta must return a scalar or one "
-                    f"colatitude per azimuth, shape {azimuth.shape}; got "
-                    f"shape {values.shape}."
-                )
-            theta_h = jnp.broadcast_to(values, azimuth.shape)
+            theta_h = _profile_at_columns(theta_h, phi)
         else:
             theta_h = jnp.asarray(theta_h)
     _check_colatitudes(theta_h)
