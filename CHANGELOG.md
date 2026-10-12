@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- `Simulator(Tgnd=...)` takes one ground temperature per frequency,
+  shape `(nfreq,)`, as well as a scalar (#168), for example an
+  emissivity times a physical temperature. This already worked by
+  broadcasting; it is now documented, tested and shape-checked. Any other
+  shape raises, since the ground is still uniform across the sky.
+  `compute_ground_contribution()` then returns that frequency's ground
+  term, so code that reports sky and ground separately can use it instead
+  of recomputing `fgnd * Tgnd`.
 - **Behavior change:** a callable horizon passed to `horizon_weights` now
   takes compass azimuth `A` (North = 0, clockwise), evaluated at
   `A = (pi/2 - phi) mod 2 pi`, as `Beam(horizon_theta=...)` does, instead

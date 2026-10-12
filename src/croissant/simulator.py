@@ -177,8 +177,8 @@ def correct_ground_loss(vis, fgnd, Tgnd):
     fgnd : jax.Array
        The assumed ground fraction to use for the correction.
     Tgnd : jax.Array
-       The assumed ground temperature to use for the correction. Must
-       be spatially uniform in this implementation.
+       The assumed ground temperature to use for the correction. It is
+       uniform over the ground: a scalar, or one value per frequency.
 
     Returns
     -------
@@ -259,9 +259,12 @@ class Simulator(eqx.Module):
             values is used.
         world : {"moon", "earth"}
             Run the simulations on the moon or the Earth
-        Tgnd : float
-            The ground temperature in Kelvin. Only a constant
-            temperature is supported for now.
+        Tgnd : float or array_like
+            The ground temperature in Kelvin, uniform over the ground:
+            a scalar, or one value per frequency with shape
+            ``(nfreq,)``, such as an emissivity times a physical
+            temperature. A temperature that varies across the ground
+            is not supported.
         times_end_jd : jax.Array or None
             The end of each sample's integration window in Julian day,
             one per entry in ``times_jd``. Each sample is then the mean
@@ -327,7 +330,13 @@ class Simulator(eqx.Module):
         self.lmax = lmax
         self._L = self.lmax + 1
 
-        self.Tgnd = jnp.array(Tgnd)
+        Tgnd = jnp.array(Tgnd)
+        if Tgnd.ndim != 0 and Tgnd.shape != self.freqs.shape:
+            raise ValueError(
+                "Tgnd must be a scalar or one temperature per frequency, "
+                f"shape {self.freqs.shape}; got shape {Tgnd.shape}."
+            )
+        self.Tgnd = Tgnd
 
         self.lon = jnp.array(lon)
         self.lat = jnp.array(lat)
@@ -421,12 +430,15 @@ class Simulator(eqx.Module):
         ground temperature.
 
         Note that we do not include scattering of the sky temperature
-        by the ground or non-uniform ground temperature in this model.
+        by the ground or a ground temperature that varies across the
+        ground in this model.
 
         Returns
         -------
         vis_gnd : jax.Array
-            The ground contribution to the visibility.
+            The ground contribution to the visibility, shape
+            ``(nfreq,)``: the ground fraction times ``Tgnd`` at each
+            frequency.
 
         """
         return self.beam.compute_fgnd() * self.Tgnd
