@@ -1,10 +1,7 @@
-from functools import partial
-
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-import s2fft
 from astropy.coordinates import AltAz, EarthLocation
 from astropy.time import Time as EarthTime
 from lunarsky import LunarTopo, MoonLocation
@@ -391,12 +388,69 @@ class Simulator(eqx.Module):
         return self._et_ref
 
     @jax.jit
+    def topo_to_sim(self, alm):
+        """
+        Rotate alm from the topocentric frame into the simulation frame.
+
+        This is the rotation ``compute_beam_eq`` applies to the beam,
+        for any topocentric alm at any band limit up to the beam's. Use
+        it for a beam built outside ``Beam``, such as one rotated with
+        ``rotations.rotate_to_grid`` and then masked by a horizon.
+
+        Parameters
+        ----------
+        alm : jax.Array
+            alm in the topocentric frame, the frame of
+            ``self.beam.compute_alm()`` (x East, y North, z up). Shape
+            ``(..., L', 2 L' - 1)`` with ``L'`` from 1 to
+            ``self.beam.lmax + 1``. Leading axes carry through.
+
+        Returns
+        -------
+        alm_sim : jax.Array
+            The alm in the simulation frame (CIRS at ``times_jd[0]`` on
+            Earth, MEPA at ``times_jd[0]`` on the Moon), same shape.
+
+        Raises
+        ------
+        ValueError
+            If ``alm`` does not have shape ``(..., L', 2 L' - 1)``, or
+            ``L'`` exceeds the beam's band limit.
+
+        Notes
+        -----
+        The Wigner D-matrix is block-diagonal in ell, so rotating
+        truncated alm gives the truncated rotated alm, bit for bit.
+        Only the ``L'`` block of ``dl_topo`` is used, which is much
+        cheaper than rotating at the beam's band limit and truncating.
+
+        Inside your own ``jax.jit``, pass the ``Simulator`` as an
+        argument rather than capturing it in a closure. A captured
+        ``Simulator`` makes ``dl_topo`` a compile-time constant of
+        ``L (2 L - 1)**2 * 8`` bytes, 68 MB at lmax 128.
+
+        """
+        if alm.ndim < 2 or alm.shape[-1] != 2 * alm.shape[-2] - 1:
+            raise ValueError(
+                f"alm must have shape (..., L', 2L' - 1), got {alm.shape}."
+            )
+        L = self.beam._L
+        L_out = alm.shape[-2]
+        if L_out > L:
+            raise ValueError(
+                f"alm band limit L'={L_out} exceeds the beam's L={L}."
+            )
+        d = L - L_out
+        end = d + 2 * L_out - 1
+        dl_array = self.dl_topo[:L_out, d:end, d:end]
+        return rotations.rotate_alm(alm, self.eul_topo, dl_array=dl_array)
+
+    @jax.jit
     def compute_beam_eq(self):
         """
         Compute the beam alm in the simulation frame: CIRS at
         ``times_jd[0]`` on Earth, MEPA at ``times_jd[0]`` on the Moon.
-        This uses the pre-computed Euler angles and dl array for the
-        topocentric to simulation frame transformation.
+        It is ``topo_to_sim`` applied to ``self.beam.compute_alm()``.
 
         Returns
         -------
@@ -412,15 +466,7 @@ class Simulator(eqx.Module):
         only when passed ``et=self.et_ref``.
 
         """
-        beam_alm = self.beam.compute_alm()
-        eq2topo = partial(
-            s2fft.utils.rotation.rotate_flms,
-            L=self.beam._L,
-            rotation=self.eul_topo,
-            dl_array=self.dl_topo,
-        )
-        beam_eq_alm = jax.vmap(eq2topo)(beam_alm)
-        return beam_eq_alm
+        return self.topo_to_sim(self.beam.compute_alm())
 
     @jax.jit
     def compute_ground_contribution(self):

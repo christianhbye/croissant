@@ -1,7 +1,10 @@
 """Tests for the Simulator class."""
 
+from functools import partial
+
 import astropy.units as u
 import healpy as hp
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pytest
@@ -677,3 +680,104 @@ def test_earth_frame_change_leaves_the_first_sample_unchanged():
         rtol=0,
         atol=1e-12 * np.abs(vis).max(),
     )
+
+
+# ---------------------------------------------------------------------------
+# topo_to_sim – topocentric to simulation frame at any band limit
+# ---------------------------------------------------------------------------
+
+
+def _make_structured_sim(world):
+    """A Simulator whose beam has structure in theta and phi at every
+    frequency, unlike ``_make_sim``'s isotropic beam, so the topocentric
+    rotation has something to move."""
+    theta, phi = hp.pix2ang(_NSIDE, np.arange(_NPIX))
+    beam_data = np.stack(
+        [
+            ((1 + np.cos(theta)) / 2) ** (2 + k)
+            * (1 + 0.3 * np.cos(phi - 0.4 * k))
+            for k in range(_N_FREQS)
+        ]
+    )
+    beam = Beam(jnp.asarray(beam_data), _FREQS, sampling="healpix", niter=0)
+    sky_data = _TSKY[:, None] * jnp.ones((_N_FREQS, _NPIX))
+    sky = Sky(sky_data, _FREQS, coord=_SKY_COORD[world], niter=0)
+    return Simulator(
+        beam, sky, _TIMES_JD[world], _FREQS, 20.0, 35.0, world=world
+    )
+
+
+@jax.jit
+def _compute_beam_eq_before_topo_to_sim(sim):
+    """``Simulator.compute_beam_eq`` as it was at 821c33c, before it
+    called ``topo_to_sim``. Pins the rewrite to the old numbers."""
+    eq2topo = partial(
+        s2fft.utils.rotation.rotate_flms,
+        L=sim.beam._L,
+        rotation=sim.eul_topo,
+        dl_array=sim.dl_topo,
+    )
+    return jax.vmap(eq2topo)(sim.beam.compute_alm())
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+def test_topo_to_sim_at_the_beam_band_limit_is_compute_beam_eq(world):
+    sim = _make_structured_sim(world)
+    expected = _compute_beam_eq_before_topo_to_sim(sim)
+    np.testing.assert_array_equal(sim.compute_beam_eq(), expected)
+    np.testing.assert_array_equal(
+        sim.topo_to_sim(sim.beam.compute_alm()), expected
+    )
+
+
+@pytest.mark.parametrize("world", ["moon", "earth"])
+@pytest.mark.parametrize("lmax", [0, 4, 11])
+def test_topo_to_sim_truncated_matches_truncating_afterwards(world, lmax):
+    """The Wigner D-matrix is block-diagonal in ell, so truncating and
+    then rotating is truncating the rotated alm, bit for bit."""
+    sim = _make_structured_sim(world)
+    alm = utils.reduce_lmax(sim.beam.compute_alm(), lmax)
+    np.testing.assert_array_equal(
+        sim.topo_to_sim(alm), utils.reduce_lmax(sim.compute_beam_eq(), lmax)
+    )
+
+
+def test_topo_to_sim_carries_leading_axes():
+    """No frequency axis, or extra leading axes, rotate each slice."""
+    sim = _make_structured_sim("earth")
+    alm = utils.reduce_lmax(sim.beam.compute_alm(), 6)
+    expected = sim.topo_to_sim(alm)
+    np.testing.assert_allclose(
+        sim.topo_to_sim(alm[2]), expected[2], rtol=0, atol=1e-14
+    )
+    stacked = sim.topo_to_sim(jnp.stack([alm, 2 * alm]))
+    assert stacked.shape == (2,) + alm.shape
+    np.testing.assert_allclose(stacked[0], expected, rtol=0, atol=1e-14)
+    np.testing.assert_allclose(stacked[1], 2 * expected, rtol=0, atol=1e-14)
+
+
+def test_topo_to_sim_inside_a_callers_jit():
+    """With the Simulator passed as an argument (not closed over),
+    topo_to_sim works inside another jit."""
+    sim = _make_structured_sim("earth")
+    alm = utils.reduce_lmax(sim.beam.compute_alm(), 6)
+
+    @jax.jit
+    def rotate(simulator, alm):
+        return simulator.topo_to_sim(alm)
+
+    np.testing.assert_array_equal(rotate(sim, alm), sim.topo_to_sim(alm))
+
+
+@pytest.mark.parametrize(
+    "shape, match",
+    [
+        ((_N_FREQS, _LMAX + 2, 2 * _LMAX + 3), "exceeds"),
+        ((_N_FREQS, 5, 8), "2L' - 1"),
+        ((9,), "2L' - 1"),
+    ],
+)
+def test_topo_to_sim_rejects_bad_shapes(shape, match):
+    sim = _make_structured_sim("moon")
+    with pytest.raises(ValueError, match=match):
+        sim.topo_to_sim(jnp.zeros(shape, dtype=complex))
