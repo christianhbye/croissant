@@ -47,6 +47,7 @@ croissant = ["data/*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["slow: independent numerical integration and convergence tests"]
 addopts = [
   "--cov=src",
   "--cov-report=term-missing",
