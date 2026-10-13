@@ -489,3 +489,281 @@ def test_traced_euler_rotation_matches_static_rotation():
         rtol=0,
         atol=1e-12,
     )
+
+
+def _real_alm(L, *batch, seed=0):
+    """Random alm of real fields, shape ``batch + (L, 2L - 1)``."""
+    rng = np.random.default_rng(seed)
+    n = int(np.prod(batch)) if batch else 1
+    alm = np.stack(
+        [
+            s2fft.utils.signal_generator.generate_flm(rng, L, reality=True)
+            for _ in range(n)
+        ]
+    )
+    return jnp.asarray(alm.reshape(batch + (L, 2 * L - 1)))
+
+
+def _mwss_directions(L):
+    """Unit vectors of the MWSS grid, shape (L + 1, 2L, 3)."""
+    theta = s2fft.sampling.s2_samples.thetas(L, "mwss")
+    phi = s2fft.sampling.s2_samples.phis_equiang(L, "mwss")
+    th, ph = np.meshgrid(theta, phi, indexing="ij")
+    return np.stack(
+        [np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), np.cos(th)],
+        axis=-1,
+    )
+
+
+def _lobe(directions, centre, kappa=3.0):
+    """A smooth lobe peaked at ``centre``, band-limited to ~1e-12 at
+    L = 17."""
+    return np.exp(kappa * (directions @ centre - 1.0))
+
+
+def _mwss_inverse(alm, L):
+    return s2fft.inverse(alm, L, sampling="mwss", method="jax", reality=True)
+
+
+def _mwss_forward(f, L):
+    return s2fft.forward(f, L, sampling="mwss", method="jax", reality=True)
+
+
+def _euler(R):
+    return jnp.asarray(rotations.rotmat_to_eulerZYZ(R))
+
+
+def test_rotate_to_grid_identity():
+    """Zero Euler angles give the plain inverse transform."""
+    L = 9
+    alm = _real_alm(L)
+    np.testing.assert_allclose(
+        rotations.rotate_to_grid(alm, jnp.zeros(3)),
+        _mwss_inverse(alm, L),
+        rtol=0,
+        atol=1e-12,
+    )
+
+
+@pytest.mark.parametrize(
+    "R",
+    [
+        _ry(0.7),
+        _euler_to_rotmat(1.9, 2.3, -0.6),
+        _rz(0.9),
+        _ry(np.pi),
+    ],
+    ids=["tilt", "general", "zenith-turn", "flip"],
+)
+def test_rotate_to_grid_moves_a_lobe_at_m_to_R_m(R):
+    """The rotation is active: a lobe at m ends up at R m, not R^T m.
+    zenith-turn (beta = 0) and flip (beta = pi) are the gimbal-lock
+    splits of rotmat_to_eulerZYZ."""
+    L = 17
+    n = _mwss_directions(L)
+    m = np.array(
+        [np.sin(0.5) * np.cos(1.0), np.sin(0.5) * np.sin(1.0), np.cos(0.5)]
+    )
+    alm = _mwss_forward(jnp.asarray(_lobe(n, m)), L)
+    actual = rotations.rotate_to_grid(alm, _euler(R))
+    np.testing.assert_allclose(actual, _lobe(n, R @ m), rtol=0, atol=1e-10)
+    if not np.allclose(R, R.T):  # a turn by pi is its own inverse
+        wrong = _lobe(n, R.T @ m)
+        assert not np.allclose(actual, wrong, rtol=0, atol=1e-2)
+
+
+def test_rotate_to_grid_matches_the_static_rotation():
+    """Traced d-functions give what rotate_alm with s2fft's static ones
+    gives, then the inverse transform."""
+    L = 9
+    alm = _real_alm(L, 2)
+    euler = (0.4, 1.2, -0.8)
+    rotated = rotations.rotate_alm(
+        alm, euler, dl_array=s2fft.generate_rotate_dls(L, euler[1])
+    )
+    expected = jnp.stack([_mwss_inverse(a, L) for a in rotated])
+    np.testing.assert_allclose(
+        rotations.rotate_to_grid(alm, jnp.asarray(euler)),
+        expected,
+        rtol=0,
+        atol=1e-12,
+    )
+
+
+def test_rotate_to_grid_takes_tuples_and_numpy():
+    """Euler angles as the tuple rotmat_to_eulerZYZ returns (or ints),
+    and numpy alm, give the same maps as JAX arrays."""
+    L = 9
+    alm = _real_alm(L, 2)
+    euler = rotations.rotmat_to_eulerZYZ(_euler_to_rotmat(0.4, 1.2, -0.8))
+    assert isinstance(euler, tuple)
+    expected = rotations.rotate_to_grid(alm, jnp.asarray(euler))
+    np.testing.assert_array_equal(
+        rotations.rotate_to_grid(np.asarray(alm), euler), expected
+    )
+    np.testing.assert_array_equal(
+        rotations.rotate_to_grid(alm, (0, 0, 0)),
+        rotations.rotate_to_grid(alm, jnp.zeros(3)),
+    )
+
+
+def test_rotate_to_grid_takes_traced_angles():
+    """Euler angles may be traced: jit compiles once for every
+    orientation, and vmap over orientations works."""
+    L = 9
+    alm = _real_alm(L, 2)
+    eulers = jnp.array([[0.4, 1.2, -0.8], [-1.0, 0.3, 2.0], [0.0, 2.9, 0.5]])
+    eager = jnp.stack([rotations.rotate_to_grid(alm, e) for e in eulers])
+
+    jitted = jax.jit(lambda e: rotations.rotate_to_grid(alm, e))
+    np.testing.assert_allclose(
+        jnp.stack([jitted(e) for e in eulers]), eager, rtol=0, atol=1e-12
+    )
+    assert jitted._cache_size() == 1
+
+    batched = jax.vmap(lambda e: rotations.rotate_to_grid(alm, e))(eulers)
+    np.testing.assert_allclose(batched, eager, rtol=0, atol=1e-12)
+
+
+def test_rotate_to_grid_composes_as_R2_after_R1():
+    """Rotating by R1 and then R2 is one rotation by R2 @ R1."""
+    L = 17
+    alm = _real_alm(L)
+    R1 = _euler_to_rotmat(0.4, 1.2, -0.8)
+    R2 = _euler_to_rotmat(-1.0, 0.3, 2.0)
+    once = rotations.rotate_to_grid(alm, _euler(R1))
+    twice = rotations.rotate_to_grid(_mwss_forward(once, L), _euler(R2))
+    np.testing.assert_allclose(
+        twice,
+        rotations.rotate_to_grid(alm, _euler(R2 @ R1)),
+        rtol=0,
+        atol=1e-10,
+    )
+    wrong_order = rotations.rotate_to_grid(alm, _euler(R1 @ R2))
+    assert not np.allclose(twice, wrong_order, rtol=0, atol=1e-3)
+
+
+def test_rotate_to_grid_keeps_the_monopole_and_integral():
+    L = 17
+    alm = _real_alm(L)
+    maps = rotations.rotate_to_grid(alm, jnp.array([0.4, 1.2, -0.8]))
+    a00 = alm[0, L - 1]
+    np.testing.assert_allclose(
+        _mwss_forward(maps, L)[0, L - 1], a00, rtol=1e-12
+    )
+    weights = s2fft.utils.quadrature_jax.quad_weights(L, "mwss")
+    integral = jnp.einsum("tp,t->", maps, weights)
+    np.testing.assert_allclose(
+        integral, np.sqrt(4 * np.pi) * a00.real, rtol=1e-12
+    )
+
+
+def test_rotate_to_grid_carries_leading_axes():
+    L = 9
+    alm = _real_alm(L, 2, 3)
+    euler = jnp.array([0.4, 1.2, -0.8])
+    maps = rotations.rotate_to_grid(alm, euler)
+    assert maps.shape == (2, 3, L + 1, 2 * L)
+    for i in range(2):
+        for j in range(3):
+            single = rotations.rotate_to_grid(alm[i, j], euler)
+            assert single.shape == (L + 1, 2 * L)
+            np.testing.assert_allclose(maps[i, j], single, rtol=0, atol=1e-14)
+
+
+@pytest.mark.parametrize(
+    "sampling, nside, L, grid",
+    [
+        ("mwss", None, 9, (10, 18)),
+        ("mw", None, 9, (9, 17)),
+        ("dh", None, 9, (18, 17)),
+        ("gl", None, 9, (9, 17)),
+        ("healpix", 8, 16, (768,)),
+    ],
+)
+def test_rotate_to_grid_samplings(sampling, nside, L, grid):
+    """Every sampling gives real maps of its grid shape. s2fft returns
+    HEALPix maps complex even with reality=True."""
+    alm = _real_alm(L, 2)
+    euler = (0.4, 1.2, -0.8)
+    expected = jnp.stack(
+        [
+            s2fft.inverse(
+                a,
+                L,
+                nside=nside,
+                sampling=sampling,
+                method="jax",
+                reality=True,
+            )
+            for a in rotations.rotate_alm(alm, euler)
+        ]
+    ).real
+    actual = rotations.rotate_to_grid(
+        alm, jnp.asarray(euler), sampling=sampling, nside=nside
+    )
+    assert actual.shape == (2,) + grid
+    assert not jnp.iscomplexobj(actual)
+    np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-12)
+
+
+@pytest.mark.parametrize(
+    "alm_shape, euler, kwargs, match",
+    [
+        ((5, 9), jnp.zeros(2), {}, "euler"),
+        ((5, 9), jnp.zeros((1, 3)), {}, "euler"),
+        ((5, 8), jnp.zeros(3), {}, "alm"),
+        ((9,), jnp.zeros(3), {}, "alm"),
+        ((5, 9), jnp.zeros(3), {"sampling": "healpix"}, "nside"),
+    ],
+)
+def test_rotate_to_grid_rejects_bad_input(alm_shape, euler, kwargs, match):
+    alm = jnp.zeros(alm_shape, dtype=complex)
+    with pytest.raises(ValueError, match=match):
+        rotations.rotate_to_grid(alm, euler, **kwargs)
+
+
+def test_rotate_to_grid_gradients():
+    """Gradients with respect to alm and to the Euler angles match
+    central finite differences."""
+    L = 9
+    alm = _real_alm(L)
+    weights = jnp.asarray(np.random.default_rng(1).normal(size=(L + 1, 2 * L)))
+    euler = jnp.array([0.4, 1.2, -0.8])
+
+    def loss(alm, euler):
+        return jnp.sum(weights * rotations.rotate_to_grid(alm, euler))
+
+    # the loss is linear in alm; JAX's gradient for a complex input g
+    # satisfies d loss = Re(sum(g * d alm))
+    g_alm = jax.grad(loss, argnums=0)(alm, euler)
+    v = _real_alm(L, seed=2)
+    h = 1e-3
+    fd = (loss(alm + h * v, euler) - loss(alm - h * v, euler)) / (2 * h)
+    np.testing.assert_allclose(jnp.real(jnp.sum(g_alm * v)), fd, rtol=1e-10)
+
+    g_euler = jax.grad(loss, argnums=1)(alm, euler)
+    h = 1e-5
+    fd_euler = jnp.array(
+        [
+            (loss(alm, euler.at[i].add(h)) - loss(alm, euler.at[i].add(-h)))
+            / (2 * h)
+            for i in range(3)
+        ]
+    )
+    np.testing.assert_allclose(g_euler, fd_euler, rtol=1e-7)
+
+
+def test_rotate_to_grid_takes_real_dtype_alm():
+    """alm stored in a real array, e.g. an axisymmetric field's m = 0
+    column, rotate as their complex equivalent instead of failing."""
+    L = 9
+    alm = (
+        jnp.zeros((L, 2 * L - 1)).at[:, L - 1].set(_real_alm(L)[:, L - 1].real)
+    )
+    assert not jnp.iscomplexobj(alm)
+    euler = jnp.array([0.4, 1.2, -0.8])
+    np.testing.assert_array_equal(
+        rotations.rotate_to_grid(alm, euler),
+        rotations.rotate_to_grid(alm.astype(complex), euler),
+    )
