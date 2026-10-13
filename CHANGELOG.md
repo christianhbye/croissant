@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add slow scalar Earth integration tests against an independent Astropy
+  pixel simulator, using synthetic skies and beams, offline Earth
+  orientation, per-cell comparisons, and resolution-convergence checks.
 - Add `rotations.rotate_to_grid(alm, euler, sampling=..., nside=...)`,
   which rotates the alm of a real field by ZYZ Euler angles and
   synthesizes the rotated maps on a grid, and `Simulator.topo_to_sim(alm)`,
