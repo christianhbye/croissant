@@ -106,6 +106,95 @@ def rotate_alm_batched(alm, rotations, dl_arrays):
     )(rotations, dl_arrays)
 
 
+@partial(jax.jit, static_argnames=("sampling", "nside"))
+def rotate_to_grid(alm, euler, *, sampling="mwss", nside=None):
+    """
+    Rotate the alm of a real field by ZYZ Euler angles and synthesize
+    the rotated maps on a grid.
+
+    A beam that is tilted, not only turned in azimuth, needs this before
+    a ground-fixed horizon mask, which belongs in pixel space. ``Beam``
+    applies ``beam_rot`` after its mask as a phase on the alm, which is
+    exact only for a turn about the zenith. The Euler angles may be
+    traced, so one compilation covers every orientation.
+
+    Parameters
+    ----------
+    alm : array_like
+        Complex alm of a real field, such as a beam's power pattern,
+        shape ``(..., L, 2 L - 1)``. Leading axes (frequency, or any
+        batch) carry through.
+    euler : array_like
+        ZYZ Euler angles ``(alpha, beta, gamma)`` in radians, shape
+        ``(3,)``. May be a JAX tracer. ``rotmat_to_eulerZYZ(R)`` gives
+        them for a rotation matrix ``R``.
+    sampling : {"mwss", "mw", "dh", "gl", "healpix"}
+        Grid of the output maps, passed to ``s2fft.inverse``.
+    nside : int or None
+        HEALPix resolution. Required when ``sampling="healpix"``.
+
+    Returns
+    -------
+    maps : jax.Array
+        Real maps of shape ``alm.shape[:-2] + grid``, where ``grid`` is
+        ``(ntheta, nphi)`` for the equiangular samplings and ``(npix,)``
+        for HEALPix.
+
+    Raises
+    ------
+    ValueError
+        If ``euler`` does not have shape ``(3,)``, ``alm`` does not have
+        shape ``(..., L, 2 L - 1)``, or ``sampling="healpix"`` comes
+        without ``nside``.
+
+    Notes
+    -----
+    The rotation is active: with ``euler = rotmat_to_eulerZYZ(R)``, a
+    feature at direction ``m`` moves to ``R m``, and rotating by ``R1``
+    and then ``R2`` is one rotation by ``R2 @ R1``.
+
+    The maps are not clipped. A band-limited pattern can ring slightly
+    negative near sharp features, and the caller decides what to do
+    about it.
+
+    The inverse transform runs with ``reality=True``, which reads only
+    the m >= 0 coefficients, so the alm must be those of a real field.
+    s2fft returns HEALPix maps as complex arrays even then; the result
+    is cast to real for every sampling.
+
+    Under ``jit``, the band limit (from ``alm``'s shape), ``sampling``
+    and ``nside`` are static. ``alm`` and ``euler`` may be traced, and
+    the maps are differentiable with respect to both.
+
+    """
+    alm = jax.numpy.asarray(alm)
+    euler = jax.numpy.asarray(euler, dtype=float)
+    if euler.shape != (3,):
+        raise ValueError(f"euler must have shape (3,), got {euler.shape}.")
+    if alm.ndim < 2 or alm.shape[-1] != 2 * alm.shape[-2] - 1:
+        raise ValueError(
+            f"alm must have shape (..., L, 2L - 1), got {alm.shape}."
+        )
+    if sampling == "healpix" and nside is None:
+        raise ValueError("nside is required for healpix sampling.")
+    L = lmax_from_shape(alm.shape) + 1
+    dl_array = generate_rotate_dls(L, euler[1])
+    rotated = rotate_alm_batched(alm, euler[None], dl_array[None])[0]
+    flat = rotated.reshape((-1, L, 2 * L - 1))
+    inverse = partial(
+        s2fft.inverse,
+        L=L,
+        spin=0,
+        nside=nside,
+        sampling=sampling,
+        method="jax",
+        reality=True,
+    )
+    # s2fft returns HEALPix maps complex even with reality=True
+    maps = jax.numpy.real(jax.vmap(inverse)(flat))
+    return maps.reshape(alm.shape[:-2] + maps.shape[1:])
+
+
 def jd_to_et(jd):
     """
     Convert a Julian Date to SPICE ephemeris time (seconds past J2000).
