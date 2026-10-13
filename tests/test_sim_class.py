@@ -781,3 +781,18 @@ def test_topo_to_sim_rejects_bad_shapes(shape, match):
     sim = _make_structured_sim("moon")
     with pytest.raises(ValueError, match=match):
         sim.topo_to_sim(jnp.zeros(shape, dtype=complex))
+
+
+def test_topo_to_sim_casts_input_to_a_complex_array():
+    """Real-dtype alm (an axisymmetric field's m = 0 column) rotate into
+    complex alm, not into their real part, and a nested list works."""
+    sim = _make_structured_sim("earth")
+    alm = utils.reduce_lmax(sim.beam.compute_alm(), 4)[0]
+    m0 = alm.shape[-1] // 2
+    real_alm = jnp.zeros(alm.shape).at[:, m0].set(alm[:, m0].real)
+    assert not jnp.iscomplexobj(real_alm)
+    expected = sim.topo_to_sim(real_alm.astype(complex))
+    np.testing.assert_array_equal(sim.topo_to_sim(real_alm), expected)
+    np.testing.assert_array_equal(
+        sim.topo_to_sim(np.asarray(alm).tolist()), sim.topo_to_sim(alm)
+    )

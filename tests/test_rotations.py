@@ -752,3 +752,18 @@ def test_rotate_to_grid_gradients():
         ]
     )
     np.testing.assert_allclose(g_euler, fd_euler, rtol=1e-7)
+
+
+def test_rotate_to_grid_takes_real_dtype_alm():
+    """alm stored in a real array, e.g. an axisymmetric field's m = 0
+    column, rotate as their complex equivalent instead of failing."""
+    L = 9
+    alm = (
+        jnp.zeros((L, 2 * L - 1)).at[:, L - 1].set(_real_alm(L)[:, L - 1].real)
+    )
+    assert not jnp.iscomplexobj(alm)
+    euler = jnp.array([0.4, 1.2, -0.8])
+    np.testing.assert_array_equal(
+        rotations.rotate_to_grid(alm, euler),
+        rotations.rotate_to_grid(alm.astype(complex), euler),
+    )

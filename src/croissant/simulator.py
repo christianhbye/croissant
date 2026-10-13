@@ -399,7 +399,7 @@ class Simulator(eqx.Module):
 
         Parameters
         ----------
-        alm : jax.Array
+        alm : array_like
             alm in the topocentric frame, the frame of
             ``self.beam.compute_alm()`` (x East, y North, z up). Shape
             ``(..., L', 2 L' - 1)`` with ``L'`` from 1 to
@@ -430,6 +430,7 @@ class Simulator(eqx.Module):
         ``L (2 L - 1)**2 * 8`` bytes, 68 MB at lmax 128.
 
         """
+        alm = jnp.asarray(alm, dtype=complex)
         if alm.ndim < 2 or alm.shape[-1] != 2 * alm.shape[-2] - 1:
             raise ValueError(
                 f"alm must have shape (..., L', 2L' - 1), got {alm.shape}."

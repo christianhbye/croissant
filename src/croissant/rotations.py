@@ -167,7 +167,7 @@ def rotate_to_grid(alm, euler, *, sampling="mwss", nside=None):
     the maps are differentiable with respect to both.
 
     """
-    alm = jax.numpy.asarray(alm)
+    alm = jax.numpy.asarray(alm, dtype=complex)
     euler = jax.numpy.asarray(euler, dtype=float)
     if euler.shape != (3,):
         raise ValueError(f"euler must have shape (3,), got {euler.shape}.")
