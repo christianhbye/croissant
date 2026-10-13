@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Add `rotations.rotate_to_grid(alm, euler, sampling=..., nside=...)`,
+  which rotates the alm of a real field by ZYZ Euler angles and
+  synthesizes the rotated maps on a grid, and `Simulator.topo_to_sim(alm)`,
+  which rotates topocentric alm into the simulation frame at any band
+  limit up to the beam's. Together they rotate a beam by any orientation,
+  tilt included, before a ground-fixed horizon mask in pixel space, which
+  `Beam` cannot do yet (`beam_tilt` still raises). The Euler angles may be
+  traced, so one compilation covers every orientation. `rotate_to_grid`
+  replaces eigsim's private d-function builder and synthesis step, and the
+  core of mistic's `orientation.rotate_beam`; `topo_to_sim` replaces
+  eigsim's slice of `Simulator.dl_topo`. `compute_beam_eq` now calls
+  `topo_to_sim`; its output is unchanged, bit for bit.
 - Add `rotations.generate_rotate_dls(L, beta)`, the reduced Wigner
   d-functions of a rotation by `beta` with `beta` traceable. s2fft's
   `generate_rotate_dls` marks `beta` static, so it cannot take a JAX
